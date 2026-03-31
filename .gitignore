@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.vite/
+worker/node_modules/
+.claude/

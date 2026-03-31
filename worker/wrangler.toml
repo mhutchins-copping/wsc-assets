@@ -1,0 +1,19 @@
+name = "wsc-assets-api"
+main = "worker.js"
+compatibility_date = "2024-12-01"
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "wsc-assets-db"
+database_id = "5e966e81-a2b2-4fe7-9b2b-ee29cb02d4e6"
+
+# R2 Bucket (asset photos) — uncomment after enabling R2 in Cloudflare Dashboard
+# [[r2_buckets]]
+# binding = "IMAGES"
+# bucket_name = "wsc-assets-images"
+
+# Environment variables (set API_KEY via: wrangler secret put API_KEY)
+[vars]
+ASSET_TAG_PREFIX = "WSC"
+CORS_ORIGIN = "https://assets.it-wsc.com"

@@ -1,0 +1,129 @@
+-- WSC IT Asset Management System — Database Schema
+-- Cloudflare D1 (SQLite)
+
+CREATE TABLE IF NOT EXISTS locations (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  name TEXT NOT NULL,
+  address TEXT,
+  type TEXT DEFAULT 'office',
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS categories (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  name TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  parent_id TEXT REFERENCES categories(id),
+  icon TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS people (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  name TEXT NOT NULL,
+  email TEXT,
+  department TEXT,
+  position TEXT,
+  phone TEXT,
+  location_id TEXT REFERENCES locations(id),
+  active INTEGER DEFAULT 1,
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS assets (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  asset_tag TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  serial_number TEXT,
+  category_id TEXT REFERENCES categories(id),
+  manufacturer TEXT,
+  model TEXT,
+  status TEXT NOT NULL DEFAULT 'available',
+  purchase_date TEXT,
+  purchase_cost REAL,
+  purchase_order TEXT,
+  supplier TEXT,
+  warranty_months INTEGER,
+  warranty_expiry TEXT,
+  notes TEXT,
+  image_url TEXT,
+  location_id TEXT REFERENCES locations(id),
+  assigned_to TEXT REFERENCES people(id),
+  assigned_date TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS activity_log (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  asset_id TEXT REFERENCES assets(id),
+  action TEXT NOT NULL,
+  details TEXT,
+  performed_by TEXT DEFAULT 'Matt',
+  person_id TEXT REFERENCES people(id),
+  location_id TEXT REFERENCES locations(id),
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS maintenance_log (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  asset_id TEXT REFERENCES assets(id) NOT NULL,
+  type TEXT NOT NULL,
+  description TEXT NOT NULL,
+  cost REAL,
+  performed_by TEXT,
+  date TEXT NOT NULL,
+  next_due TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS audits (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  location_id TEXT REFERENCES locations(id) NOT NULL,
+  status TEXT DEFAULT 'in_progress',
+  started_at TEXT DEFAULT (datetime('now')),
+  completed_at TEXT,
+  notes TEXT,
+  total_expected INTEGER DEFAULT 0,
+  total_found INTEGER DEFAULT 0,
+  total_missing INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS audit_items (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  audit_id TEXT REFERENCES audits(id) NOT NULL,
+  asset_id TEXT REFERENCES assets(id) NOT NULL,
+  status TEXT DEFAULT 'pending',
+  scanned_at TEXT,
+  notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS software_licenses (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  name TEXT NOT NULL,
+  vendor TEXT,
+  license_key TEXT,
+  total_seats INTEGER,
+  used_seats INTEGER DEFAULT 0,
+  purchase_date TEXT,
+  expiry_date TEXT,
+  cost REAL,
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Indexes for common queries
+CREATE INDEX IF NOT EXISTS idx_assets_status ON assets(status);
+CREATE INDEX IF NOT EXISTS idx_assets_category ON assets(category_id);
+CREATE INDEX IF NOT EXISTS idx_assets_location ON assets(location_id);
+CREATE INDEX IF NOT EXISTS idx_assets_assigned ON assets(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_assets_tag ON assets(asset_tag);
+CREATE INDEX IF NOT EXISTS idx_assets_serial ON assets(serial_number);
+CREATE INDEX IF NOT EXISTS idx_activity_asset ON activity_log(asset_id);
+CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_people_active ON people(active);
+CREATE INDEX IF NOT EXISTS idx_people_department ON people(department);
+CREATE INDEX IF NOT EXISTS idx_maintenance_asset ON maintenance_log(asset_id);
+CREATE INDEX IF NOT EXISTS idx_audit_items_audit ON audit_items(audit_id);

@@ -1,0 +1,17 @@
+{
+  "name": "wsc-assets-api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create wsc-assets-db",
+    "db:schema": "wrangler d1 execute wsc-assets-db --file=schema.sql",
+    "db:seed": "wrangler d1 execute wsc-assets-db --file=seed.sql",
+    "db:schema:local": "wrangler d1 execute wsc-assets-db --local --file=schema.sql",
+    "db:seed:local": "wrangler d1 execute wsc-assets-db --local --file=seed.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^3.99.0"
+  }
+}
