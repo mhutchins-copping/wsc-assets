@@ -68,8 +68,12 @@ Router.register('/settings', function() {
     // Device Enrollment Script
     + '<div style="margin-bottom:20px">'
     + '<label class="form-label">Device Enrollment Script</label>'
-    + '<div class="form-hint" style="margin-bottom:8px">Download a PowerShell script that auto-collects hardware info (manufacturer, model, serial, OS, CPU, RAM, disk, MAC, IP) and registers the device as an asset. Run on any Windows PC.</div>'
-    + '<button class="btn" onclick="downloadEnrollScript()">Download Enroll-Asset.ps1</button>'
+    + '<div class="form-hint" style="margin-bottom:8px">Auto-collects hardware info (manufacturer, model, serial, OS, CPU, RAM, disk, MAC, IP) and registers the device as an asset. Copy the script, paste into a new .ps1 file on the target PC, then run it.</div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:8px">'
+    + '<button class="btn primary" onclick="copyEnrollScript()">Copy Script to Clipboard</button>'
+    + '<button class="btn" onclick="downloadEnrollScript()">Download .ps1</button>'
+    + '</div>'
+    + '<div class="form-hint">If ThreatLocker blocks the downloaded file: use <strong>Copy</strong> instead, open Notepad on the target PC, paste, then Save As <code>Enroll-Asset.ps1</code></div>'
     + '</div>'
 
     // Export
@@ -312,10 +316,7 @@ window.doLogout = doLogout;
 
 // ─── Device Enrollment Script Download ────────
 
-function downloadEnrollScript() {
-  if (!API.baseUrl) { toast('Configure API URL first', 'error'); return; }
-  if (!API.apiKey) { toast('Configure API Key first', 'error'); return; }
-
+function buildEnrollScript() {
   var script = '#Requires -Version 5.1\n'
     + '<#\n.SYNOPSIS\n    Collects hardware info from this device and registers it in WSC Assets.\n#>\n\n'
     + '$ErrorActionPreference = "Stop"\n'
@@ -404,12 +405,29 @@ function downloadEnrollScript() {
     + '}\n'
     + 'Write-Host ""\nWrite-Host "Press any key to exit..."; $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")\n';
 
-  var blob = new Blob([script.replace(/\\n/g, '\r\n')], { type: 'application/octet-stream' });
+  return script.replace(/\\n/g, '\r\n');
+}
+
+function copyEnrollScript() {
+  if (!API.baseUrl) { toast('Configure API URL first', 'error'); return; }
+  if (!API.apiKey) { toast('Configure API Key first', 'error'); return; }
+  navigator.clipboard.writeText(buildEnrollScript()).then(function() {
+    toast('Script copied! Open Notepad, paste, Save As "Enroll-Asset.ps1"', 'success');
+  }, function() {
+    toast('Copy failed — try the download button instead', 'error');
+  });
+}
+window.copyEnrollScript = copyEnrollScript;
+
+function downloadEnrollScript() {
+  if (!API.baseUrl) { toast('Configure API URL first', 'error'); return; }
+  if (!API.apiKey) { toast('Configure API Key first', 'error'); return; }
+  var blob = new Blob([buildEnrollScript()], { type: 'application/octet-stream' });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'Enroll-Asset.ps1';
   a.click();
   URL.revokeObjectURL(a.href);
-  toast('Script downloaded — run on any Windows PC', 'success');
+  toast('Script downloaded — if ThreatLocker blocks it, use Copy instead', 'success');
 }
 window.downloadEnrollScript = downloadEnrollScript;
