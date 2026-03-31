@@ -65,14 +65,19 @@ Router.register('/settings', function() {
     + '<button class="btn" onclick="cancelCSVImport()">Cancel</button>'
     + '</div></div>'
 
-    // Device Enrollment Script
+    // Device Enrollment
     + '<div style="margin-bottom:20px">'
-    + '<label class="form-label">Device Enrollment Script</label>'
-    + '<div class="form-hint" style="margin-bottom:8px">Auto-collects hardware info (manufacturer, model, serial, OS, CPU, RAM, disk, MAC, IP) and registers the device as an asset.</div>'
-    + '<div style="display:flex;gap:8px;margin-bottom:8px">'
-    + '<button class="btn primary" onclick="copyEnrollScript()">Copy Script to Clipboard</button>'
+    + '<label class="form-label">Device Enrollment</label>'
+    + '<div class="form-hint" style="margin-bottom:8px">Collect hardware info from a Windows PC and register it as an asset. Two steps: run the script on the PC, then paste the result here.</div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:12px">'
+    + '<button class="btn" onclick="copyEnrollScript()">1. Copy Collection Script</button>'
     + '</div>'
-    + '<div class="form-hint">Open <strong>PowerShell</strong> on the target PC and paste directly into the terminal. No file needed — bypasses ThreatLocker.</div>'
+    + '<div class="form-hint" style="margin-bottom:12px">Open <strong>PowerShell</strong> on the target PC, paste the script, then paste the copied JSON below:</div>'
+    + '<textarea id="enroll-json" class="form-input" rows="4" placeholder="Paste the JSON from the PowerShell script here..." style="font-family:var(--mono);font-size:12px"></textarea>'
+    + '<div style="display:flex;gap:8px;margin-top:8px">'
+    + '<button class="btn primary" onclick="enrollFromClipboard()">2. Enroll Device</button>'
+    + '</div>'
+    + '<div id="enroll-result" style="margin-top:8px"></div>'
     + '</div>'
 
     // Export
@@ -313,15 +318,11 @@ window.doChangePassword = doChangePassword;
 function doLogout() { logout(); }
 window.doLogout = doLogout;
 
-// ─── Device Enrollment Script Download ────────
+// ─── Device Enrollment ───────────────────────
 
 function buildEnrollScript() {
-  var script = '# WSC Assets — Device Enrollment Script\n'
-    + '# Paste this entire block into PowerShell on the target PC\n\n'
-    + '$ErrorActionPreference = "Stop"\n'
-    + '$ApiUrl = "' + API.baseUrl.replace(/"/g, '`"') + '"\n'
-    + '$ApiKey = "' + API.apiKey.replace(/"/g, '`"') + '"\n\n'
-    + 'Write-Host "Collecting hardware information..." -ForegroundColor Cyan\n\n'
+  var script = '# WSC Assets — Hardware Collector\n'
+    + '# Paste into PowerShell. Collects device info and copies JSON to clipboard.\n\n'
     + '$cs   = Get-CimInstance Win32_ComputerSystem\n'
     + '$bios = Get-CimInstance Win32_BIOS\n'
     + '$os   = Get-CimInstance Win32_OperatingSystem\n'
@@ -329,104 +330,105 @@ function buildEnrollScript() {
     + '$disk = Get-CimInstance Win32_DiskDrive | Where-Object { $_.MediaType -like "*fixed*" } | Select-Object -First 1\n\n'
     + '$chassis = (Get-CimInstance Win32_SystemEnclosure).ChassisTypes\n'
     + '$laptopTypes = @(8, 9, 10, 11, 14, 30, 31, 32)\n'
-    + '$isLaptop = ($chassis | Where-Object { $_ -in $laptopTypes }).Count -gt 0\n'
-    + '$categoryId = if ($isLaptop) { "cat_laptop" } else { "cat_desktop" }\n'
-    + '$deviceType = if ($isLaptop) { "Laptop" } else { "Desktop" }\n\n'
+    + '$isLaptop = ($chassis | Where-Object { $_ -in $laptopTypes }).Count -gt 0\n\n'
     + '$ramGB = [math]::Round($cs.TotalPhysicalMemory / 1GB)\n'
     + '$diskGB = if ($disk) { [math]::Round($disk.Size / 1GB) } else { 0 }\n\n'
     + '$adapter = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.MACAddress } | Select-Object -First 1\n'
     + '$mac = if ($adapter) { $adapter.MACAddress } else { "N/A" }\n'
     + '$ip  = if ($adapter.IPAddress) { ($adapter.IPAddress | Where-Object { $_ -match "^\\d+\\.\\d+\\.\\d+\\.\\d+$" } | Select-Object -First 1) } else { "N/A" }\n\n'
-    + '$currentUser = $cs.UserName\n'
-    + '$computerName = $cs.Name\n'
-    + '$serial = $bios.SerialNumber\n\n'
-    + 'Write-Host ""\n'
-    + 'Write-Host "=== Device Information ===" -ForegroundColor Yellow\n'
-    + 'Write-Host "  Type:          $deviceType"\n'
-    + 'Write-Host "  Name:          $computerName"\n'
-    + 'Write-Host "  Manufacturer:  $($cs.Manufacturer)"\n'
-    + 'Write-Host "  Model:         $($cs.Model)"\n'
-    + 'Write-Host "  Serial:        $serial"\n'
-    + 'Write-Host "  OS:            $($os.Caption) $($os.Version)"\n'
-    + 'Write-Host "  CPU:           $($cpu.Name)"\n'
-    + 'Write-Host "  RAM:           ${ramGB} GB"\n'
-    + 'Write-Host "  Disk:          ${diskGB} GB"\n'
-    + 'Write-Host "  MAC:           $mac"\n'
-    + 'Write-Host "  IP:            $ip"\n'
-    + 'Write-Host "  User:          $currentUser"\n'
-    + 'Write-Host "=========================" -ForegroundColor Yellow\n'
-    + 'Write-Host ""\n\n'
-    + '$notes = @(\n'
-    + '    "Auto-enrolled via PowerShell script",\n'
-    + '    "OS: $($os.Caption) $($os.Version)",\n'
-    + '    "CPU: $($cpu.Name)",\n'
-    + '    "RAM: ${ramGB} GB",\n'
-    + '    "Disk: ${diskGB} GB",\n'
-    + '    "MAC: $mac",\n'
-    + '    "IP: $ip",\n'
-    + '    "User at enrollment: $currentUser",\n'
-    + '    "Enrolled: $(Get-Date -Format \'yyyy-MM-dd HH:mm:ss\')"\n'
-    + ') -join "`n"\n\n'
-    + '$headers = @{ "X-Api-Key" = $ApiKey; "Content-Type" = "application/json" }\n\n'
-    + 'Write-Host "Checking if device is already registered..." -ForegroundColor Cyan\n'
-    + 'try {\n'
-    + '    $check = Invoke-RestMethod -Uri "$ApiUrl/api/assets/serial/$serial" -Headers $headers -Method Get -ErrorAction Stop\n'
-    + '    Write-Host "This device is already registered as $($check.asset_tag) ($($check.name))" -ForegroundColor Yellow\n'
-    + '    Write-Host "Press any key to exit..."; $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")\n'
-    + '    exit 0\n'
-    + '} catch {\n'
-    + '    if ($_.Exception.Response.StatusCode.value__ -ne 404) {\n'
-    + '        Write-Host "Warning: Could not check existing assets: $($_.Exception.Message)" -ForegroundColor Yellow\n'
-    + '    }\n'
-    + '}\n\n'
-    + '$assetName = "$($cs.Manufacturer) $($cs.Model)"\n'
-    + '$assetName = $assetName -replace "System manufacturer", "" -replace "System Product Name", "" -replace "^\\s+|\\s+$", ""\n'
-    + 'if ([string]::IsNullOrWhiteSpace($assetName)) { $assetName = $computerName }\n\n'
-    + '$body = @{\n'
+    + '$assetName = "$($cs.Manufacturer) $($cs.Model)" -replace "System manufacturer", "" -replace "System Product Name", "" -replace "^\\s+|\\s+$", ""\n'
+    + 'if ([string]::IsNullOrWhiteSpace($assetName)) { $assetName = $cs.Name }\n\n'
+    + '$data = @{\n'
     + '    name          = $assetName\n'
-    + '    serial_number = $serial\n'
-    + '    category_id   = $categoryId\n'
+    + '    serial_number = $bios.SerialNumber\n'
+    + '    category_id   = if ($isLaptop) { "cat_laptop" } else { "cat_desktop" }\n'
     + '    manufacturer  = $cs.Manufacturer -replace "System manufacturer", "Unknown"\n'
     + '    model         = $cs.Model -replace "System Product Name", "Unknown"\n'
     + '    status        = "available"\n'
-    + '    notes         = $notes\n'
+    + '    notes         = (@(\n'
+    + '        "Auto-enrolled via PowerShell",\n'
+    + '        "Computer: $($cs.Name)",\n'
+    + '        "OS: $($os.Caption) $($os.Version)",\n'
+    + '        "CPU: $($cpu.Name)",\n'
+    + '        "RAM: ${ramGB} GB",\n'
+    + '        "Disk: ${diskGB} GB",\n'
+    + '        "MAC: $mac",\n'
+    + '        "IP: $ip",\n'
+    + '        "User: $($cs.UserName)",\n'
+    + '        "Collected: $(Get-Date -Format \'yyyy-MM-dd HH:mm:ss\')"\n'
+    + '    ) -join "`n")\n'
     + '} | ConvertTo-Json\n\n'
-    + 'Write-Host "Registering asset..." -ForegroundColor Cyan\n'
-    + 'try {\n'
-    + '    $result = Invoke-RestMethod -Uri "$ApiUrl/api/assets" -Headers $headers -Method Post -Body $body -ErrorAction Stop\n'
-    + '    Write-Host "" \n'
-    + '    Write-Host "Successfully registered!" -ForegroundColor Green\n'
-    + '    Write-Host "  Asset Tag: $($result.asset_tag)" -ForegroundColor Green\n'
-    + '    Write-Host "  Asset ID:  $($result.id)" -ForegroundColor Green\n'
-    + '} catch {\n'
-    + '    Write-Host "Failed to register asset: $($_.Exception.Message)" -ForegroundColor Red\n'
-    + '    if ($_.ErrorDetails.Message) { Write-Host "  Details: $($_.ErrorDetails.Message)" -ForegroundColor Red }\n'
-    + '}\n'
-    + 'Write-Host ""\nWrite-Host "Press any key to exit..."; $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")\n';
+    + '$data | Set-Clipboard\n\n'
+    + 'Write-Host "" -ForegroundColor Yellow\n'
+    + 'Write-Host "=== $assetName ===" -ForegroundColor Yellow\n'
+    + 'Write-Host "  Serial:  $($bios.SerialNumber)"\n'
+    + 'Write-Host "  Type:    $(if ($isLaptop) {\'Laptop\'} else {\'Desktop\'})"\n'
+    + 'Write-Host "  CPU:     $($cpu.Name)"\n'
+    + 'Write-Host "  RAM:     ${ramGB} GB | Disk: ${diskGB} GB"\n'
+    + 'Write-Host "  MAC:     $mac | IP: $ip"\n'
+    + 'Write-Host "  User:    $($cs.UserName)"\n'
+    + 'Write-Host "=========================" -ForegroundColor Yellow\n'
+    + 'Write-Host ""\n'
+    + 'Write-Host "JSON copied to clipboard!" -ForegroundColor Green\n'
+    + 'Write-Host "Paste it into WSC Assets > Settings > Device Enrollment" -ForegroundColor Green\n'
+    + 'Write-Host ""\n'
+    + 'Write-Host "Press any key to exit..."; $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")\n';
 
   return script.replace(/\\n/g, '\r\n');
 }
 
 function copyEnrollScript() {
-  if (!API.baseUrl) { toast('Configure API URL first', 'error'); return; }
-  if (!API.apiKey) { toast('Configure API Key first', 'error'); return; }
   navigator.clipboard.writeText(buildEnrollScript()).then(function() {
-    toast('Copied! Open PowerShell on target PC and paste directly', 'success');
+    toast('Script copied! Paste into PowerShell on the target PC', 'success');
   }, function() {
     toast('Copy failed — check browser clipboard permissions', 'error');
   });
 }
 window.copyEnrollScript = copyEnrollScript;
 
-function downloadEnrollScript() {
-  if (!API.baseUrl) { toast('Configure API URL first', 'error'); return; }
-  if (!API.apiKey) { toast('Configure API Key first', 'error'); return; }
-  var blob = new Blob([buildEnrollScript()], { type: 'application/octet-stream' });
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'Enroll-Asset.ps1';
-  a.click();
-  URL.revokeObjectURL(a.href);
-  toast('Script downloaded — if ThreatLocker blocks it, use Copy instead', 'success');
+async function enrollFromClipboard() {
+  var jsonText = document.getElementById('enroll-json').value.trim();
+  if (!jsonText) { toast('Paste the JSON from the PowerShell script first', 'error'); return; }
+  if (!API.baseUrl || !API.apiKey) { toast('Configure API settings first', 'error'); return; }
+
+  var resultEl = document.getElementById('enroll-result');
+  var data;
+  try {
+    data = JSON.parse(jsonText);
+  } catch(e) {
+    toast('Invalid JSON — make sure you copied the full output', 'error');
+    return;
+  }
+
+  if (!data.name || !data.serial_number) {
+    toast('JSON is missing required fields (name, serial_number)', 'error');
+    return;
+  }
+
+  resultEl.innerHTML = '<div style="padding:8px;color:var(--text3);font-size:13px">Checking for duplicates...</div>';
+
+  // Check if serial already exists
+  try {
+    var existing = await API.fetch('/api/assets/serial/' + encodeURIComponent(data.serial_number));
+    resultEl.innerHTML = '<div style="padding:12px;background:var(--amber-l, #fef3c7);border-radius:var(--radius-sm);font-size:13px">'
+      + 'This device is already registered as <strong>' + esc(existing.asset_tag) + '</strong> (' + esc(existing.name) + ')</div>';
+    return;
+  } catch(e) {
+    // 404 = not found, which is what we want
+  }
+
+  resultEl.innerHTML = '<div style="padding:8px;color:var(--text3);font-size:13px">Registering asset...</div>';
+
+  try {
+    var result = await API.createAsset(data);
+    resultEl.innerHTML = '<div style="padding:12px;background:var(--green-l, #dcfce7);border-radius:var(--radius-sm);font-size:13px">'
+      + '<strong style="color:var(--green)">Enrolled!</strong> Asset Tag: <strong>' + esc(result.asset_tag) + '</strong>'
+      + ' <a href="#/assets/' + result.id + '" style="margin-left:8px">View Asset</a></div>';
+    document.getElementById('enroll-json').value = '';
+    toast('Device enrolled as ' + result.asset_tag, 'success');
+  } catch(e) {
+    resultEl.innerHTML = '<div style="padding:12px;background:var(--red-l, #fee2e2);border-radius:var(--radius-sm);font-size:13px;color:var(--red)">Failed: ' + esc(e.message) + '</div>';
+  }
 }
+window.enrollFromClipboard = enrollFromClipboard;
 window.downloadEnrollScript = downloadEnrollScript;
