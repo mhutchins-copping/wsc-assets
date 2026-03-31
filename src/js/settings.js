@@ -65,6 +65,13 @@ Router.register('/settings', function() {
     + '<button class="btn" onclick="cancelCSVImport()">Cancel</button>'
     + '</div></div>'
 
+    // Device Enrollment Script
+    + '<div style="margin-bottom:20px">'
+    + '<label class="form-label">Device Enrollment Script</label>'
+    + '<div class="form-hint" style="margin-bottom:8px">Download a PowerShell script that auto-collects hardware info (manufacturer, model, serial, OS, CPU, RAM, disk, MAC, IP) and registers the device as an asset. Run on any Windows PC.</div>'
+    + '<button class="btn" onclick="downloadEnrollScript()">Download Enroll-Asset.ps1</button>'
+    + '</div>'
+
     // Export
     + '<div>'
     + '<label class="form-label">Export</label>'
@@ -302,3 +309,107 @@ window.doChangePassword = doChangePassword;
 
 function doLogout() { logout(); }
 window.doLogout = doLogout;
+
+// ─── Device Enrollment Script Download ────────
+
+function downloadEnrollScript() {
+  if (!API.baseUrl) { toast('Configure API URL first', 'error'); return; }
+  if (!API.apiKey) { toast('Configure API Key first', 'error'); return; }
+
+  var script = '#Requires -Version 5.1\n'
+    + '<#\n.SYNOPSIS\n    Collects hardware info from this device and registers it in WSC Assets.\n#>\n\n'
+    + '$ErrorActionPreference = "Stop"\n'
+    + '$ApiUrl = "' + API.baseUrl.replace(/"/g, '`"') + '"\n'
+    + '$ApiKey = "' + API.apiKey.replace(/"/g, '`"') + '"\n\n'
+    + 'Write-Host "Collecting hardware information..." -ForegroundColor Cyan\n\n'
+    + '$cs   = Get-CimInstance Win32_ComputerSystem\n'
+    + '$bios = Get-CimInstance Win32_BIOS\n'
+    + '$os   = Get-CimInstance Win32_OperatingSystem\n'
+    + '$cpu  = Get-CimInstance Win32_Processor | Select-Object -First 1\n'
+    + '$disk = Get-CimInstance Win32_DiskDrive | Where-Object { $_.MediaType -like "*fixed*" } | Select-Object -First 1\n\n'
+    + '$chassis = (Get-CimInstance Win32_SystemEnclosure).ChassisTypes\n'
+    + '$laptopTypes = @(8, 9, 10, 11, 14, 30, 31, 32)\n'
+    + '$isLaptop = ($chassis | Where-Object { $_ -in $laptopTypes }).Count -gt 0\n'
+    + '$categoryId = if ($isLaptop) { "cat_laptop" } else { "cat_desktop" }\n'
+    + '$deviceType = if ($isLaptop) { "Laptop" } else { "Desktop" }\n\n'
+    + '$ramGB = [math]::Round($cs.TotalPhysicalMemory / 1GB)\n'
+    + '$diskGB = if ($disk) { [math]::Round($disk.Size / 1GB) } else { 0 }\n\n'
+    + '$adapter = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.MACAddress } | Select-Object -First 1\n'
+    + '$mac = if ($adapter) { $adapter.MACAddress } else { "N/A" }\n'
+    + '$ip  = if ($adapter.IPAddress) { ($adapter.IPAddress | Where-Object { $_ -match "^\\d+\\.\\d+\\.\\d+\\.\\d+$" } | Select-Object -First 1) } else { "N/A" }\n\n'
+    + '$currentUser = $cs.UserName\n'
+    + '$computerName = $cs.Name\n'
+    + '$serial = $bios.SerialNumber\n\n'
+    + 'Write-Host ""\n'
+    + 'Write-Host "=== Device Information ===" -ForegroundColor Yellow\n'
+    + 'Write-Host "  Type:          $deviceType"\n'
+    + 'Write-Host "  Name:          $computerName"\n'
+    + 'Write-Host "  Manufacturer:  $($cs.Manufacturer)"\n'
+    + 'Write-Host "  Model:         $($cs.Model)"\n'
+    + 'Write-Host "  Serial:        $serial"\n'
+    + 'Write-Host "  OS:            $($os.Caption) $($os.Version)"\n'
+    + 'Write-Host "  CPU:           $($cpu.Name)"\n'
+    + 'Write-Host "  RAM:           ${ramGB} GB"\n'
+    + 'Write-Host "  Disk:          ${diskGB} GB"\n'
+    + 'Write-Host "  MAC:           $mac"\n'
+    + 'Write-Host "  IP:            $ip"\n'
+    + 'Write-Host "  User:          $currentUser"\n'
+    + 'Write-Host "=========================" -ForegroundColor Yellow\n'
+    + 'Write-Host ""\n\n'
+    + '$notes = @(\n'
+    + '    "Auto-enrolled via PowerShell script",\n'
+    + '    "OS: $($os.Caption) $($os.Version)",\n'
+    + '    "CPU: $($cpu.Name)",\n'
+    + '    "RAM: ${ramGB} GB",\n'
+    + '    "Disk: ${diskGB} GB",\n'
+    + '    "MAC: $mac",\n'
+    + '    "IP: $ip",\n'
+    + '    "User at enrollment: $currentUser",\n'
+    + '    "Enrolled: $(Get-Date -Format \'yyyy-MM-dd HH:mm:ss\')"\n'
+    + ') -join "`n"\n\n'
+    + '$headers = @{ "X-Api-Key" = $ApiKey; "Content-Type" = "application/json" }\n\n'
+    + 'Write-Host "Checking if device is already registered..." -ForegroundColor Cyan\n'
+    + 'try {\n'
+    + '    $check = Invoke-RestMethod -Uri "$ApiUrl/api/assets/serial/$serial" -Headers $headers -Method Get -ErrorAction Stop\n'
+    + '    Write-Host "This device is already registered as $($check.asset_tag) ($($check.name))" -ForegroundColor Yellow\n'
+    + '    Write-Host "Press any key to exit..."; $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")\n'
+    + '    exit 0\n'
+    + '} catch {\n'
+    + '    if ($_.Exception.Response.StatusCode.value__ -ne 404) {\n'
+    + '        Write-Host "Warning: Could not check existing assets: $($_.Exception.Message)" -ForegroundColor Yellow\n'
+    + '    }\n'
+    + '}\n\n'
+    + '$assetName = "$($cs.Manufacturer) $($cs.Model)"\n'
+    + '$assetName = $assetName -replace "System manufacturer", "" -replace "System Product Name", "" -replace "^\\s+|\\s+$", ""\n'
+    + 'if ([string]::IsNullOrWhiteSpace($assetName)) { $assetName = $computerName }\n\n'
+    + '$body = @{\n'
+    + '    name          = $assetName\n'
+    + '    serial_number = $serial\n'
+    + '    category_id   = $categoryId\n'
+    + '    manufacturer  = $cs.Manufacturer -replace "System manufacturer", "Unknown"\n'
+    + '    model         = $cs.Model -replace "System Product Name", "Unknown"\n'
+    + '    status        = "available"\n'
+    + '    notes         = $notes\n'
+    + '} | ConvertTo-Json\n\n'
+    + 'Write-Host "Registering asset..." -ForegroundColor Cyan\n'
+    + 'try {\n'
+    + '    $result = Invoke-RestMethod -Uri "$ApiUrl/api/assets" -Headers $headers -Method Post -Body $body -ErrorAction Stop\n'
+    + '    Write-Host "" \n'
+    + '    Write-Host "Successfully registered!" -ForegroundColor Green\n'
+    + '    Write-Host "  Asset Tag: $($result.asset_tag)" -ForegroundColor Green\n'
+    + '    Write-Host "  Asset ID:  $($result.id)" -ForegroundColor Green\n'
+    + '} catch {\n'
+    + '    Write-Host "Failed to register asset: $($_.Exception.Message)" -ForegroundColor Red\n'
+    + '    if ($_.ErrorDetails.Message) { Write-Host "  Details: $($_.ErrorDetails.Message)" -ForegroundColor Red }\n'
+    + '}\n'
+    + 'Write-Host ""\nWrite-Host "Press any key to exit..."; $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")\n';
+
+  var blob = new Blob([script.replace(/\\n/g, '\r\n')], { type: 'application/octet-stream' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'Enroll-Asset.ps1';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('Script downloaded — run on any Windows PC', 'success');
+}
+window.downloadEnrollScript = downloadEnrollScript;
