@@ -131,7 +131,7 @@ catch {
 
 # ── Create the asset ──────────────────────────────────────────────
 
-$assetName = "$($cs.Manufacturer) $($cs.Model)"
+$assetName = if ($cs.Model -match "^$([regex]::Escape($cs.Manufacturer))") { $cs.Model } else { "$($cs.Manufacturer) $($cs.Model)" }
 # Clean up common junk in manufacturer names
 $assetName = $assetName -replace 'System manufacturer', '' -replace 'System Product Name', '' -replace '^\s+|\s+$', ''
 if ([string]::IsNullOrWhiteSpace($assetName)) { $assetName = $computerName }
