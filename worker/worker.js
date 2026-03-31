@@ -300,7 +300,7 @@ async function getAssetByTag(env, tag) {
 }
 
 async function getAssetBySerial(env, serial) {
-  const asset = await env.DB.prepare('SELECT id FROM assets WHERE serial_number = ?').bind(serial).first();
+  const asset = await env.DB.prepare("SELECT id FROM assets WHERE serial_number = ? AND status != 'disposed'").bind(serial).first();
   if (!asset) return json({ error: 'Asset not found' }, 404);
   return getAsset(env, asset.id);
 }
