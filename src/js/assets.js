@@ -329,7 +329,8 @@ async function renderAssetDetail(id) {
     generateQRToElement('asset-qr-code', 'https://assets.it-wsc.com/asset/' + asset.asset_tag, 160);
 
   } catch(e) {
-    el.innerHTML = '<div class="table-empty">Asset not found</div>';
+    console.error('Asset detail error:', e);
+    el.innerHTML = '<div class="table-empty">Asset not found<br><span style="font-size:11px;color:var(--text3)">' + esc(e.message) + '</span></div>';
   }
 }
 
