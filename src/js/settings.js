@@ -68,12 +68,11 @@ Router.register('/settings', function() {
     // Device Enrollment Script
     + '<div style="margin-bottom:20px">'
     + '<label class="form-label">Device Enrollment Script</label>'
-    + '<div class="form-hint" style="margin-bottom:8px">Auto-collects hardware info (manufacturer, model, serial, OS, CPU, RAM, disk, MAC, IP) and registers the device as an asset. Copy the script, paste into a new .ps1 file on the target PC, then run it.</div>'
+    + '<div class="form-hint" style="margin-bottom:8px">Auto-collects hardware info (manufacturer, model, serial, OS, CPU, RAM, disk, MAC, IP) and registers the device as an asset.</div>'
     + '<div style="display:flex;gap:8px;margin-bottom:8px">'
     + '<button class="btn primary" onclick="copyEnrollScript()">Copy Script to Clipboard</button>'
-    + '<button class="btn" onclick="downloadEnrollScript()">Download .ps1</button>'
     + '</div>'
-    + '<div class="form-hint">If ThreatLocker blocks the downloaded file: use <strong>Copy</strong> instead, open Notepad on the target PC, paste, then Save As <code>Enroll-Asset.ps1</code></div>'
+    + '<div class="form-hint">Open <strong>PowerShell</strong> on the target PC and paste directly into the terminal. No file needed — bypasses ThreatLocker.</div>'
     + '</div>'
 
     // Export
@@ -317,8 +316,8 @@ window.doLogout = doLogout;
 // ─── Device Enrollment Script Download ────────
 
 function buildEnrollScript() {
-  var script = '#Requires -Version 5.1\n'
-    + '<#\n.SYNOPSIS\n    Collects hardware info from this device and registers it in WSC Assets.\n#>\n\n'
+  var script = '# WSC Assets — Device Enrollment Script\n'
+    + '# Paste this entire block into PowerShell on the target PC\n\n'
     + '$ErrorActionPreference = "Stop"\n'
     + '$ApiUrl = "' + API.baseUrl.replace(/"/g, '`"') + '"\n'
     + '$ApiKey = "' + API.apiKey.replace(/"/g, '`"') + '"\n\n'
@@ -412,9 +411,9 @@ function copyEnrollScript() {
   if (!API.baseUrl) { toast('Configure API URL first', 'error'); return; }
   if (!API.apiKey) { toast('Configure API Key first', 'error'); return; }
   navigator.clipboard.writeText(buildEnrollScript()).then(function() {
-    toast('Script copied! Open Notepad, paste, Save As "Enroll-Asset.ps1"', 'success');
+    toast('Copied! Open PowerShell on target PC and paste directly', 'success');
   }, function() {
-    toast('Copy failed — try the download button instead', 'error');
+    toast('Copy failed — check browser clipboard permissions', 'error');
   });
 }
 window.copyEnrollScript = copyEnrollScript;
