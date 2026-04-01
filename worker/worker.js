@@ -1371,9 +1371,17 @@ async function syncEntraUsers(request, env) {
   let skipped = 0;
   const errors = [];
 
+  const domain = data.domain || 'walgett.nsw.gov.au';
+
   for (const user of allUsers) {
     const email = user.mail || user.userPrincipalName;
     if (!email || !user.displayName) { skipped++; continue; }
+
+    // Only import users with matching email domain
+    if (!email.toLowerCase().endsWith('@' + domain.toLowerCase())) {
+      skipped++;
+      continue;
+    }
 
     // Skip service accounts, room mailboxes, etc.
     if (email.startsWith('#') || email.includes('MailboxDiscovery') || user.displayName.startsWith('$')) {

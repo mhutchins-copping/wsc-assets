@@ -487,7 +487,8 @@ async function syncEntraUsers() {
     var result = await API.syncEntra({
       tenant_id: tenant,
       client_id: client,
-      client_secret: secret
+      client_secret: secret,
+      domain: 'walgett.nsw.gov.au'
     });
 
     var html = '<div style="padding:12px;background:var(--green-l, #dcfce7);border-radius:var(--radius-sm);font-size:13px">'
