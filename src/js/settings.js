@@ -450,7 +450,6 @@ async function enrollFromClipboard() {
   }
 }
 window.enrollFromClipboard = enrollFromClipboard;
-window.downloadEnrollScript = downloadEnrollScript;
 
 // ─── Entra ID Sync ─────────────────────────
 
