@@ -1431,11 +1431,24 @@ async function syncEntraUsers(request, env) {
     }
   }
 
+  // Delete people imported from Entra that don't match the domain filter
+  let deleted = 0;
+  try {
+    const result = await env.DB.prepare(`
+      DELETE FROM people WHERE notes = 'Imported from Entra ID'
+      AND (email NOT LIKE ? OR email IS NULL)
+    `).bind('%@' + domain.toLowerCase()).run();
+    deleted = result.meta?.changes || 0;
+  } catch (err) {
+    errors.push('Cleanup: ' + err.message);
+  }
+
   return json({
     total_fetched: allUsers.length,
     created,
     updated,
     skipped,
+    deleted,
     errors: errors.slice(0, 20),
   });
 }

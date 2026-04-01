@@ -497,6 +497,7 @@ async function syncEntraUsers() {
       + 'Fetched: ' + result.total_fetched + ' users<br>'
       + '<span style="color:var(--green)">&#10003; ' + result.created + ' created</span>'
       + ' &middot; <span style="color:var(--accent)">' + result.updated + ' updated</span>';
+    if (result.deleted) html += ' &middot; <span style="color:var(--red)">' + result.deleted + ' removed</span>';
     if (result.skipped) html += ' &middot; <span style="color:var(--text3)">' + result.skipped + ' skipped</span>';
     html += '</div>';
     if (result.errors && result.errors.length) {
