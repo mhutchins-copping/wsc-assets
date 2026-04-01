@@ -271,6 +271,22 @@ async function renderAssetDetail(id) {
 
     html += '</div></div>';
 
+    // Hardware Specs (if any spec fields populated)
+    var hasSpecs = asset.hostname || asset.os || asset.cpu || asset.ram_gb || asset.disk_gb || asset.mac_address;
+    if (hasSpecs) {
+      html += '<div class="card" style="margin-bottom:16px"><div class="card-header"><span class="card-title">Hardware Specs</span></div>'
+        + '<div class="card-body"><div class="detail-grid" style="grid-template-columns:1fr 1fr 1fr">'
+        + detailField('Hostname', asset.hostname)
+        + detailField('Operating System', asset.os)
+        + detailField('CPU', asset.cpu)
+        + detailField('RAM', asset.ram_gb ? asset.ram_gb + ' GB' : null)
+        + detailField('Disk', asset.disk_gb ? asset.disk_gb + ' GB' : null)
+        + detailField('MAC Address', asset.mac_address)
+        + detailField('IP Address', asset.ip_address)
+        + detailField('Enrolled User', asset.enrolled_user)
+        + '</div></div></div>';
+    }
+
     // Notes
     if (asset.notes) {
       html += '<div class="card" style="margin-bottom:16px"><div class="card-header"><span class="card-title">Notes</span></div>'

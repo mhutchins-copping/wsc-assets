@@ -328,14 +328,19 @@ async function createAsset(request, env) {
   await env.DB.prepare(`
     INSERT INTO assets (id, asset_tag, name, serial_number, category_id, manufacturer, model, status,
       purchase_date, purchase_cost, purchase_order, supplier, warranty_months, warranty_expiry,
-      notes, image_url, location_id, assigned_to, assigned_date, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      notes, image_url, hostname, os, cpu, ram_gb, disk_gb, mac_address, ip_address, enrolled_user,
+      location_id, assigned_to, assigned_date, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     assetId, tag, data.name, data.serial_number || null, data.category_id || null,
     data.manufacturer || null, data.model || null, data.status || 'available',
     data.purchase_date || null, data.purchase_cost || null, data.purchase_order || null,
     data.supplier || null, data.warranty_months || null, warrantyExpiry,
-    data.notes || null, data.image_url || null, data.location_id || null,
+    data.notes || null, data.image_url || null,
+    data.hostname || null, data.os || null, data.cpu || null,
+    data.ram_gb || null, data.disk_gb || null, data.mac_address || null,
+    data.ip_address || null, data.enrolled_user || null,
+    data.location_id || null,
     data.assigned_to || null, data.assigned_to ? ts : null, ts, ts
   ).run();
 
@@ -371,7 +376,9 @@ async function updateAsset(request, env, assetId) {
     UPDATE assets SET
       asset_tag = ?, name = ?, serial_number = ?, category_id = ?, manufacturer = ?, model = ?,
       status = ?, purchase_date = ?, purchase_cost = ?, purchase_order = ?, supplier = ?,
-      warranty_months = ?, warranty_expiry = ?, notes = ?, image_url = ?, location_id = ?,
+      warranty_months = ?, warranty_expiry = ?, notes = ?, image_url = ?,
+      hostname = ?, os = ?, cpu = ?, ram_gb = ?, disk_gb = ?, mac_address = ?, ip_address = ?, enrolled_user = ?,
+      location_id = ?,
       assigned_to = ?, assigned_date = ?, updated_at = ?
     WHERE id = ?
   `).bind(
@@ -390,6 +397,14 @@ async function updateAsset(request, env, assetId) {
     warrantyExpiry,
     data.notes !== undefined ? data.notes : existing.notes,
     data.image_url !== undefined ? data.image_url : existing.image_url,
+    data.hostname !== undefined ? data.hostname : existing.hostname,
+    data.os !== undefined ? data.os : existing.os,
+    data.cpu !== undefined ? data.cpu : existing.cpu,
+    data.ram_gb !== undefined ? data.ram_gb : existing.ram_gb,
+    data.disk_gb !== undefined ? data.disk_gb : existing.disk_gb,
+    data.mac_address !== undefined ? data.mac_address : existing.mac_address,
+    data.ip_address !== undefined ? data.ip_address : existing.ip_address,
+    data.enrolled_user !== undefined ? data.enrolled_user : existing.enrolled_user,
     data.location_id !== undefined ? data.location_id : existing.location_id,
     data.assigned_to !== undefined ? data.assigned_to : existing.assigned_to,
     data.assigned_to !== undefined && data.assigned_to !== existing.assigned_to ? ts : existing.assigned_date,
