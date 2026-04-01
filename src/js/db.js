@@ -104,6 +104,9 @@ var API = {
   importCSV: function(csvText) { return this.fetch('/api/import/csv', { method: 'POST', body: csvText, headers: { 'Content-Type': 'text/plain' } }); },
   exportCSV: function(params) { return this.fetch('/api/export/csv?' + new URLSearchParams(params || {})); },
 
+  // ─── Entra ID Sync
+  syncEntra: function(config) { return this.fetch('/api/people/sync-entra', { method: 'POST', body: config }); },
+
   // ─── Images (R2)
   uploadImage: async function(assetId, file) {
     var key = assetId + '/' + Date.now() + '.' + file.name.split('.').pop();

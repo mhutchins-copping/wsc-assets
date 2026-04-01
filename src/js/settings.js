@@ -90,6 +90,27 @@ Router.register('/settings', function() {
 
     + '</div></div>'
 
+    // Entra ID Integration
+    + '<div class="card" style="margin-bottom:20px">'
+    + '<div class="card-header"><span class="card-title">Entra ID Integration</span></div>'
+    + '<div class="card-body">'
+    + '<div class="form-hint" style="margin-bottom:12px">Sync users from Microsoft Entra ID (Azure AD) into the People directory. Requires an app registration with <code>User.Read.All</code> application permission.</div>'
+    + '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">Tenant ID</label>'
+    + '<input type="text" id="entra-tenant-id" class="form-input" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value="' + esc(localStorage.getItem('wsc_entra_tenant') || '') + '"></div>'
+    + '<div class="form-group"><label class="form-label">Client ID</label>'
+    + '<input type="text" id="entra-client-id" class="form-input" placeholder="App registration client ID" value="' + esc(localStorage.getItem('wsc_entra_client') || '') + '"></div>'
+    + '</div>'
+    + '<div class="form-group"><label class="form-label">Client Secret</label>'
+    + '<input type="password" id="entra-client-secret" class="form-input" placeholder="' + (localStorage.getItem('wsc_entra_secret') ? 'Secret saved — enter new to change' : 'App registration client secret') + '">'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;align-items:center">'
+    + '<button class="btn" onclick="saveEntraConfig()">Save Config</button>'
+    + '<button class="btn primary" onclick="syncEntraUsers()">Sync Users from Entra</button>'
+    + '</div>'
+    + '<div id="entra-sync-result" style="margin-top:12px"></div>'
+    + '</div></div>'
+
     // Security
     + '<div class="card" style="margin-bottom:20px">'
     + '<div class="card-header"><span class="card-title">Security</span></div>'
@@ -430,3 +451,63 @@ async function enrollFromClipboard() {
 }
 window.enrollFromClipboard = enrollFromClipboard;
 window.downloadEnrollScript = downloadEnrollScript;
+
+// ─── Entra ID Sync ─────────────────────────
+
+function saveEntraConfig() {
+  var tenant = document.getElementById('entra-tenant-id').value.trim();
+  var client = document.getElementById('entra-client-id').value.trim();
+  var secret = document.getElementById('entra-client-secret').value.trim();
+  if (tenant) localStorage.setItem('wsc_entra_tenant', tenant);
+  if (client) localStorage.setItem('wsc_entra_client', client);
+  if (secret) localStorage.setItem('wsc_entra_secret', secret);
+  toast('Entra config saved', 'success');
+}
+window.saveEntraConfig = saveEntraConfig;
+
+async function syncEntraUsers() {
+  var tenant = document.getElementById('entra-tenant-id').value.trim() || localStorage.getItem('wsc_entra_tenant');
+  var client = document.getElementById('entra-client-id').value.trim() || localStorage.getItem('wsc_entra_client');
+  var secret = document.getElementById('entra-client-secret').value.trim() || localStorage.getItem('wsc_entra_secret');
+
+  if (!tenant || !client || !secret) {
+    toast('Fill in all Entra ID fields first', 'error');
+    return;
+  }
+
+  if (!API.baseUrl || !API.apiKey) {
+    toast('Configure API settings first', 'error');
+    return;
+  }
+
+  var resultEl = document.getElementById('entra-sync-result');
+  resultEl.innerHTML = '<div style="padding:12px;background:var(--accent-l);border-radius:var(--radius-sm);font-family:var(--mono);font-size:12px">'
+    + 'Connecting to Microsoft Graph API...</div>';
+
+  try {
+    var result = await API.syncEntra({
+      tenant_id: tenant,
+      client_id: client,
+      client_secret: secret
+    });
+
+    var html = '<div style="padding:12px;background:var(--green-l, #dcfce7);border-radius:var(--radius-sm);font-size:13px">'
+      + '<div style="font-weight:600;margin-bottom:4px">Sync Complete</div>'
+      + '<div style="font-family:var(--mono);font-size:12px">'
+      + 'Fetched: ' + result.total_fetched + ' users<br>'
+      + '<span style="color:var(--green)">&#10003; ' + result.created + ' created</span>'
+      + ' &middot; <span style="color:var(--accent)">' + result.updated + ' updated</span>';
+    if (result.skipped) html += ' &middot; <span style="color:var(--text3)">' + result.skipped + ' skipped</span>';
+    html += '</div>';
+    if (result.errors && result.errors.length) {
+      html += '<div style="margin-top:8px;font-size:11px;color:var(--red);max-height:100px;overflow-y:auto">'
+        + result.errors.join('<br>') + '</div>';
+    }
+    html += '</div>';
+    resultEl.innerHTML = html;
+    toast('Synced ' + result.created + ' new + ' + result.updated + ' updated users', 'success');
+  } catch(e) {
+    resultEl.innerHTML = '<div style="padding:12px;background:var(--red-l, #fee2e2);border-radius:var(--radius-sm);font-size:13px;color:var(--red)">Sync failed: ' + esc(e.message) + '</div>';
+  }
+}
+window.syncEntraUsers = syncEntraUsers;

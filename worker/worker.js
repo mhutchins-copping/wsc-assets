@@ -160,6 +160,9 @@ async function route(request, env, url) {
   if (path === '/api/import/csv' && method === 'POST') return importCSV(request, env);
   if (path === '/api/export/csv' && method === 'GET') return exportCSV(env, url);
 
+  // Entra ID user sync
+  if (path === '/api/people/sync-entra' && method === 'POST') return syncEntraUsers(request, env);
+
   return null;
 }
 
@@ -1309,4 +1312,122 @@ async function handleImages(request, env, url) {
   }
 
   return json({ error: 'Method not allowed' }, 405);
+}
+
+// ─── Entra ID User Sync ──────────────────────────────
+
+async function syncEntraUsers(request, env) {
+  const data = await body(request);
+  const tenantId = data.tenant_id || env.ENTRA_TENANT_ID;
+  const clientId = data.client_id || env.ENTRA_CLIENT_ID;
+  const clientSecret = data.client_secret || env.ENTRA_CLIENT_SECRET;
+
+  if (!tenantId || !clientId || !clientSecret) {
+    return json({ error: 'Missing Entra config (tenant_id, client_id, client_secret)' }, 400);
+  }
+
+  // Get access token via client credentials flow
+  const tokenRes = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      scope: 'https://graph.microsoft.com/.default',
+      grant_type: 'client_credentials',
+    }),
+  });
+
+  if (!tokenRes.ok) {
+    const err = await tokenRes.json().catch(() => ({}));
+    return json({ error: 'Entra auth failed: ' + (err.error_description || err.error || tokenRes.statusText) }, 401);
+  }
+
+  const tokenData = await tokenRes.json();
+  const accessToken = tokenData.access_token;
+
+  // Fetch users from Microsoft Graph (paginated)
+  let allUsers = [];
+  let graphUrl = 'https://graph.microsoft.com/v1.0/users?$select=displayName,mail,userPrincipalName,jobTitle,department,mobilePhone,accountEnabled&$top=999';
+
+  while (graphUrl) {
+    const graphRes = await fetch(graphUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!graphRes.ok) {
+      const err = await graphRes.json().catch(() => ({}));
+      return json({ error: 'Graph API error: ' + (err.error?.message || graphRes.statusText) }, 502);
+    }
+
+    const graphData = await graphRes.json();
+    allUsers = allUsers.concat(graphData.value || []);
+    graphUrl = graphData['@odata.nextLink'] || null;
+  }
+
+  // Sync users into people table
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+  const errors = [];
+
+  for (const user of allUsers) {
+    const email = user.mail || user.userPrincipalName;
+    if (!email || !user.displayName) { skipped++; continue; }
+
+    // Skip service accounts, room mailboxes, etc.
+    if (email.startsWith('#') || email.includes('MailboxDiscovery') || user.displayName.startsWith('$')) {
+      skipped++;
+      continue;
+    }
+
+    try {
+      // Check if person already exists by email
+      const existing = await env.DB.prepare('SELECT id, name FROM people WHERE email = ?').bind(email).first();
+
+      if (existing) {
+        // Update existing person
+        await env.DB.prepare(`
+          UPDATE people SET name = ?, department = ?, position = ?, phone = ?, active = ?
+          WHERE id = ?
+        `).bind(
+          user.displayName,
+          user.department || null,
+          user.jobTitle || null,
+          user.mobilePhone || null,
+          user.accountEnabled ? 1 : 0,
+          existing.id
+        ).run();
+        updated++;
+      } else {
+        // Create new person
+        const personId = id();
+        await env.DB.prepare(`
+          INSERT INTO people (id, name, email, department, position, phone, active, notes, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          personId,
+          user.displayName,
+          email,
+          user.department || null,
+          user.jobTitle || null,
+          user.mobilePhone || null,
+          user.accountEnabled ? 1 : 0,
+          'Imported from Entra ID',
+          now()
+        ).run();
+        created++;
+      }
+    } catch (err) {
+      errors.push(`${user.displayName}: ${err.message}`);
+    }
+  }
+
+  return json({
+    total_fetched: allUsers.length,
+    created,
+    updated,
+    skipped,
+    errors: errors.slice(0, 20),
+  });
 }
