@@ -562,6 +562,32 @@ async function renderAssetForm(editId) {
   html += '<div class="form-group"><label class="form-label">Notes</label>'
     + '<textarea id="af-notes" class="form-textarea" placeholder="Optional notes">' + esc(asset ? asset.notes || '' : '') + '</textarea></div>';
 
+  // Hardware Specs (collapsible)
+  var hasSpecs = asset && (asset.hostname || asset.os || asset.cpu || asset.ram_gb || asset.disk_gb || asset.mac_address);
+  html += '<details' + (hasSpecs ? ' open' : '') + ' style="margin-bottom:16px">'
+    + '<summary style="cursor:pointer;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text2);margin-bottom:12px">Hardware Specs</summary>'
+    + '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">Hostname</label>'
+    + '<input type="text" id="af-hostname" class="form-input" value="' + esc(asset ? asset.hostname : '') + '" placeholder="e.g. WALG-PC138"></div>'
+    + '<div class="form-group"><label class="form-label">Operating System</label>'
+    + '<input type="text" id="af-os" class="form-input" value="' + esc(asset ? asset.os : '') + '" placeholder="e.g. Windows 11 Business"></div></div>'
+    + '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">CPU</label>'
+    + '<input type="text" id="af-cpu" class="form-input" value="' + esc(asset ? asset.cpu : '') + '" placeholder="e.g. Intel Core Ultra 7 155U"></div>'
+    + '<div class="form-group"><label class="form-label">RAM (GB)</label>'
+    + '<input type="number" id="af-ram" class="form-input" value="' + (asset && asset.ram_gb ? asset.ram_gb : '') + '" placeholder="16"></div></div>'
+    + '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">Disk (GB)</label>'
+    + '<input type="number" id="af-disk" class="form-input" value="' + (asset && asset.disk_gb ? asset.disk_gb : '') + '" placeholder="512"></div>'
+    + '<div class="form-group"><label class="form-label">MAC Address</label>'
+    + '<input type="text" id="af-mac" class="form-input" value="' + esc(asset ? asset.mac_address : '') + '" placeholder="00:24:9B:81:75:52"></div></div>'
+    + '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">IP Address</label>'
+    + '<input type="text" id="af-ip" class="form-input" value="' + esc(asset ? asset.ip_address : '') + '" placeholder="192.168.1.100"></div>'
+    + '<div class="form-group"><label class="form-label">Enrolled User</label>'
+    + '<input type="text" id="af-enrolled-user" class="form-input" value="' + esc(asset ? asset.enrolled_user : '') + '" placeholder="DOMAIN\\username"></div></div>'
+    + '</details>';
+
   // Image
   html += '<div class="form-group"><label class="form-label">Photo</label>'
     + '<input type="file" id="af-image" class="form-input" accept="image/*" style="padding:8px">'
@@ -657,7 +683,15 @@ async function saveAsset(editId) {
     warranty_expiry: document.getElementById('af-wexpiry').value || null,
     location_id: document.getElementById('af-location').value || null,
     assigned_to: document.getElementById('af-assign').value || null,
-    notes: document.getElementById('af-notes').value.trim() || null
+    notes: document.getElementById('af-notes').value.trim() || null,
+    hostname: document.getElementById('af-hostname').value.trim() || null,
+    os: document.getElementById('af-os').value.trim() || null,
+    cpu: document.getElementById('af-cpu').value.trim() || null,
+    ram_gb: parseInt(document.getElementById('af-ram').value) || null,
+    disk_gb: parseInt(document.getElementById('af-disk').value) || null,
+    mac_address: document.getElementById('af-mac').value.trim() || null,
+    ip_address: document.getElementById('af-ip').value.trim() || null,
+    enrolled_user: document.getElementById('af-enrolled-user').value.trim() || null
   };
 
   // Handle image upload
