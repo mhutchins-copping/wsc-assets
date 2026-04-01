@@ -97,6 +97,9 @@ async function route(request, env, url) {
   if (path.match(/^\/api\/assets\/([^/]+)$/) && method === 'DELETE') {
     return deleteAsset(env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
   }
+  if (path.match(/^\/api\/assets\/([^/]+)\/purge$/) && method === 'DELETE') {
+    return purgeAsset(env, path.match(/^\/api\/assets\/([^/]+)\/purge$/)[1]);
+  }
 
   // People
   if (path === '/api/people' && method === 'GET') return listPeople(request, env, url);
@@ -419,6 +422,18 @@ async function deleteAsset(env, assetId) {
   await env.DB.prepare("UPDATE assets SET status = 'disposed', updated_at = ? WHERE id = ?").bind(now(), assetId).run();
 
   await logActivity(env, { asset_id: assetId, action: 'dispose', details: `Disposed asset ${existing.asset_tag}` });
+
+  return json({ ok: true });
+}
+
+async function purgeAsset(env, assetId) {
+  const existing = await env.DB.prepare('SELECT * FROM assets WHERE id = ?').bind(assetId).first();
+  if (!existing) return json({ error: 'Asset not found' }, 404);
+
+  await env.DB.prepare('DELETE FROM activity_log WHERE asset_id = ?').bind(assetId).run();
+  await env.DB.prepare('DELETE FROM maintenance_log WHERE asset_id = ?').bind(assetId).run();
+  await env.DB.prepare('DELETE FROM audit_items WHERE asset_id = ?').bind(assetId).run();
+  await env.DB.prepare('DELETE FROM assets WHERE id = ?').bind(assetId).run();
 
   return json({ ok: true });
 }

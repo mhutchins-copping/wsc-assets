@@ -228,6 +228,7 @@ async function renderAssetDetail(id) {
       + '<button class="btn sm" onclick="openMaintenanceForm(\'' + esc(asset.id) + '\')">+ Maintenance</button>'
       + '<button class="btn sm" onclick="printAssetLabel(\'' + esc(asset.id) + '\')">Print Label</button>'
       + '<button class="btn danger sm" onclick="retireAsset(\'' + esc(asset.id) + '\')">Retire</button>'
+      + '<button class="btn danger sm" onclick="permanentDeleteAsset(\'' + esc(asset.id) + '\')">Delete</button>'
       + '</div></div>';
 
     // Info grid
@@ -404,6 +405,17 @@ async function retireAsset(assetId) {
   } catch(e) { /* toasted */ }
 }
 window.retireAsset = retireAsset;
+
+async function permanentDeleteAsset(assetId) {
+  var ok = await confirmDialog('Permanently delete this asset? This cannot be undone.', 'Delete Forever');
+  if (!ok) return;
+  try {
+    await API.purgeAsset(assetId);
+    toast('Asset permanently deleted', 'success');
+    navigate('#/assets');
+  } catch(e) { /* toasted */ }
+}
+window.permanentDeleteAsset = permanentDeleteAsset;
 
 function printAssetLabel(assetId) {
   // Open a print-friendly window with QR + info

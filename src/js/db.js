@@ -61,6 +61,7 @@ var API = {
   createAsset: function(data) { return this.fetch('/api/assets', { method: 'POST', body: data }); },
   updateAsset: function(id, data) { return this.fetch('/api/assets/' + id, { method: 'PUT', body: data }); },
   deleteAsset: function(id) { return this.fetch('/api/assets/' + id, { method: 'DELETE' }); },
+  purgeAsset: function(id) { return this.fetch('/api/assets/' + id + '/purge', { method: 'DELETE' }); },
   checkoutAsset: function(id, data) { return this.fetch('/api/assets/' + id + '/checkout', { method: 'POST', body: data }); },
   checkinAsset: function(id, data) { return this.fetch('/api/assets/' + id + '/checkin', { method: 'POST', body: data }); },
   addMaintenance: function(id, data) { return this.fetch('/api/assets/' + id + '/maintenance', { method: 'POST', body: data }); },
