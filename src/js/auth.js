@@ -1,104 +1,113 @@
 // ─── Authentication ────────────────────────────
-// PBKDF2 password hashing, session management
-// Abstracted for easy swap to Entra ID later
+// SSO identity (Cloudflare Access) mapped to internal app users
+// No separate password — SSO handles authentication,
+// internal user record handles authorisation
 
 var Auth = {
   isLoggedIn: false,
+  user: null, // { id, email, display_name, role }
 
-  init: function() {
-    var hash = localStorage.getItem('wsc_pw_hash');
-    if (!hash) {
-      // First-time setup
-      document.getElementById('login-setup').style.display = 'block';
-      document.getElementById('login-form').style.display = 'none';
-    } else {
-      document.getElementById('login-setup').style.display = 'none';
-      document.getElementById('login-form').style.display = 'block';
+  init: async function() {
+    // Check for cached user
+    var cached = sessionStorage.getItem('wsc_user');
+    if (cached) {
+      try {
+        this.user = JSON.parse(cached);
+        this.isLoggedIn = true;
+        showApp();
+        return;
+      } catch(e) { sessionStorage.removeItem('wsc_user'); }
     }
 
-    // Check if session is still valid
-    if (sessionStorage.getItem('wsc_session') === 'active') {
+    // Get SSO email from Cloudflare Access
+    var email = await this.getSSOEmail();
+    if (!email) {
+      this.showDenied('SSO identity not found. Make sure you are accessing this site through Cloudflare Access.');
+      return;
+    }
+
+    // Look up internal user by SSO email
+    try {
+      var res = await fetch(API.baseUrl + '/api/auth/identify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email })
+      });
+      var data = await res.json();
+
+      if (data.needs_migration) {
+        this.showDenied('Database migration needed. Contact IT administrator.');
+        return;
+      }
+
+      if (!data.authorized) {
+        this.showDenied(data.error || 'You do not have access to this application. Contact your IT administrator to request access.');
+        return;
+      }
+
+      // Authorised — log in
+      this.user = data.user;
       this.isLoggedIn = true;
+      sessionStorage.setItem('wsc_user', JSON.stringify(data.user));
       showApp();
+
+    } catch(e) {
+      this.showDenied('Cannot connect to API: ' + e.message);
     }
   },
 
-  hashPassword: async function(password, salt) {
-    var enc = new TextEncoder();
-    var keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
-    var bits = await crypto.subtle.deriveBits(
-      { name: 'PBKDF2', salt: enc.encode(salt), iterations: 100000, hash: 'SHA-256' },
-      keyMaterial, 256
-    );
-    return Array.from(new Uint8Array(bits)).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
-  },
+  getSSOEmail: async function() {
+    // Cloudflare Access sets user identity in a JWT cookie (CF_Authorization)
+    // We can get the email from the /cdn-cgi/access/get-identity endpoint
+    try {
+      var res = await fetch('/cdn-cgi/access/get-identity');
+      if (res.ok) {
+        var identity = await res.json();
+        return identity.email || null;
+      }
+    } catch(e) { /* not behind Access */ }
 
-  setup: async function(password) {
-    var salt = crypto.getRandomValues(new Uint8Array(16));
-    var saltHex = Array.from(salt).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
-    var hash = await this.hashPassword(password, saltHex);
-    localStorage.setItem('wsc_pw_salt', saltHex);
-    localStorage.setItem('wsc_pw_hash', hash);
-    this.login();
-  },
-
-  verify: async function(password) {
-    var salt = localStorage.getItem('wsc_pw_salt');
-    var stored = localStorage.getItem('wsc_pw_hash');
-    var hash = await this.hashPassword(password, salt);
-    return hash === stored;
-  },
-
-  login: function() {
-    this.isLoggedIn = true;
-    sessionStorage.setItem('wsc_session', 'active');
-    showApp();
-    toast('Signed in', 'success');
+    // Fallback: check if email was passed via header (for development)
+    return null;
   },
 
   logout: function() {
     this.isLoggedIn = false;
-    sessionStorage.removeItem('wsc_session');
-    document.getElementById('app').style.display = 'none';
+    this.user = null;
+    sessionStorage.removeItem('wsc_user');
+    // Redirect to Cloudflare Access logout
+    window.location.href = '/cdn-cgi/access/logout';
+  },
+
+  showDenied: function(message) {
     document.getElementById('login-screen').style.display = 'flex';
-    document.getElementById('login-form').style.display = 'block';
+    document.getElementById('app').style.display = 'none';
     document.getElementById('login-setup').style.display = 'none';
-    document.getElementById('login-pw').value = '';
-    document.getElementById('login-pw').focus();
+    document.getElementById('login-form').style.display = 'none';
+    document.getElementById('login-denied').style.display = 'block';
+    document.getElementById('login-denied-msg').textContent = message;
+  },
+
+  isAdmin: function() {
+    return this.user && this.user.role === 'admin';
+  },
+
+  getEmail: function() {
+    return this.user ? this.user.email : '';
   }
 };
 
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
-  // Trigger initial route
+  // Update sidebar with user info
+  var footer = document.querySelector('.sidebar-footer-text');
+  if (footer && Auth.user) {
+    footer.textContent = Auth.user.display_name + ' \u00b7 ' + Auth.user.role;
+  }
   if (typeof Router !== 'undefined') Router.handleRoute();
 }
 window.showApp = showApp;
-
-async function setupAccount() {
-  var pw = document.getElementById('setup-pw').value;
-  var pw2 = document.getElementById('setup-pw2').value;
-  if (!pw) { toast('Enter a password', 'error'); return; }
-  if (pw.length < 4) { toast('Password too short', 'error'); return; }
-  if (pw !== pw2) { toast('Passwords don\'t match', 'error'); return; }
-  await Auth.setup(pw);
-}
-window.setupAccount = setupAccount;
-
-async function doLogin() {
-  var pw = document.getElementById('login-pw').value;
-  if (!pw) { toast('Enter your password', 'error'); return; }
-  var ok = await Auth.verify(pw);
-  if (ok) {
-    Auth.login();
-  } else {
-    toast('Wrong password', 'error');
-    document.getElementById('login-pw').value = '';
-    document.getElementById('login-pw').focus();
-  }
-}
-window.doLogin = doLogin;
 
 function logout() { Auth.logout(); }
 window.logout = logout;

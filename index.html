@@ -23,31 +23,28 @@
         </div>
       </div>
 
-      <!-- Setup mode (first time) -->
-      <div id="login-setup" style="display:none">
-        <p class="login-hint">First time? Create a password to get started.</p>
-        <div class="form-group">
-          <label class="form-label">Create Password</label>
-          <input type="password" id="setup-pw" class="form-input" placeholder="Enter a password" onkeydown="if(event.key==='Enter')setupAccount()">
+      <!-- Hidden: kept for compatibility -->
+      <div id="login-setup" style="display:none"></div>
+      <div id="login-form" style="display:none"></div>
+
+      <!-- Access denied -->
+      <div id="login-denied" style="display:none">
+        <div style="text-align:center;padding:20px 0">
+          <div style="font-size:32px;margin-bottom:12px">&#128274;</div>
+          <p id="login-denied-msg" style="color:var(--text2);font-size:14px;line-height:1.6;margin-bottom:20px">
+            You do not have access to this application.
+          </p>
+          <button class="btn" onclick="sessionStorage.clear();location.reload()">Try Again</button>
         </div>
-        <div class="form-group">
-          <label class="form-label">Confirm Password</label>
-          <input type="password" id="setup-pw2" class="form-input" placeholder="Confirm password" onkeydown="if(event.key==='Enter')setupAccount()">
-        </div>
-        <button class="btn primary full" onclick="setupAccount()">Create Account</button>
       </div>
 
-      <!-- Login mode -->
-      <div id="login-form" style="display:none">
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <input type="password" id="login-pw" class="form-input" placeholder="Enter your password" onkeydown="if(event.key==='Enter')doLogin()">
-        </div>
-        <button class="btn primary full" onclick="doLogin()">Sign In</button>
+      <!-- Loading -->
+      <div id="login-loading">
+        <p class="login-hint" style="text-align:center">Authenticating via SSO...</p>
       </div>
 
       <div class="login-footer">
-        Secured with PBKDF2 &middot; All data stored locally + Cloudflare
+        Cloudflare Access SSO &middot; Walgett Shire Council
       </div>
     </div>
   </div>

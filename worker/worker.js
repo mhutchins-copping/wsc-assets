@@ -1,5 +1,5 @@
 // WSC IT Asset Management System — Cloudflare Worker API
-// All endpoints require X-Api-Key header (except CORS preflight)
+// Auth: SSO email identity (Cloudflare Access) mapped to internal users, or API key
 
 export default {
   async fetch(request, env) {
@@ -8,11 +8,28 @@ export default {
     // CORS preflight
     if (request.method === 'OPTIONS') return corsResponse();
 
-    // Auth check for all /api/* routes
+    // Auth identity endpoint — checks SSO email against internal users (no prior auth needed)
+    if (url.pathname === '/api/auth/identify' && request.method === 'POST') {
+      try { return await authIdentify(request, env); }
+      catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // User management routes (admin only, checked inside each handler)
+    if (url.pathname.startsWith('/api/auth/users')) {
+      try {
+        const res = await routeUserManagement(request, env, url);
+        if (res) return res;
+      } catch (err) { return json({ error: err.message }, 500); }
+      return json({ error: 'Not found' }, 404);
+    }
+
+    // Auth check for all other /api/* routes
     if (url.pathname.startsWith('/api/')) {
-      if (!authenticate(request, env)) {
+      const user = await authenticate(request, env);
+      if (!user) {
         return json({ error: 'Unauthorized' }, 401);
       }
+      request._user = user;
     }
 
     // Image upload/serve via R2
@@ -34,18 +51,125 @@ export default {
 };
 
 // ─── Auth ──────────────────────────────────────────────
-// Abstracted into a single function for easy swap to Entra ID later
+// Two auth paths:
+// 1. SSO email → internal user lookup (browser via Cloudflare Access)
+// 2. API key (scripts/external access)
 
-function authenticate(request, env) {
-  // API key auth (for scripts/external access)
+async function authenticate(request, env) {
+  // 1. SSO identity header from frontend (email passed after Cloudflare Access)
+  const ssoEmail = request.headers.get('X-SSO-Email');
+  if (ssoEmail) {
+    try {
+      const user = await env.DB.prepare(
+        'SELECT id, email, display_name, role FROM users WHERE email = ? AND active = 1'
+      ).bind(ssoEmail.toLowerCase()).first();
+      if (user) return user;
+    } catch (e) { /* users table may not exist yet */ }
+  }
+
+  // 2. API key auth (for scripts/external access)
   const key = request.headers.get('X-Api-Key');
-  if (key && key === env.API_KEY) return true;
+  if (key && key === env.API_KEY) return { email: 'api', display_name: 'API', role: 'admin' };
 
-  // Origin-based auth (browser requests from the frontend, protected by Cloudflare Access)
-  const origin = request.headers.get('Origin');
-  if (origin && env.CORS_ORIGIN && origin === env.CORS_ORIGIN) return true;
+  return null;
+}
 
-  return false;
+// ─── Auth Identity (SSO email → internal user lookup) ──
+
+async function authIdentify(request, env) {
+  const data = await body(request);
+  const email = (data.email || '').toLowerCase().trim();
+
+  if (!email) return json({ error: 'Email required' }, 400);
+
+  try {
+    const user = await env.DB.prepare(
+      'SELECT id, email, display_name, role FROM users WHERE email = ? AND active = 1'
+    ).bind(email).first();
+
+    if (!user) {
+      return json({ authorized: false, error: 'No access. Contact your IT administrator.' }, 403);
+    }
+
+    // Update last login
+    await env.DB.prepare('UPDATE users SET last_login = datetime(\'now\') WHERE id = ?').bind(user.id).run();
+
+    return json({
+      authorized: true,
+      user: { id: user.id, email: user.email, display_name: user.display_name, role: user.role }
+    });
+  } catch (e) {
+    // Users table doesn't exist yet
+    return json({ authorized: false, error: 'Database needs migration. Run the users migration in D1 Console.', needs_migration: true }, 500);
+  }
+}
+
+// ─── User Management (admin only) ─────────────────────
+
+async function routeUserManagement(request, env, url) {
+  const method = request.method;
+  const path = url.pathname;
+
+  // All user management requires admin
+  const user = await authenticate(request, env);
+  if (!user || user.role !== 'admin') return json({ error: 'Admin access required' }, 403);
+
+  if (path === '/api/auth/users' && method === 'GET') return listUsers(env);
+  if (path === '/api/auth/users' && method === 'POST') return createUser(request, env);
+  if (path.match(/^\/api\/auth\/users\/([^/]+)$/) && method === 'PUT') {
+    return updateUser(request, env, path.match(/^\/api\/auth\/users\/([^/]+)$/)[1]);
+  }
+  if (path.match(/^\/api\/auth\/users\/([^/]+)$/) && method === 'DELETE') {
+    return deleteUser(request, env, path.match(/^\/api\/auth\/users\/([^/]+)$/)[1], user);
+  }
+  return null;
+}
+
+async function listUsers(env) {
+  const result = await env.DB.prepare(
+    'SELECT id, email, display_name, role, active, created_at, last_login FROM users ORDER BY created_at'
+  ).all();
+  return json({ data: result.results });
+}
+
+async function createUser(request, env) {
+  const data = await body(request);
+  if (!data.email) return json({ error: 'Email is required' }, 400);
+
+  const existing = await env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(data.email.toLowerCase()).first();
+  if (existing) return json({ error: 'User with this email already exists' }, 400);
+
+  const userId = id();
+  await env.DB.prepare(`
+    INSERT INTO users (id, email, display_name, role, active)
+    VALUES (?, ?, ?, ?, 1)
+  `).bind(userId, data.email.toLowerCase(), data.display_name || data.email, data.role || 'user').run();
+
+  return json({ id: userId }, 201);
+}
+
+async function updateUser(request, env, userId) {
+  const existing = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();
+  if (!existing) return json({ error: 'User not found' }, 404);
+
+  const data = await body(request);
+  await env.DB.prepare(`
+    UPDATE users SET display_name = ?, email = ?, role = ?, active = ? WHERE id = ?
+  `).bind(
+    data.display_name !== undefined ? data.display_name : existing.display_name,
+    data.email !== undefined ? data.email.toLowerCase() : existing.email,
+    data.role !== undefined ? data.role : existing.role,
+    data.active !== undefined ? data.active : existing.active,
+    userId
+  ).run();
+
+  return json({ ok: true });
+}
+
+async function deleteUser(request, env, userId, currentUser) {
+  if (currentUser.id === userId) return json({ error: 'Cannot delete your own account' }, 400);
+  await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
+  return json({ ok: true });
 }
 
 // ─── CORS ──────────────────────────────────────────────

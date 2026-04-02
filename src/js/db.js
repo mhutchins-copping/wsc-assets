@@ -25,7 +25,13 @@ var API = {
     opts = opts || {};
     var url = this.baseUrl + path;
     var headers = {};
-    if (this.apiKey) headers['X-Api-Key'] = this.apiKey;
+    // Send SSO email for identity-based auth, or API key for scripts
+    var email = Auth && Auth.getEmail ? Auth.getEmail() : '';
+    if (email) {
+      headers['X-SSO-Email'] = email;
+    } else if (this.apiKey) {
+      headers['X-Api-Key'] = this.apiKey;
+    }
 
     if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
       headers['Content-Type'] = 'application/json';

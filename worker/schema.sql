@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS activity_log (
   asset_id TEXT REFERENCES assets(id),
   action TEXT NOT NULL,
   details TEXT,
-  performed_by TEXT DEFAULT 'Matt',
+  performed_by TEXT,
   person_id TEXT REFERENCES people(id),
   location_id TEXT REFERENCES locations(id),
   created_at TEXT DEFAULT (datetime('now'))
@@ -121,6 +121,16 @@ CREATE TABLE IF NOT EXISTS software_licenses (
   cost REAL,
   notes TEXT,
   created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  email TEXT UNIQUE NOT NULL,
+  display_name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'user',
+  active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  last_login TEXT
 );
 
 -- Indexes for common queries

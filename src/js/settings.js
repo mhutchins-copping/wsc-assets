@@ -119,13 +119,25 @@ Router.register('/settings', function() {
     + '<div id="entra-sync-result" style="margin-top:12px"></div>'
     + '</div></div>'
 
-    // Security
-    + '<div class="card" style="margin-bottom:20px">'
-    + '<div class="card-header"><span class="card-title">Security</span></div>'
+    // User Management (admin only)
+    + (Auth.isAdmin() ?
+    '<div class="card" style="margin-bottom:20px">'
+    + '<div class="card-header"><span class="card-title">User Management</span>'
+    + '<button class="btn sm primary" onclick="openAddUserModal()">+ Add User</button></div>'
     + '<div class="card-body">'
-    + '<div style="display:flex;gap:8px;align-items:center">'
-    + '<button class="btn" onclick="changePassword()">Change Password</button>'
-    + '<button class="btn danger" onclick="doLogout()">Sign Out</button>'
+    + '<div class="form-hint" style="margin-bottom:12px">Users are mapped from SSO (Cloudflare Access + Entra ID). Only users listed here can access the app after SSO login.</div>'
+    + '<div id="user-list-container">Loading users...</div>'
+    + '</div></div>' : '')
+
+    // Session
+    + '<div class="card" style="margin-bottom:20px">'
+    + '<div class="card-header"><span class="card-title">Session</span></div>'
+    + '<div class="card-body">'
+    + '<div style="display:flex;gap:12px;align-items:center">'
+    + '<div style="font-size:13px">Signed in as <strong>' + esc(Auth.user ? Auth.user.display_name : '') + '</strong>'
+    + ' <span style="font-family:var(--mono);font-size:11px;color:var(--text3)">(' + esc(Auth.user ? Auth.user.email : '') + ')</span>'
+    + ' &middot; Role: <strong>' + esc(Auth.user ? Auth.user.role : '') + '</strong></div>'
+    + '<button class="btn danger sm" onclick="doLogout()">Sign Out</button>'
     + '</div></div></div>'
 
     // About
@@ -138,6 +150,9 @@ Router.register('/settings', function() {
     + '<span style="font-family:var(--mono);font-size:11px;color:var(--text3)">Built with Vanilla JS + Vite &middot; Cloudflare Workers + D1 + R2 + Pages</span><br>'
     + '<span style="font-family:var(--mono);font-size:11px;color:var(--text3)">Domain: assets.it-wsc.com</span>'
     + '</div></div></div>';
+
+  // Load user list if admin
+  if (Auth.isAdmin()) setTimeout(loadUserList, 100);
 });
 
 // ─── API Settings ──────────────────────────────
@@ -329,35 +344,139 @@ function parseCSVLineLocal(line) {
   return result;
 }
 
-// ─── Security ──────────────────────────────────
-
-function changePassword() {
-  openModal('Change Password',
-    '<div class="form-group"><label class="form-label">Current Password</label><input type="password" id="cp-current" class="form-input"></div>'
-    + '<div class="form-group"><label class="form-label">New Password</label><input type="password" id="cp-new" class="form-input"></div>'
-    + '<div class="form-group"><label class="form-label">Confirm New Password</label><input type="password" id="cp-confirm" class="form-input"></div>'
-    + '<button class="btn primary full" onclick="doChangePassword()">Change Password</button>'
-  );
-}
-window.changePassword = changePassword;
-
-async function doChangePassword() {
-  var current = document.getElementById('cp-current').value;
-  var newPw = document.getElementById('cp-new').value;
-  var confirm = document.getElementById('cp-confirm').value;
-  if (!current) { toast('Enter current password', 'error'); return; }
-  if (!newPw || newPw.length < 4) { toast('New password too short', 'error'); return; }
-  if (newPw !== confirm) { toast('Passwords don\'t match', 'error'); return; }
-  var ok = await Auth.verify(current);
-  if (!ok) { toast('Wrong current password', 'error'); return; }
-  await Auth.setup(newPw);
-  closeModal();
-  toast('Password changed', 'success');
-}
-window.doChangePassword = doChangePassword;
+// ─── Session / User Management ────────────────
 
 function doLogout() { logout(); }
 window.doLogout = doLogout;
+
+// Load user list (admin only)
+async function loadUserList() {
+  var container = document.getElementById('user-list-container');
+  if (!container) return;
+
+  try {
+    var res = await API.fetch('/api/auth/users');
+    var users = res.data || [];
+
+    if (!users.length) {
+      container.innerHTML = '<div class="table-empty">No users configured</div>';
+      return;
+    }
+
+    var html = '<table class="table"><thead><tr>'
+      + '<th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th></th>'
+      + '</tr></thead><tbody>';
+
+    users.forEach(function(u) {
+      html += '<tr>'
+        + '<td>' + esc(u.display_name) + '</td>'
+        + '<td><span style="font-family:var(--mono);font-size:12px">' + esc(u.email) + '</span></td>'
+        + '<td>' + statusBadge(u.role) + '</td>'
+        + '<td>' + (u.active ? '<span style="color:var(--green)">Active</span>' : '<span style="color:var(--red)">Disabled</span>') + '</td>'
+        + '<td style="font-family:var(--mono);font-size:11px;color:var(--text3)">' + (u.last_login ? fmtDateTime(u.last_login) : 'Never') + '</td>'
+        + '<td style="text-align:right">'
+        + '<button class="btn sm" onclick="openEditUserModal(\'' + esc(u.id) + '\',\'' + esc(u.email) + '\',\'' + esc(u.display_name) + '\',\'' + esc(u.role) + '\',' + u.active + ')">Edit</button>'
+        + '</td></tr>';
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--red);font-size:13px">Failed to load users: ' + esc(e.message) + '</div>';
+  }
+}
+
+function openAddUserModal() {
+  openModal('Add User',
+    '<div class="form-hint" style="margin-bottom:12px">Add a user by their Entra email. They will be able to access the app after signing in through SSO.</div>'
+    + '<div class="form-group"><label class="form-label">Email</label>'
+    + '<input type="email" id="au-email" class="form-input" placeholder="user@walgett.nsw.gov.au"></div>'
+    + '<div class="form-group"><label class="form-label">Display Name</label>'
+    + '<input type="text" id="au-name" class="form-input" placeholder="Full name"></div>'
+    + '<div class="form-group"><label class="form-label">Role</label>'
+    + '<select id="au-role" class="form-select">'
+    + '<option value="user">User</option>'
+    + '<option value="admin">Admin</option>'
+    + '<option value="viewer">Viewer (read-only)</option>'
+    + '</select></div>'
+    + '<button class="btn primary full" onclick="doAddUser()">Add User</button>'
+  );
+}
+window.openAddUserModal = openAddUserModal;
+
+async function doAddUser() {
+  var email = document.getElementById('au-email').value.trim();
+  var name = document.getElementById('au-name').value.trim();
+  var role = document.getElementById('au-role').value;
+
+  if (!email) { toast('Email is required', 'error'); return; }
+
+  try {
+    await API.fetch('/api/auth/users', {
+      method: 'POST',
+      body: { email: email, display_name: name || email, role: role }
+    });
+    closeModal();
+    toast('User added', 'success');
+    loadUserList();
+  } catch(e) { /* toasted */ }
+}
+window.doAddUser = doAddUser;
+
+function openEditUserModal(id, email, name, role, active) {
+  openModal('Edit User',
+    '<div class="form-group"><label class="form-label">Email</label>'
+    + '<input type="email" id="eu-email" class="form-input" value="' + esc(email) + '"></div>'
+    + '<div class="form-group"><label class="form-label">Display Name</label>'
+    + '<input type="text" id="eu-name" class="form-input" value="' + esc(name) + '"></div>'
+    + '<div class="form-group"><label class="form-label">Role</label>'
+    + '<select id="eu-role" class="form-select">'
+    + '<option value="user"' + (role === 'user' ? ' selected' : '') + '>User</option>'
+    + '<option value="admin"' + (role === 'admin' ? ' selected' : '') + '>Admin</option>'
+    + '<option value="viewer"' + (role === 'viewer' ? ' selected' : '') + '>Viewer (read-only)</option>'
+    + '</select></div>'
+    + '<div class="form-group"><label class="form-label">Status</label>'
+    + '<select id="eu-active" class="form-select">'
+    + '<option value="1"' + (active ? ' selected' : '') + '>Active</option>'
+    + '<option value="0"' + (!active ? ' selected' : '') + '>Disabled</option>'
+    + '</select></div>'
+    + '<div style="display:flex;gap:8px">'
+    + '<button class="btn primary" onclick="doEditUser(\'' + esc(id) + '\')">Save</button>'
+    + '<button class="btn danger" onclick="doDeleteUser(\'' + esc(id) + '\')">Delete</button>'
+    + '</div>'
+  );
+}
+window.openEditUserModal = openEditUserModal;
+
+async function doEditUser(userId) {
+  try {
+    await API.fetch('/api/auth/users/' + userId, {
+      method: 'PUT',
+      body: {
+        email: document.getElementById('eu-email').value.trim(),
+        display_name: document.getElementById('eu-name').value.trim(),
+        role: document.getElementById('eu-role').value,
+        active: parseInt(document.getElementById('eu-active').value)
+      }
+    });
+    closeModal();
+    toast('User updated', 'success');
+    loadUserList();
+  } catch(e) { /* toasted */ }
+}
+window.doEditUser = doEditUser;
+
+async function doDeleteUser(userId) {
+  var ok = await confirmDialog('Permanently delete this user? They will lose access to the app.', 'Delete');
+  if (!ok) return;
+  try {
+    await API.fetch('/api/auth/users/' + userId, { method: 'DELETE' });
+    closeModal();
+    toast('User deleted', 'success');
+    loadUserList();
+  } catch(e) { /* toasted */ }
+}
+window.doDeleteUser = doDeleteUser;
 
 // ─── Device Enrollment ───────────────────────
 
