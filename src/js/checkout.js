@@ -5,15 +5,16 @@ async function openCheckout(assetId) {
   var people = [], locations = [];
   try {
     var pRes = await API.getPeople();
-    people = pRes.data || [];
+    people = (pRes.data || []).filter(function(p) { return p.active !== 0; });
     var lRes = await API.getLocations();
     locations = lRes.data || [];
   } catch(e) { /* proceed empty */ }
 
   var html = '<div class="form-group"><label class="form-label">Assign To</label>'
-    + '<select id="co-person" class="form-select"><option value="">Select person...</option>';
+    + '<input type="text" id="co-person-search" class="form-input" placeholder="Search people..." oninput="filterCheckoutPeople()" autocomplete="off" style="margin-bottom:4px">'
+    + '<select id="co-person" class="form-select" size="6" style="height:auto">';
   people.forEach(function(p) {
-    html += '<option value="' + esc(p.id) + '">' + esc(p.name) + (p.department ? ' (' + esc(p.department) + ')' : '') + '</option>';
+    html += '<option value="' + esc(p.id) + '">' + esc(p.name) + (p.department ? ' — ' + esc(p.department) : '') + (p.position ? ' (' + esc(p.position) + ')' : '') + '</option>';
   });
   html += '</select></div>';
 
@@ -35,8 +36,25 @@ async function openCheckout(assetId) {
   html += '<button class="btn primary full" onclick="doCheckout(\'' + esc(assetId) + '\')">Check Out</button>';
 
   openModal('Check Out Asset', html);
+
+  // Focus the search field
+  setTimeout(function() {
+    var s = document.getElementById('co-person-search');
+    if (s) s.focus();
+  }, 50);
 }
 window.openCheckout = openCheckout;
+
+function filterCheckoutPeople() {
+  var query = (document.getElementById('co-person-search').value || '').toLowerCase();
+  var sel = document.getElementById('co-person');
+  if (!sel) return;
+  for (var i = 0; i < sel.options.length; i++) {
+    var opt = sel.options[i];
+    opt.style.display = opt.text.toLowerCase().indexOf(query) !== -1 ? '' : 'none';
+  }
+}
+window.filterCheckoutPeople = filterCheckoutPeople;
 
 async function doCheckout(assetId) {
   var personId = document.getElementById('co-person').value;
@@ -58,9 +76,8 @@ window.doCheckout = doCheckout;
 async function openCheckin(assetId) {
   var html = '<div class="form-group"><label class="form-label">Condition</label>'
     + '<select id="ci-condition" class="form-select">'
-    + '<option value="good">Good</option>'
+    + '<option value="good">Good — ready for reuse</option>'
     + '<option value="damaged">Damaged — needs repair</option>'
-    + '<option value="needs_repair">Needs Repair</option>'
     + '</select>'
     + '<div class="form-hint">If damaged, asset will be set to Maintenance status</div></div>';
 

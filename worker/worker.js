@@ -37,8 +37,15 @@ export default {
 // Abstracted into a single function for easy swap to Entra ID later
 
 function authenticate(request, env) {
+  // API key auth (for scripts/external access)
   const key = request.headers.get('X-Api-Key');
-  return key && key === env.API_KEY;
+  if (key && key === env.API_KEY) return true;
+
+  // Origin-based auth (browser requests from the frontend, protected by Cloudflare Access)
+  const origin = request.headers.get('Origin');
+  if (origin && env.CORS_ORIGIN && origin === env.CORS_ORIGIN) return true;
+
+  return false;
 }
 
 // ─── CORS ──────────────────────────────────────────────

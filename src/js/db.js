@@ -2,12 +2,13 @@
 // Wraps all fetch calls to the Cloudflare Worker API
 
 var API = {
-  baseUrl: '',  // Set in settings — e.g. 'https://wsc-assets-api.matt-hc.workers.dev'
-  apiKey: '',   // Set after login
+  baseUrl: 'https://api.it-wsc.com',  // Hardcoded — no per-device config needed
+  apiKey: '',   // Optional — origin-based auth used when accessed via Cloudflare Access
 
   init: function() {
-    this.baseUrl = localStorage.getItem('wsc_api_url') || '';
-    this.apiKey = sessionStorage.getItem('wsc_api_key') || localStorage.getItem('wsc_api_key') || '';
+    // Allow override from localStorage (for dev/testing), otherwise use hardcoded default
+    this.baseUrl = localStorage.getItem('wsc_api_url') || this.baseUrl;
+    this.apiKey = localStorage.getItem('wsc_api_key') || '';
   },
 
   setUrl: function(url) {
@@ -23,7 +24,8 @@ var API = {
   fetch: async function(path, opts) {
     opts = opts || {};
     var url = this.baseUrl + path;
-    var headers = { 'X-Api-Key': this.apiKey };
+    var headers = {};
+    if (this.apiKey) headers['X-Api-Key'] = this.apiKey;
 
     if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
       headers['Content-Type'] = 'application/json';

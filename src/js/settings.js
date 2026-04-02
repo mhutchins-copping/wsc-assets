@@ -11,20 +11,28 @@ Router.register('/settings', function() {
   el.innerHTML =
     // API Configuration
     '<div class="card" style="margin-bottom:20px">'
-    + '<div class="card-header"><span class="card-title">API Configuration</span></div>'
+    + '<div class="card-header"><span class="card-title">API Connection</span></div>'
     + '<div class="card-body">'
+    + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'
+    + '<div style="font-size:13px"><strong>API:</strong> <span style="font-family:var(--mono);font-size:12px">' + esc(currentUrl) + '</span></div>'
+    + '<button class="btn sm" onclick="testApiConnection()">Test</button>'
+    + '</div>'
+    + '<div class="form-hint">Authentication is handled automatically via Cloudflare Access. API key is only needed for external script access.</div>'
+    + '<details style="margin-top:12px"><summary style="cursor:pointer;font-size:12px;color:var(--text3)">Advanced: Override API settings</summary>'
+    + '<div style="margin-top:8px">'
     + '<div class="form-group">'
-    + '<label class="form-label">Worker URL</label>'
-    + '<input type="text" id="settings-api-url" class="form-input" placeholder="https://wsc-assets-api.your-subdomain.workers.dev" value="' + esc(currentUrl) + '">'
-    + '<div class="form-hint">Your Cloudflare Worker endpoint</div></div>'
+    + '<label class="form-label">Worker URL Override</label>'
+    + '<input type="text" id="settings-api-url" class="form-input" placeholder="Default: https://api.it-wsc.com" value="' + (localStorage.getItem('wsc_api_url') ? esc(localStorage.getItem('wsc_api_url')) : '') + '">'
+    + '</div>'
     + '<div class="form-group">'
-    + '<label class="form-label">API Key</label>'
-    + '<input type="password" id="settings-api-key" class="form-input" placeholder="' + (hasKey ? 'Key saved — enter new to change' : 'Enter your API key') + '">'
-    + '<div class="form-hint">Set via: wrangler secret put API_KEY</div></div>'
+    + '<label class="form-label">API Key (for external scripts)</label>'
+    + '<input type="password" id="settings-api-key" class="form-input" placeholder="' + (hasKey ? 'Key saved' : 'Optional') + '">'
+    + '</div>'
     + '<div style="display:flex;gap:8px">'
-    + '<button class="btn primary" onclick="saveApiSettings()">Save</button>'
-    + '<button class="btn" onclick="testApiConnection()">Test Connection</button>'
-    + '</div></div></div>'
+    + '<button class="btn sm" onclick="saveApiSettings()">Save Override</button>'
+    + '<button class="btn sm" onclick="clearApiOverride()">Reset to Default</button>'
+    + '</div></div></details>'
+    + '</div></div>'
 
     // Asset Defaults
     + '<div class="card" style="margin-bottom:20px">'
@@ -143,8 +151,20 @@ function saveApiSettings() {
 }
 window.saveApiSettings = saveApiSettings;
 
+function clearApiOverride() {
+  localStorage.removeItem('wsc_api_url');
+  localStorage.removeItem('wsc_api_key');
+  API.baseUrl = 'https://api.it-wsc.com';
+  API.apiKey = '';
+  var urlInput = document.getElementById('settings-api-url');
+  var keyInput = document.getElementById('settings-api-key');
+  if (urlInput) urlInput.value = '';
+  if (keyInput) keyInput.value = '';
+  toast('Reset to default API settings', 'success');
+}
+window.clearApiOverride = clearApiOverride;
+
 async function testApiConnection() {
-  if (!API.baseUrl) { toast('Enter a Worker URL first', 'error'); return; }
   try {
     var result = await API.getStats();
     toast('Connected! ' + (result.total || 0) + ' assets in database', 'success');
@@ -408,7 +428,7 @@ window.copyEnrollScript = copyEnrollScript;
 async function enrollFromClipboard() {
   var jsonText = document.getElementById('enroll-json').value.trim();
   if (!jsonText) { toast('Paste the JSON from the PowerShell script first', 'error'); return; }
-  if (!API.baseUrl || !API.apiKey) { toast('Configure API settings first', 'error'); return; }
+  if (!API.baseUrl) { toast('API not configured', 'error'); return; }
 
   var resultEl = document.getElementById('enroll-result');
   var data;
@@ -474,8 +494,8 @@ async function syncEntraUsers() {
     return;
   }
 
-  if (!API.baseUrl || !API.apiKey) {
-    toast('Configure API settings first', 'error');
+  if (!API.baseUrl) {
+    toast('API not configured', 'error');
     return;
   }
 

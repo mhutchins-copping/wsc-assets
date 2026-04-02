@@ -52,7 +52,7 @@ function kpiCard(id, label, value, sub, accent) {
 }
 
 async function loadDashboardData() {
-  if (!API.baseUrl || !API.apiKey) {
+  if (!API.baseUrl) {
     var placeholder = '<div class="view-placeholder" style="padding:30px 0">'
       + '<div class="view-placeholder-sub">Configure API in Settings to see live data</div></div>';
     ['dash-activity', 'dash-warranty', 'dash-by-category', 'dash-by-location'].forEach(function(id) {

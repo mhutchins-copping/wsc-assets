@@ -383,7 +383,7 @@ function openMaintenanceForm(assetId) {
     + '</div>'
     + '<div class="form-row">'
     + '<div class="form-group"><label class="form-label">Performed By</label>'
-    + '<input type="text" id="maint-by" class="form-input" value="Matt" placeholder="Who did the work"></div>'
+    + '<input type="text" id="maint-by" class="form-input" placeholder="Who did the work"></div>'
     + '<div class="form-group"><label class="form-label">Next Due</label>'
     + '<input type="date" id="maint-next" class="form-input"></div>'
     + '</div>'
@@ -401,7 +401,7 @@ async function saveMaintenance(assetId) {
       description: desc,
       cost: parseFloat(document.getElementById('maint-cost').value) || null,
       date: document.getElementById('maint-date').value || undefined,
-      performed_by: document.getElementById('maint-by').value.trim() || 'Matt',
+      performed_by: document.getElementById('maint-by').value.trim() || null,
       next_due: document.getElementById('maint-next').value || null
     });
     closeModal();
