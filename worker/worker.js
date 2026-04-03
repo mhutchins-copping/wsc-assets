@@ -126,15 +126,44 @@ async function authIdentify(request, env) {
 }
 
 // ─── Master Key Auth (fallback for non-SSO access) ────
+// Rate-limited, audited break-glass admin access
+
+const MASTER_KEY_MAX_ATTEMPTS = 5;
+const MASTER_KEY_LOCKOUT_MINUTES = 15;
 
 async function authMasterKey(request, env) {
   const data = await body(request);
   const key = (data.key || '').trim();
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
 
   if (!key) return json({ error: 'Master key required' }, 400);
 
-  // Check against MASTER_KEY secret
+  // Check rate limit — block after too many failed attempts from same IP
+  try {
+    const recent = await env.DB.prepare(
+      `SELECT COUNT(*) as attempts FROM activity_log
+       WHERE action = 'master_key_failed' AND details LIKE ?
+       AND created_at > datetime(?, '-${MASTER_KEY_LOCKOUT_MINUTES} minutes')`
+    ).bind('%' + ip + '%', now()).first();
+
+    if (recent && recent.attempts >= MASTER_KEY_MAX_ATTEMPTS) {
+      await logActivity(env, {
+        action: 'master_key_blocked',
+        details: `Rate limited: ${ip} (${recent.attempts} failed attempts)`
+      });
+      return json({ authorized: false, error: 'Too many failed attempts. Try again later.' }, 429);
+    }
+  } catch (e) { /* activity_log may not exist yet, proceed */ }
+
+  // Validate key
   if (!env.MASTER_KEY || key !== env.MASTER_KEY) {
+    // Log failed attempt with IP
+    try {
+      await logActivity(env, {
+        action: 'master_key_failed',
+        details: `Failed master key attempt from ${ip}`
+      });
+    } catch (e) { /* best effort */ }
     return json({ authorized: false, error: 'Invalid master key' }, 401);
   }
 
@@ -150,6 +179,13 @@ async function authMasterKey(request, env) {
 
     // Update last login
     await env.DB.prepare("UPDATE users SET last_login = ? WHERE id = ?").bind(now(), admin.id).run();
+
+    // Log successful master key login with IP
+    await logActivity(env, {
+      action: 'master_key_login',
+      details: `Admin login via master key from ${ip}`,
+      performed_by: admin.display_name
+    });
 
     return json({
       authorized: true,

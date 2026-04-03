@@ -70,7 +70,7 @@ npx wrangler secret put MASTER_KEY     # For non-SSO admin login
 
 ### 3. Deploy
 
-Push to `master` — GitHub Actions handles the rest (deploys both Pages frontend and Worker API).
+Push to `main` — GitHub Actions handles the rest (deploys both Pages frontend and Worker API).
 
 Or manually:
 
@@ -126,6 +126,50 @@ Only SSO-authenticated users with a matching record in the `users` table can acc
 | POST | `/api/auth/master-key` | Master key login |
 
 All `/api/*` endpoints require authentication via `X-Api-Key` header or Cloudflare Access SSO identity.
+
+## Security Model
+
+### Authentication Layers
+
+This application uses **two independent authentication layers**:
+
+1. **Cloudflare Access (outer gate)** — All traffic to the frontend must pass through Cloudflare Access, which enforces Microsoft Entra ID SSO. Only authenticated users from the configured email domain can reach the application at all.
+
+2. **Internal user mapping (inner gate)** — After SSO authentication, the app checks the signed-in user's email against an internal `users` table. If no matching active record exists, access is denied. This means SSO alone is not sufficient — an admin must explicitly grant access to each user.
+
+### Role-Based Access
+
+| Role | Permissions |
+|------|-------------|
+| `admin` | Full access: manage assets, people, categories, audits, user accounts, and system settings |
+| `user` | Standard access: manage assets, people, checkout/checkin, run audits |
+| `viewer` | Read-only: view assets, people, and reports (future) |
+
+### API Authentication
+
+API requests are authenticated via one of (checked in order):
+
+1. `Cf-Access-Authenticated-User-Email` header — set automatically by Cloudflare Access (cannot be spoofed). The email is looked up in the internal users table.
+2. `X-Api-Key` header — for external scripts (e.g. device enrollment). Validated against the `API_KEY` Wrangler secret.
+3. `MASTER_KEY` — break-glass admin access (see below).
+
+### Master Key (Break-Glass Access)
+
+The `/api/auth/master-key` endpoint provides emergency admin access when SSO is unavailable (e.g. working from home without VPN, Entra outage). This is the highest-risk auth path and has the following protections:
+
+- **Rate limited** — 5 failed attempts per IP triggers a 15-minute lockout
+- **Audit logged** — Every attempt (successful or failed) is logged to the activity log with the source IP address
+- **Stored as Wrangler secret** — The key value is encrypted at rest and never exposed in the dashboard or codebase
+- **Admin-only** — A successful master key login resolves to the first active admin user, not a separate superuser account
+
+### Secrets
+
+| Secret | Purpose |
+|--------|---------|
+| `API_KEY` | Authenticates external script access (device enrollment, automation) |
+| `MASTER_KEY` | Break-glass admin login when SSO is unavailable |
+
+Both are set via `wrangler secret put` and stored encrypted in Cloudflare. They are never committed to the repository.
 
 ## License
 
