@@ -171,6 +171,6 @@ The `/api/auth/master-key` endpoint provides emergency admin access when SSO is 
 
 Both are set via `wrangler secret put` and stored encrypted in Cloudflare. They are never committed to the repository.
 
-## License
+## Screenshots
 
 Internal use — Walgett Shire Council.
