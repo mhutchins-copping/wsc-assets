@@ -11,7 +11,7 @@ import './js/dashboard.js';
 import './js/assets.js';
 import './js/checkout.js';
 import './js/people.js';
-import './js/locations.js';
+
 import './js/categories.js';
 import './js/audits.js';
 import './js/reports.js';

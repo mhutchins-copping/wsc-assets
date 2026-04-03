@@ -86,13 +86,6 @@ var API = {
   updatePerson: function(id, data) { return this.fetch('/api/people/' + id, { method: 'PUT', body: data }); },
   deletePerson: function(id) { return this.fetch('/api/people/' + id, { method: 'DELETE' }); },
 
-  // ─── Locations
-  getLocations: function() { return this.fetch('/api/locations'); },
-  getLocation: function(id) { return this.fetch('/api/locations/' + id); },
-  createLocation: function(data) { return this.fetch('/api/locations', { method: 'POST', body: data }); },
-  updateLocation: function(id, data) { return this.fetch('/api/locations/' + id, { method: 'PUT', body: data }); },
-  deleteLocation: function(id) { return this.fetch('/api/locations/' + id, { method: 'DELETE' }); },
-
   // ─── Categories
   getCategories: function() { return this.fetch('/api/categories'); },
   createCategory: function(data) { return this.fetch('/api/categories', { method: 'POST', body: data }); },

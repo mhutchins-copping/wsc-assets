@@ -1,13 +1,10 @@
 // ─── Step 6: Check Out / Check In ──────────────
 
 async function openCheckout(assetId) {
-  // Load people + locations for dropdowns
-  var people = [], locations = [];
+  var people = [];
   try {
     var pRes = await API.getPeople();
     people = (pRes.data || []).filter(function(p) { return p.active !== 0; });
-    var lRes = await API.getLocations();
-    locations = lRes.data || [];
   } catch(e) { /* proceed empty */ }
 
   var html = '<div class="form-group"><label class="form-label">Assign To</label>'
@@ -15,13 +12,6 @@ async function openCheckout(assetId) {
     + '<select id="co-person" class="form-select" size="6" style="height:auto">';
   people.forEach(function(p) {
     html += '<option value="' + esc(p.id) + '">' + esc(p.name) + (p.department ? ' — ' + esc(p.department) : '') + (p.position ? ' (' + esc(p.position) + ')' : '') + '</option>';
-  });
-  html += '</select></div>';
-
-  html += '<div class="form-group"><label class="form-label">Location</label>'
-    + '<select id="co-location" class="form-select"><option value="">Keep current location</option>';
-  locations.forEach(function(l) {
-    html += '<option value="' + esc(l.id) + '">' + esc(l.name) + '</option>';
   });
   html += '</select></div>';
 
@@ -37,7 +27,6 @@ async function openCheckout(assetId) {
 
   openModal('Check Out Asset', html);
 
-  // Focus the search field
   setTimeout(function() {
     var s = document.getElementById('co-person-search');
     if (s) s.focus();
@@ -63,7 +52,6 @@ async function doCheckout(assetId) {
   try {
     await API.checkoutAsset(assetId, {
       person_id: personId,
-      location_id: document.getElementById('co-location').value || undefined,
       notes: document.getElementById('co-notes').value.trim() || undefined
     });
     closeModal();

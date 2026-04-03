@@ -11,11 +11,9 @@ var assetState = {
 
 // Cache for dropdowns
 var _categories = null;
-var _locations = null;
 var _people = null;
 var _manufacturers = [];
 var _models = [];
-var _suppliers = [];
 
 Router.register('/assets', function(param) {
   if (param === 'new') {
@@ -125,12 +123,11 @@ async function loadAssets() {
     var result = await API.getAssets(params);
 
     // Collect autocomplete values
-    _manufacturers = []; _models = []; _suppliers = [];
-    var mfSet = {}, mdSet = {}, spSet = {};
+    _manufacturers = []; _models = [];
+    var mfSet = {}, mdSet = {};
     (result.data || []).forEach(function(a) {
       if (a.manufacturer && !mfSet[a.manufacturer]) { _manufacturers.push(a.manufacturer); mfSet[a.manufacturer] = 1; }
       if (a.model && !mdSet[a.model]) { _models.push(a.model); mdSet[a.model] = 1; }
-      if (a.supplier && !spSet[a.supplier]) { _suppliers.push(a.supplier); spSet[a.supplier] = 1; }
     });
 
     var columns = [
@@ -138,14 +135,7 @@ async function loadAssets() {
       { key: 'name', label: 'Name', sortable: true },
       { key: 'category_name', label: 'Category', sortable: true },
       { key: 'status', label: 'Status', render: function(r) { return statusBadge(r.status); } },
-      { key: 'assigned_to_name', label: 'Assigned To', sortable: true },
-      { key: 'location_name', label: 'Location', sortable: true },
-      { key: 'warranty_expiry', label: 'Warranty', render: function(r) {
-        if (!r.warranty_expiry) return '<span style="color:var(--text3)">—</span>';
-        var days = Math.ceil((new Date(r.warranty_expiry) - new Date()) / 86400000);
-        var color = days < 0 ? 'var(--red)' : days < 30 ? 'var(--amber)' : 'var(--text3)';
-        return '<span style="font-family:var(--mono);font-size:12px;color:' + color + '">' + fmtDate(r.warranty_expiry) + '</span>';
-      }}
+      { key: 'assigned_to_name', label: 'Assigned To', sortable: true }
     ];
 
     tableEl.innerHTML = renderTable({
@@ -202,13 +192,6 @@ async function renderAssetDetail(id) {
   try {
     var asset = await API.getAsset(id);
 
-    var warrantyHtml = '—';
-    if (asset.warranty_expiry) {
-      var days = Math.ceil((new Date(asset.warranty_expiry) - new Date()) / 86400000);
-      var wColor = days < 0 ? 'var(--red)' : days < 30 ? 'var(--amber)' : days < 90 ? 'var(--amber)' : 'var(--green)';
-      warrantyHtml = fmtDate(asset.warranty_expiry) + ' <span style="color:' + wColor + ';font-weight:600">(' + (days < 0 ? 'Expired' : days + 'd remaining') + ')</span>';
-    }
-
     var html = '<div style="margin-bottom:16px"><button class="btn sm" onclick="navigate(\'#/assets\')">&larr; Back to Assets</button></div>';
 
     html += '<div class="detail-header">'
@@ -240,10 +223,6 @@ async function renderAssetDetail(id) {
       + detailField('Model', asset.model)
       + detailField('Purchase Date', fmtDate(asset.purchase_date))
       + detailField('Purchase Cost', fmtCurrency(asset.purchase_cost))
-      + detailField('PO Number', asset.purchase_order)
-      + detailField('Supplier', asset.supplier)
-      + detailField('Warranty', warrantyHtml, true)
-      + detailField('Location', asset.location_name)
       + '</div></div></div>';
 
     // Right column: assignment + QR
@@ -524,32 +503,8 @@ async function renderAssetForm(editId) {
     + '<div class="form-group"><label class="form-label">Purchase Cost ($)</label>'
     + '<input type="number" id="af-pcost" class="form-input" step="0.01" value="' + (asset && asset.purchase_cost ? asset.purchase_cost : '') + '" placeholder="0.00"></div></div>';
 
-  // PO + Supplier
+  // Assign to
   html += '<div class="form-row">'
-    + '<div class="form-group"><label class="form-label">Purchase Order #</label>'
-    + '<input type="text" id="af-po" class="form-input" value="' + esc(asset ? asset.purchase_order : '') + '" placeholder="Authority PO number"></div>'
-    + '<div class="form-group"><label class="form-label">Supplier</label>'
-    + '<input type="text" id="af-supplier" class="form-input" list="dl-sup" value="' + esc(asset ? asset.supplier : '') + '" placeholder="e.g. Scorptec">'
-    + datalist('dl-sup', _suppliers) + '</div></div>';
-
-  // Warranty
-  html += '<div class="form-row">'
-    + '<div class="form-group"><label class="form-label">Warranty (months)</label>'
-    + '<input type="number" id="af-warranty" class="form-input" value="' + (asset && asset.warranty_months ? asset.warranty_months : '') + '" placeholder="36" oninput="calcWarrantyExpiry()">'
-    + '</div>'
-    + '<div class="form-group"><label class="form-label">Warranty Expiry</label>'
-    + '<input type="date" id="af-wexpiry" class="form-input" value="' + esc(asset ? asset.warranty_expiry || '' : '') + '" readonly>'
-    + '<div class="form-hint">Auto-calculated from purchase date + months</div></div></div>';
-
-  // Location + Assign to
-  html += '<div class="form-row">'
-    + '<div class="form-group"><label class="form-label">Location</label>'
-    + '<select id="af-location" class="form-select"><option value="">Select location...</option>';
-  (_locations || []).forEach(function(l) {
-    var sel = asset && asset.location_id === l.id ? ' selected' : '';
-    html += '<option value="' + esc(l.id) + '"' + sel + '>' + esc(l.name) + '</option>';
-  });
-  html += '</select></div>'
     + '<div class="form-group"><label class="form-label">Assign To</label>'
     + '<select id="af-assign" class="form-select"><option value="">Not assigned</option>';
   (_people || []).forEach(function(p) {
@@ -626,12 +581,10 @@ async function loadFormDropdowns() {
   try {
     var results = await Promise.all([
       _categories ? Promise.resolve({ data: _categories }) : API.getCategories(),
-      _locations ? Promise.resolve({ data: _locations }) : API.getLocations(),
       _people ? Promise.resolve({ data: _people }) : API.getPeople()
     ]);
     _categories = results[0].data;
-    _locations = results[1].data;
-    _people = results[2].data;
+    _people = results[1].data;
   } catch(e) { /* proceed with empty */ }
 }
 
@@ -651,17 +604,6 @@ async function onAssetCategoryChange() {
 }
 window.onAssetCategoryChange = onAssetCategoryChange;
 
-function calcWarrantyExpiry() {
-  var pdate = document.getElementById('af-pdate').value;
-  var months = parseInt(document.getElementById('af-warranty').value);
-  var expiryInput = document.getElementById('af-wexpiry');
-  if (pdate && months) {
-    var d = new Date(pdate);
-    d.setMonth(d.getMonth() + months);
-    expiryInput.value = d.toISOString().slice(0, 10);
-  }
-}
-window.calcWarrantyExpiry = calcWarrantyExpiry;
 
 async function saveAsset(editId) {
   var name = document.getElementById('af-name').value.trim();
@@ -677,11 +619,6 @@ async function saveAsset(editId) {
     status: document.getElementById('af-status').value,
     purchase_date: document.getElementById('af-pdate').value || null,
     purchase_cost: parseFloat(document.getElementById('af-pcost').value) || null,
-    purchase_order: document.getElementById('af-po').value.trim() || null,
-    supplier: document.getElementById('af-supplier').value.trim() || null,
-    warranty_months: parseInt(document.getElementById('af-warranty').value) || null,
-    warranty_expiry: document.getElementById('af-wexpiry').value || null,
-    location_id: document.getElementById('af-location').value || null,
     assigned_to: document.getElementById('af-assign').value || null,
     notes: document.getElementById('af-notes').value.trim() || null,
     hostname: document.getElementById('af-hostname').value.trim() || null,

@@ -81,7 +81,6 @@ async function loadPeople() {
       { key: 'email', label: 'Email', mono: true },
       { key: 'department', label: 'Department' },
       { key: 'position', label: 'Position' },
-      { key: 'location_name', label: 'Location' },
       { key: 'asset_count', label: 'Assets', mono: true, render: function(r) {
         var count = r.asset_count || 0;
         return count > 0 ? '<span style="font-weight:600;color:var(--accent)">' + count + '</span>' : '<span style="color:var(--text3)">0</span>';
@@ -124,7 +123,6 @@ async function renderPersonDetail(id) {
       + '<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--text2)">';
     if (person.position) html += '<span>' + esc(person.position) + '</span>';
     if (person.department) html += '<span>&middot; ' + esc(person.department) + '</span>';
-    if (person.location_name) html += '<span>&middot; ' + esc(person.location_name) + '</span>';
     html += '</div></div>'
       + '<div class="detail-header-actions">'
       + '<button class="btn sm" onclick="openPersonForm(\'' + esc(person.id) + '\')">Edit</button>'
@@ -138,7 +136,6 @@ async function renderPersonDetail(id) {
       + detailFieldP('Phone', person.phone)
       + detailFieldP('Department', person.department)
       + detailFieldP('Position', person.position)
-      + detailFieldP('Location', person.location_name)
       + detailFieldP('Status', person.active ? 'Active' : 'Inactive')
       + '</div></div></div>';
 
@@ -147,13 +144,12 @@ async function renderPersonDetail(id) {
 
     if (person.assets && person.assets.length) {
       html += '<div style="padding:0"><div class="table-wrap" style="border:none;border-radius:0"><table><thead><tr>'
-        + '<th>Tag</th><th>Name</th><th>Category</th><th>Location</th></tr></thead><tbody>';
+        + '<th>Tag</th><th>Name</th><th>Category</th></tr></thead><tbody>';
       person.assets.forEach(function(a) {
         html += '<tr style="cursor:pointer" onclick="navigate(\'#/assets/' + esc(a.id) + '\')">'
           + '<td class="mono">' + esc(a.asset_tag) + '</td>'
           + '<td>' + esc(a.name) + '</td>'
           + '<td>' + esc(a.category_name || '—') + '</td>'
-          + '<td>' + esc(a.location_name || '—') + '</td>'
           + '</tr>';
       });
       html += '</tbody></table></div></div>';
@@ -192,9 +188,6 @@ async function openPersonForm(editId) {
     } catch(e) { toast('Could not load person', 'error'); return; }
   }
 
-  var locations = [];
-  try { var r = await API.getLocations(); locations = r.data || []; } catch(e) {}
-
   var html = '<div class="form-group"><label class="form-label">Name</label>'
     + '<input type="text" id="pf-name" class="form-input" value="' + esc(person ? person.name : '') + '" placeholder="Full name"></div>';
 
@@ -215,13 +208,6 @@ async function openPersonForm(editId) {
     + '<div class="form-group"><label class="form-label">Position</label>'
     + '<input type="text" id="pf-position" class="form-input" value="' + esc(person ? person.position : '') + '" placeholder="e.g. Admin Officer"></div></div>';
 
-  html += '<div class="form-group"><label class="form-label">Location</label>'
-    + '<select id="pf-location" class="form-select"><option value="">Select...</option>';
-  locations.forEach(function(l) {
-    html += '<option value="' + esc(l.id) + '"' + (person && person.location_id === l.id ? ' selected' : '') + '>' + esc(l.name) + '</option>';
-  });
-  html += '</select></div>';
-
   html += '<div class="form-group"><label class="form-label">Notes</label>'
     + '<textarea id="pf-notes" class="form-textarea" placeholder="Optional notes">' + esc(person ? person.notes || '' : '') + '</textarea></div>';
 
@@ -241,7 +227,6 @@ async function savePerson(editId) {
     phone: document.getElementById('pf-phone').value.trim() || null,
     department: document.getElementById('pf-dept').value || null,
     position: document.getElementById('pf-position').value.trim() || null,
-    location_id: document.getElementById('pf-location').value || null,
     notes: document.getElementById('pf-notes').value.trim() || null
   };
 

@@ -6,7 +6,6 @@ Router.register('/settings', function() {
   var currentUrl = API.baseUrl || '';
   var hasKey = !!API.apiKey;
   var tagPrefix = localStorage.getItem('wsc_tag_prefix') || 'WSC';
-  var defaultWarranty = localStorage.getItem('wsc_default_warranty') || '36';
 
   el.innerHTML =
     // API Configuration
@@ -38,14 +37,9 @@ Router.register('/settings', function() {
     + '<div class="card" style="margin-bottom:20px">'
     + '<div class="card-header"><span class="card-title">Asset Defaults</span></div>'
     + '<div class="card-body">'
-    + '<div class="form-row">'
     + '<div class="form-group"><label class="form-label">Asset Tag Prefix</label>'
     + '<input type="text" id="settings-tag-prefix" class="form-input" value="' + esc(tagPrefix) + '" placeholder="WSC" maxlength="10">'
     + '<div class="form-hint">Prefix for auto-generated tags (e.g. WSC-L-0001)</div></div>'
-    + '<div class="form-group"><label class="form-label">Default Warranty (months)</label>'
-    + '<input type="number" id="settings-default-warranty" class="form-input" value="' + esc(defaultWarranty) + '" placeholder="36">'
-    + '<div class="form-hint">Pre-fills warranty field on new assets</div></div>'
-    + '</div>'
     + '<button class="btn" onclick="saveDefaults()">Save Defaults</button>'
     + '</div></div>'
 
@@ -57,7 +51,7 @@ Router.register('/settings', function() {
     // CSV Import
     + '<div style="margin-bottom:20px">'
     + '<label class="form-label">Import Assets from CSV</label>'
-    + '<div class="form-hint" style="margin-bottom:8px">Required columns: <code>name</code>. Optional: <code>asset_tag, serial_number, category, manufacturer, model, status, purchase_date, purchase_cost, supplier, warranty_months, location, assigned_to, notes</code></div>'
+    + '<div class="form-hint" style="margin-bottom:8px">Required columns: <code>name</code>. Optional: <code>asset_tag, serial_number, category, manufacturer, model, status, purchase_date, purchase_cost, assigned_to, notes</code></div>'
     + '<input type="file" id="csv-import-file" accept=".csv" class="form-input" style="padding:8px" onchange="previewCSV(this)">'
     + '<div id="csv-preview" style="margin-top:12px"></div>'
     + '<div id="csv-import-result" style="margin-top:12px"></div>'
@@ -191,9 +185,7 @@ window.testApiConnection = testApiConnection;
 
 function saveDefaults() {
   var prefix = document.getElementById('settings-tag-prefix').value.trim();
-  var warranty = document.getElementById('settings-default-warranty').value.trim();
   if (prefix) localStorage.setItem('wsc_tag_prefix', prefix);
-  if (warranty) localStorage.setItem('wsc_default_warranty', warranty);
   toast('Defaults saved', 'success');
 }
 window.saveDefaults = saveDefaults;
@@ -228,7 +220,7 @@ function previewCSV(input) {
     var mappingEl = document.getElementById('csv-mapping');
     mappingEl.style.display = 'block';
 
-    var knownFields = ['asset_tag', 'name', 'serial_number', 'category', 'manufacturer', 'model', 'status', 'purchase_date', 'purchase_cost', 'purchase_order', 'supplier', 'warranty_months', 'location', 'assigned_to', 'notes'];
+    var knownFields = ['asset_tag', 'name', 'serial_number', 'category', 'manufacturer', 'model', 'status', 'purchase_date', 'purchase_cost', 'assigned_to', 'notes'];
 
     var fieldsHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
     knownFields.forEach(function(field) {

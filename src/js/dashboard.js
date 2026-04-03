@@ -7,7 +7,6 @@ Router.register('/', function() {
   var quickActions = '<div style="display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap">'
     + '<button class="btn primary sm" onclick="navigate(\'#/assets/new\')">+ New Asset</button>'
     + '<button class="btn sm" onclick="navigate(\'#/people\')">Manage People</button>'
-    + '<button class="btn sm" onclick="navigate(\'#/locations\')">Locations</button>'
     + '</div>';
 
   // KPI row
@@ -25,21 +24,12 @@ Router.register('/', function() {
     + '<div class="card"><div class="card-header"><span class="card-title">Recent Activity</span>'
     + '<button class="btn sm" onclick="navigate(\'#/assets\')">View All</button></div>'
     + '<div class="card-body" id="dash-activity" style="max-height:400px;overflow-y:auto">' + skeleton(5) + '</div></div>'
-    // Warranty Alerts
-    + '<div class="card"><div class="card-header"><span class="card-title">Warranty Alerts</span>'
-    + '<span style="font-size:11px;font-family:var(--mono);color:var(--text3)">Next 90 days</span></div>'
-    + '<div class="card-body" id="dash-warranty" style="max-height:400px;overflow-y:auto">' + skeleton(5) + '</div></div>'
-    + '</div>';
-
-  // Second row: by category + by location
-  var grid2 = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px">'
+    // Assets by Category
     + '<div class="card"><div class="card-header"><span class="card-title">Assets by Category</span></div>'
     + '<div class="card-body" id="dash-by-category">' + skeleton(4) + '</div></div>'
-    + '<div class="card"><div class="card-header"><span class="card-title">Assets by Location</span></div>'
-    + '<div class="card-body" id="dash-by-location">' + skeleton(4) + '</div></div>'
     + '</div>';
 
-  el.innerHTML = quickActions + kpiRow + grid + grid2;
+  el.innerHTML = quickActions + kpiRow + grid;
 
   loadDashboardData();
 });
@@ -55,7 +45,7 @@ async function loadDashboardData() {
   if (!API.baseUrl) {
     var placeholder = '<div class="view-placeholder" style="padding:30px 0">'
       + '<div class="view-placeholder-sub">Configure API in Settings to see live data</div></div>';
-    ['dash-activity', 'dash-warranty', 'dash-by-category', 'dash-by-location'].forEach(function(id) {
+    ['dash-activity', 'dash-by-category'].forEach(function(id) {
       var e = document.getElementById(id);
       if (e) e.innerHTML = placeholder;
     });
@@ -95,24 +85,6 @@ async function loadDashboardData() {
       actEl.innerHTML = '<div class="table-empty" style="padding:20px 0">No recent activity</div>';
     }
 
-    // Warranty alerts
-    var wEl = document.getElementById('dash-warranty');
-    if (stats.warranty_alerts && stats.warranty_alerts.length) {
-      wEl.innerHTML = stats.warranty_alerts.map(function(w) {
-        var urgency = w.days_remaining <= 30 ? 'var(--red)' : (w.days_remaining <= 60 ? 'var(--amber)' : 'var(--text2)');
-        var bgColor = w.days_remaining <= 30 ? 'var(--red-l, #fee2e2)' : 'transparent';
-        return '<div style="display:flex;align-items:center;gap:12px;padding:10px 8px;border-bottom:1px solid var(--border);border-radius:6px;background:' + bgColor + '">'
-          + '<div style="flex:1;min-width:0">'
-          + '<div style="font-size:13px;font-weight:500;cursor:pointer" onclick="navigate(\'#/assets/' + esc(w.id) + '\')">' + esc(w.name) + '</div>'
-          + '<div style="font-size:11px;font-family:var(--mono);color:var(--text3)">' + esc(w.asset_tag) + ' &middot; expires ' + fmtDate(w.warranty_expiry) + '</div>'
-          + '</div>'
-          + '<div style="font-size:13px;font-weight:700;font-family:var(--mono);color:' + urgency + ';white-space:nowrap">' + w.days_remaining + 'd</div>'
-          + '</div>';
-      }).join('');
-    } else {
-      wEl.innerHTML = '<div class="table-empty" style="padding:20px 0">No warranties expiring soon</div>';
-    }
-
     // By Category — horizontal bars
     var catEl = document.getElementById('dash-by-category');
     if (stats.by_category && stats.by_category.length) {
@@ -130,25 +102,6 @@ async function loadDashboardData() {
       if (!catEl.innerHTML) catEl.innerHTML = '<div class="table-empty" style="padding:20px 0">No data</div>';
     } else {
       catEl.innerHTML = '<div class="table-empty" style="padding:20px 0">No data</div>';
-    }
-
-    // By Location — horizontal bars
-    var locEl = document.getElementById('dash-by-location');
-    if (stats.by_location && stats.by_location.length) {
-      var maxLoc = Math.max.apply(null, stats.by_location.map(function(l) { return l.count; })) || 1;
-      locEl.innerHTML = stats.by_location.filter(function(l) { return l.count > 0; }).map(function(l) {
-        var pct = Math.round((l.count / maxLoc) * 100);
-        return '<div style="margin-bottom:10px">'
-          + '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">'
-          + '<span>' + esc(l.name) + '</span>'
-          + '<span style="font-family:var(--mono);font-weight:600">' + l.count + '</span></div>'
-          + '<div style="height:6px;background:var(--surface3);border-radius:3px;overflow:hidden">'
-          + '<div style="height:100%;width:' + pct + '%;background:var(--green);border-radius:3px;transition:width 0.5s ease"></div>'
-          + '</div></div>';
-      }).join('');
-      if (!locEl.innerHTML) locEl.innerHTML = '<div class="table-empty" style="padding:20px 0">No data</div>';
-    } else {
-      locEl.innerHTML = '<div class="table-empty" style="padding:20px 0">No data</div>';
     }
 
   } catch(e) {
