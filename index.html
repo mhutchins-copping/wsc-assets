@@ -35,12 +35,31 @@
             You do not have access to this application.
           </p>
           <button class="btn" onclick="sessionStorage.clear();location.reload()">Try Again</button>
+          <div style="margin-top:12px">
+            <a href="#" onclick="Auth.showMasterKey();return false" style="color:var(--text3);font-size:12px;text-decoration:underline">Use master key instead</a>
+          </div>
         </div>
       </div>
 
       <!-- Loading -->
       <div id="login-loading">
         <p class="login-hint" style="text-align:center">Authenticating via SSO...</p>
+        <div style="margin-top:20px;text-align:center">
+          <a href="#" onclick="Auth.showMasterKey();return false" style="color:var(--text3);font-size:12px;text-decoration:underline">Use master key instead</a>
+        </div>
+      </div>
+
+      <!-- Master key login -->
+      <div id="login-master-key" style="display:none">
+        <div style="padding:8px 0">
+          <p style="color:var(--text2);font-size:13px;margin-bottom:16px">Enter master key to access without SSO:</p>
+          <input type="password" id="master-key-input" placeholder="Master key" class="form-input" style="width:100%;margin-bottom:12px" onkeydown="if(event.key==='Enter')Auth.loginWithMasterKey()">
+          <button class="btn btn-primary" onclick="Auth.loginWithMasterKey()" style="width:100%">Sign In</button>
+          <p id="master-key-error" style="color:var(--red);font-size:12px;margin-top:8px;display:none"></p>
+          <div style="margin-top:12px;text-align:center">
+            <a href="#" onclick="location.reload();return false" style="color:var(--text3);font-size:12px;text-decoration:underline">Back to SSO</a>
+          </div>
+        </div>
       </div>
 
       <div class="login-footer">

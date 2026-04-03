@@ -14,6 +14,12 @@ export default {
       catch (err) { return json({ error: err.message }, 500); }
     }
 
+    // Master key login — fallback when SSO is unavailable (e.g. from home)
+    if (url.pathname === '/api/auth/master-key' && request.method === 'POST') {
+      try { return await authMasterKey(request, env); }
+      catch (err) { return json({ error: err.message }, 500); }
+    }
+
     // User management routes (admin only, checked inside each handler)
     if (url.pathname.startsWith('/api/auth/users')) {
       try {
@@ -69,9 +75,22 @@ async function authenticate(request, env) {
     } catch (e) { /* users table may not exist yet */ }
   }
 
-  // 2. API key auth (for scripts/external access)
+  // 2. API key or master key auth
   const key = request.headers.get('X-Api-Key');
-  if (key && key === env.API_KEY) return { email: 'api', display_name: 'API', role: 'admin' };
+  if (key) {
+    // Check API key (for scripts)
+    if (env.API_KEY && key === env.API_KEY) return { email: 'api', display_name: 'API', role: 'admin' };
+    // Check master key (for non-SSO browser access)
+    if (env.MASTER_KEY && key === env.MASTER_KEY) {
+      try {
+        const admin = await env.DB.prepare(
+          "SELECT id, email, display_name, role FROM users WHERE role = 'admin' AND active = 1 ORDER BY created_at ASC LIMIT 1"
+        ).first();
+        if (admin) return admin;
+      } catch (e) { /* users table may not exist */ }
+      return { email: 'master', display_name: 'Admin (Master Key)', role: 'admin' };
+    }
+  }
 
   return null;
 }
@@ -103,6 +122,41 @@ async function authIdentify(request, env) {
   } catch (e) {
     // Users table doesn't exist yet
     return json({ authorized: false, error: 'Database needs migration. Run the users migration in D1 Console.', needs_migration: true }, 500);
+  }
+}
+
+// ─── Master Key Auth (fallback for non-SSO access) ────
+
+async function authMasterKey(request, env) {
+  const data = await body(request);
+  const key = (data.key || '').trim();
+
+  if (!key) return json({ error: 'Master key required' }, 400);
+
+  // Check against MASTER_KEY secret
+  if (!env.MASTER_KEY || key !== env.MASTER_KEY) {
+    return json({ authorized: false, error: 'Invalid master key' }, 401);
+  }
+
+  // Master key grants admin access — look up the admin user
+  try {
+    const admin = await env.DB.prepare(
+      "SELECT id, email, display_name, role FROM users WHERE role = 'admin' AND active = 1 ORDER BY created_at ASC LIMIT 1"
+    ).first();
+
+    if (!admin) {
+      return json({ authorized: false, error: 'No admin user found in database' }, 500);
+    }
+
+    // Update last login
+    await env.DB.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").bind(admin.id).run();
+
+    return json({
+      authorized: true,
+      user: { id: admin.id, email: admin.email, display_name: admin.display_name, role: admin.role }
+    });
+  } catch (e) {
+    return json({ authorized: false, error: 'Database error: ' + e.message }, 500);
   }
 }
 

@@ -13,6 +13,7 @@ var Auth = {
     if (cached) {
       try {
         this.user = JSON.parse(cached);
+        this._masterKey = sessionStorage.getItem('wsc_master_key') || '';
         this.isLoggedIn = true;
         showApp();
         return;
@@ -72,11 +73,17 @@ var Auth = {
   },
 
   logout: function() {
+    var wasMasterKey = !!this._masterKey;
     this.isLoggedIn = false;
     this.user = null;
+    this._masterKey = '';
     sessionStorage.removeItem('wsc_user');
-    // Redirect to Cloudflare Access logout
-    window.location.href = '/cdn-cgi/access/logout';
+    sessionStorage.removeItem('wsc_master_key');
+    if (wasMasterKey) {
+      location.reload();
+    } else {
+      window.location.href = '/cdn-cgi/access/logout';
+    }
   },
 
   showDenied: function(message) {
@@ -86,6 +93,50 @@ var Auth = {
     document.getElementById('login-form').style.display = 'none';
     document.getElementById('login-denied').style.display = 'block';
     document.getElementById('login-denied-msg').textContent = message;
+  },
+
+  showMasterKey: function() {
+    document.getElementById('login-loading').style.display = 'none';
+    document.getElementById('login-denied').style.display = 'none';
+    document.getElementById('login-master-key').style.display = 'block';
+    document.getElementById('master-key-input').focus();
+  },
+
+  loginWithMasterKey: async function() {
+    var key = document.getElementById('master-key-input').value.trim();
+    var errEl = document.getElementById('master-key-error');
+    errEl.style.display = 'none';
+
+    if (!key) {
+      errEl.textContent = 'Enter your master key';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    try {
+      var res = await fetch(API.baseUrl + '/api/auth/master-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: key })
+      });
+      var data = await res.json();
+
+      if (!data.authorized) {
+        errEl.textContent = data.error || 'Invalid master key';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      this.user = data.user;
+      this.isLoggedIn = true;
+      this._masterKey = key;
+      sessionStorage.setItem('wsc_user', JSON.stringify(data.user));
+      sessionStorage.setItem('wsc_master_key', key);
+      showApp();
+    } catch(e) {
+      errEl.textContent = 'Connection failed: ' + e.message;
+      errEl.style.display = 'block';
+    }
   },
 
   isAdmin: function() {

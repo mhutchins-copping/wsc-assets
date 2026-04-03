@@ -25,9 +25,13 @@ var API = {
     opts = opts || {};
     var url = this.baseUrl + path;
     var headers = {};
-    // Send SSO email for identity-based auth, or API key for scripts
+    // Auth: SSO email header, master key, or API key
     var email = Auth && Auth.getEmail ? Auth.getEmail() : '';
-    if (email) {
+    var masterKey = Auth && Auth._masterKey ? Auth._masterKey : '';
+    if (masterKey) {
+      // Master key auth — send as API key since worker validates it the same way
+      headers['X-Api-Key'] = masterKey;
+    } else if (email) {
       headers['X-SSO-Email'] = email;
     } else if (this.apiKey) {
       headers['X-Api-Key'] = this.apiKey;
