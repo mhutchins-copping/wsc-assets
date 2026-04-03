@@ -113,7 +113,7 @@ async function authIdentify(request, env) {
     }
 
     // Update last login
-    await env.DB.prepare('UPDATE users SET last_login = datetime(\'now\') WHERE id = ?').bind(user.id).run();
+    await env.DB.prepare('UPDATE users SET last_login = ? WHERE id = ?').bind(now(), user.id).run();
 
     return json({
       authorized: true,
@@ -149,7 +149,7 @@ async function authMasterKey(request, env) {
     }
 
     // Update last login
-    await env.DB.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").bind(admin.id).run();
+    await env.DB.prepare("UPDATE users SET last_login = ? WHERE id = ?").bind(now(), admin.id).run();
 
     return json({
       authorized: true,
@@ -362,7 +362,8 @@ function id() {
 }
 
 function now() {
-  return new Date().toISOString().replace('T', ' ').slice(0, 19);
+  // Australian Eastern Time (AEST/AEDT — NSW observes DST)
+  return new Date().toLocaleString('sv-SE', { timeZone: 'Australia/Sydney' }).replace('T', ' ').slice(0, 19);
 }
 
 async function body(request) {

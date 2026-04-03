@@ -55,16 +55,17 @@ window.confirmResolve = confirmResolve;
 // Date formatting
 function fmtDate(iso) {
   if (!iso) return '—';
+  // All timestamps stored in Australia/Sydney time
   var d = new Date(iso);
-  return d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
+  return d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Australia/Sydney' });
 }
 window.fmtDate = fmtDate;
 
 function fmtDateTime(iso) {
   if (!iso) return '—';
   var d = new Date(iso);
-  return d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })
-    + ' ' + d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Australia/Sydney' })
+    + ' ' + d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Sydney' });
 }
 window.fmtDateTime = fmtDateTime;
 
