@@ -3,3 +3,7 @@ dist/
 .vite/
 worker/node_modules/
 .claude/
+.env
+.env.*
+*.pem
+credentials.json
