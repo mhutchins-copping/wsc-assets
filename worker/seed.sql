@@ -3,9 +3,9 @@
 -- Locations
 INSERT INTO locations (id, name, address, type) VALUES
   ('loc_chambers', 'Council Chambers', '77 Fox St, Walgett NSW 2832', 'office'),
-  ('loc_lr_office', 'Lightning Ridge Office', 'Morilla St, Lightning Ridge NSW 2834', 'office'),
+  ('loc_lr_office', 'Lightning Ridge Office', 'Suite 4, 12 Opal St, Lightning Ridge NSW 2834', 'office'),
   ('loc_lr_depot', 'Lightning Ridge Depot', 'Morilla St, Lightning Ridge NSW 2834', 'depot'),
-  ('loc_collare', 'Collarenebri Agency', '34 Mitchell St, Collarenebri NSW 2833', 'agency'),
+  ('loc_collare', 'Collarenebri Agency', '6 Wilson St, Collarenebri NSW 2833', 'agency'),
   ('loc_store', 'IT Storeroom', '77 Fox St, Walgett NSW 2832', 'storage');
 
 -- Categories — Parents
