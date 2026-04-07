@@ -1097,34 +1097,32 @@ async function listActivity(env, url) {
 // ─── Audits ────────────────────────────────────────────
 
 async function listAudits(env) {
-  const result = await env.DB.prepare(`
-    SELECT au.*, l.name as location_name
-    FROM audits au
-    LEFT JOIN locations l ON au.location_id = l.id
-    ORDER BY au.started_at DESC
-  `).all();
-
+  const result = await env.DB.prepare(
+    'SELECT * FROM audits ORDER BY started_at DESC'
+  ).all();
   return json({ data: result.results });
 }
 
 async function startAudit(request, env) {
   const data = await body(request);
-  if (!data.location_id) return json({ error: 'location_id is required' }, 400);
 
-  // Get all assets at this location that aren't disposed
-  const assets = await env.DB.prepare(
-    "SELECT id FROM assets WHERE location_id = ? AND status != 'disposed'"
-  ).bind(data.location_id).all();
+  // Get all non-disposed assets (optionally filter by category)
+  let query = "SELECT id FROM assets WHERE status != 'disposed'";
+  const binds = [];
+  if (data.category_id) {
+    query += " AND category_id = ?";
+    binds.push(data.category_id);
+  }
+  const assets = await env.DB.prepare(query).bind(...binds).all();
 
   const auditId = id();
   const ts = now();
 
   await env.DB.prepare(`
-    INSERT INTO audits (id, location_id, status, started_at, notes, total_expected)
-    VALUES (?, ?, 'in_progress', ?, ?, ?)
-  `).bind(auditId, data.location_id, ts, data.notes || null, assets.results.length).run();
+    INSERT INTO audits (id, status, started_at, notes, total_expected)
+    VALUES (?, 'in_progress', ?, ?, ?)
+  `).bind(auditId, ts, data.notes || null, assets.results.length).run();
 
-  // Create audit items for each expected asset
   for (const asset of assets.results) {
     await env.DB.prepare(`
       INSERT INTO audit_items (id, audit_id, asset_id, status)
@@ -1136,12 +1134,9 @@ async function startAudit(request, env) {
 }
 
 async function getAudit(env, auditId) {
-  const audit = await env.DB.prepare(`
-    SELECT au.*, l.name as location_name
-    FROM audits au
-    LEFT JOIN locations l ON au.location_id = l.id
-    WHERE au.id = ?
-  `).bind(auditId).first();
+  const audit = await env.DB.prepare(
+    'SELECT * FROM audits WHERE id = ?'
+  ).bind(auditId).first();
 
   if (!audit) return json({ error: 'Audit not found' }, 404);
 
