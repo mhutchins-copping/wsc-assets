@@ -109,6 +109,7 @@ async function loadDashboardData() {
   }
 }
 window.loadDashboardData = loadDashboardData;
+window.kpiCard = kpiCard;
 
 function setKpi(id, value) {
   var el = document.getElementById(id);
