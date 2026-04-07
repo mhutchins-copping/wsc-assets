@@ -284,8 +284,9 @@ async function route(request, env, url) {
     return getAudit(env, path.match(/^\/api\/audits\/([^/]+)$/)[1]);
   }
 
-  // Stats
+  // Stats & Reports
   if (path === '/api/stats' && method === 'GET') return getStats(env);
+  if (path === '/api/reports' && method === 'GET') return getReports(env);
 
   // Import / Export
   if (path === '/api/import/csv' && method === 'POST') return importCSV(request, env);
@@ -1191,6 +1192,137 @@ async function getStats(env) {
     by_location: byLocation.results,
     warranty_alerts: warrantyAlerts.results,
     recent_activity: recentActivity.results
+  });
+}
+
+// ─── Reports ──────────────────────────────────────────
+
+async function getReports(env) {
+  // Status breakdown (including disposed)
+  const byStatus = await env.DB.prepare(
+    "SELECT status, COUNT(*) as count FROM assets GROUP BY status ORDER BY count DESC"
+  ).all();
+
+  // By category (excluding disposed)
+  const byCategory = await env.DB.prepare(`
+    SELECT c.name, c.icon, c.prefix, COUNT(a.id) as count,
+           SUM(CASE WHEN a.status='deployed' THEN 1 ELSE 0 END) as deployed,
+           SUM(CASE WHEN a.status='available' THEN 1 ELSE 0 END) as available,
+           SUM(CASE WHEN a.status='maintenance' THEN 1 ELSE 0 END) as maintenance
+    FROM categories c
+    LEFT JOIN assets a ON a.category_id = c.id AND a.status != 'disposed'
+    GROUP BY c.id
+    ORDER BY count DESC
+  `).all();
+
+  // By department (via assigned person)
+  const byDepartment = await env.DB.prepare(`
+    SELECT COALESCE(p.department, 'Unassigned') as department, COUNT(a.id) as count
+    FROM assets a
+    LEFT JOIN people p ON a.assigned_to = p.id
+    WHERE a.status = 'deployed'
+    GROUP BY department
+    ORDER BY count DESC
+  `).all();
+
+  // Top assigned people
+  const topAssigned = await env.DB.prepare(`
+    SELECT p.name, p.department, COUNT(a.id) as count
+    FROM people p
+    INNER JOIN assets a ON a.assigned_to = p.id AND a.status = 'deployed'
+    GROUP BY p.id
+    ORDER BY count DESC
+    LIMIT 15
+  `).all();
+
+  // Asset age distribution (by purchase_date)
+  const ageDistribution = await env.DB.prepare(`
+    SELECT
+      CASE
+        WHEN purchase_date IS NULL THEN 'Unknown'
+        WHEN julianday('now') - julianday(purchase_date) < 365 THEN '< 1 year'
+        WHEN julianday('now') - julianday(purchase_date) < 730 THEN '1-2 years'
+        WHEN julianday('now') - julianday(purchase_date) < 1095 THEN '2-3 years'
+        WHEN julianday('now') - julianday(purchase_date) < 1825 THEN '3-5 years'
+        ELSE '5+ years'
+      END as age_group,
+      COUNT(*) as count
+    FROM assets
+    WHERE status != 'disposed'
+    GROUP BY age_group
+    ORDER BY
+      CASE age_group
+        WHEN '< 1 year' THEN 1
+        WHEN '1-2 years' THEN 2
+        WHEN '2-3 years' THEN 3
+        WHEN '3-5 years' THEN 4
+        WHEN '5+ years' THEN 5
+        ELSE 6
+      END
+  `).all();
+
+  // Cost summary
+  const costSummary = await env.DB.prepare(`
+    SELECT
+      COUNT(*) as total_assets,
+      SUM(purchase_cost) as total_cost,
+      AVG(purchase_cost) as avg_cost,
+      MAX(purchase_cost) as max_cost
+    FROM assets
+    WHERE status != 'disposed' AND purchase_cost IS NOT NULL AND purchase_cost > 0
+  `).first();
+
+  // Cost by category
+  const costByCategory = await env.DB.prepare(`
+    SELECT c.name, c.icon, SUM(a.purchase_cost) as total_cost, COUNT(a.id) as count
+    FROM categories c
+    INNER JOIN assets a ON a.category_id = c.id AND a.status != 'disposed' AND a.purchase_cost > 0
+    GROUP BY c.id
+    ORDER BY total_cost DESC
+  `).all();
+
+  // Recently added (last 30 days)
+  const recentlyAdded = await env.DB.prepare(`
+    SELECT COUNT(*) as count FROM assets
+    WHERE created_at >= datetime('now', '-30 days')
+  `).first();
+
+  // Disposed count
+  const disposedCount = await env.DB.prepare(
+    "SELECT COUNT(*) as count FROM assets WHERE status = 'disposed'"
+  ).first();
+
+  // OS breakdown (for enrolled devices)
+  const byOS = await env.DB.prepare(`
+    SELECT COALESCE(os, 'Not enrolled') as os, COUNT(*) as count
+    FROM assets
+    WHERE status != 'disposed'
+    GROUP BY os
+    ORDER BY count DESC
+  `).all();
+
+  // Manufacturer breakdown
+  const byManufacturer = await env.DB.prepare(`
+    SELECT COALESCE(manufacturer, 'Unknown') as manufacturer, COUNT(*) as count
+    FROM assets
+    WHERE status != 'disposed'
+    GROUP BY manufacturer
+    ORDER BY count DESC
+    LIMIT 10
+  `).all();
+
+  return json({
+    by_status: byStatus.results,
+    by_category: byCategory.results,
+    by_department: byDepartment.results,
+    top_assigned: topAssigned.results,
+    age_distribution: ageDistribution.results,
+    cost_summary: costSummary || {},
+    cost_by_category: costByCategory.results,
+    recently_added: recentlyAdded?.count || 0,
+    disposed_count: disposedCount?.count || 0,
+    by_os: byOS.results,
+    by_manufacturer: byManufacturer.results
   });
 }
 

@@ -105,8 +105,9 @@ var API = {
   scanAudit: function(id, data) { return this.fetch('/api/audits/' + id + '/scan', { method: 'POST', body: data }); },
   completeAudit: function(id) { return this.fetch('/api/audits/' + id + '/complete', { method: 'POST', body: {} }); },
 
-  // ─── Stats
+  // ─── Stats & Reports
   getStats: function() { return this.fetch('/api/stats'); },
+  getReports: function() { return this.fetch('/api/reports'); },
 
   // ─── Import/Export
   importCSV: function(csvText) { return this.fetch('/api/import/csv', { method: 'POST', body: csvText, headers: { 'Content-Type': 'text/plain' } }); },
