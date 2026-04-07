@@ -375,6 +375,9 @@ async function route(request, env, url) {
   if (path.match(/^\/api\/audits\/([^/]+)$/) && method === 'GET') {
     return getAudit(env, path.match(/^\/api\/audits\/([^/]+)$/)[1]);
   }
+  if (path.match(/^\/api\/audits\/([^/]+)$/) && method === 'DELETE') {
+    return deleteAudit(env, path.match(/^\/api\/audits\/([^/]+)$/)[1]);
+  }
 
   // Stats
   if (path === '/api/stats' && method === 'GET') return getStats(env);
@@ -1220,6 +1223,12 @@ async function completeAudit(env, auditId) {
   `).bind(ts, found.c, missing.c, auditId).run();
 
   return json({ ok: true, total_found: found.c, total_missing: missing.c });
+}
+
+async function deleteAudit(env, auditId) {
+  await env.DB.prepare('DELETE FROM audit_items WHERE audit_id = ?').bind(auditId).run();
+  await env.DB.prepare('DELETE FROM audits WHERE id = ?').bind(auditId).run();
+  return json({ ok: true });
 }
 
 // ─── Stats ─────────────────────────────────────────────

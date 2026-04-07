@@ -101,6 +101,7 @@ var API = {
   startAudit: function(data) { return this.fetch('/api/audits', { method: 'POST', body: data }); },
   scanAudit: function(id, data) { return this.fetch('/api/audits/' + id + '/scan', { method: 'POST', body: data }); },
   completeAudit: function(id) { return this.fetch('/api/audits/' + id + '/complete', { method: 'POST', body: {} }); },
+  deleteAudit: function(id) { return this.fetch('/api/audits/' + id, { method: 'DELETE' }); },
 
   // ─── Stats
   getStats: function() { return this.fetch('/api/stats'); },

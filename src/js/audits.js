@@ -30,37 +30,41 @@ async function renderAuditsList() {
       return;
     }
 
-    var columns = [
-      { key: 'started_at', label: 'Started', render: function(r) { return fmtDateTime(r.started_at); } },
-      { key: 'status', label: 'Status', render: function(r) {
-        var colors = { in_progress: 'var(--amber)', completed: 'var(--green)' };
-        var labels = { in_progress: 'In Progress', completed: 'Completed' };
-        return '<span class="status-badge" style="--status-color:' + (colors[r.status] || 'var(--text3)') + '">'
-          + (labels[r.status] || r.status) + '</span>';
-      }},
-      { key: 'total_expected', label: 'Expected', mono: true },
-      { key: 'total_found', label: 'Found', mono: true, render: function(r) {
-        return '<span style="color:var(--green);font-weight:600">' + (r.total_found || 0) + '</span>';
-      }},
-      { key: 'total_missing', label: 'Missing', mono: true, render: function(r) {
-        var m = r.total_missing || 0;
-        var pending = (r.total_expected || 0) - (r.total_found || 0) - m;
-        if (r.status === 'completed') {
-          return m > 0 ? '<span style="color:var(--red);font-weight:600">' + m + '</span>' : '0';
-        }
-        return '<span style="color:var(--text3)">' + pending + ' pending</span>';
-      }},
-      { key: 'notes', label: 'Notes', render: function(r) {
-        return r.notes ? '<span style="font-size:12px;color:var(--text2)">' + esc(r.notes).substring(0, 40) + '</span>' : '';
-      }}
-    ];
+    var html = '';
+    audits.forEach(function(a) {
+      var isActive = a.status === 'in_progress';
+      var found = a.total_found || 0;
+      var expected = a.total_expected || 0;
+      var missing = a.total_missing || 0;
+      var pct = expected > 0 ? Math.round((found / expected) * 100) : 0;
 
-    tableEl.innerHTML = renderTable({
-      columns: columns,
-      data: audits,
-      onRowClick: 'viewAudit',
-      emptyMsg: 'No audits'
+      html += '<div class="card" style="margin-bottom:12px;cursor:pointer" onclick="viewAudit(\'' + esc(a.id) + '\')">'
+        + '<div class="card-body" style="padding:16px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+        + '<div>'
+        + '<span style="font-weight:600;font-size:14px">' + esc(a.notes || 'Audit') + '</span> '
+        + '<span class="status-badge" style="--status-color:' + (isActive ? 'var(--amber)' : 'var(--green)') + '">'
+        + (isActive ? 'In Progress' : 'Completed') + '</span>'
+        + '</div>'
+        + '<div style="display:flex;gap:8px;align-items:center">'
+        + '<span style="font-size:11px;font-family:var(--mono);color:var(--text3)">' + fmtDateTime(a.started_at) + '</span>'
+        + '<button class="btn danger sm" onclick="event.stopPropagation();deleteAudit(\'' + esc(a.id) + '\')">Delete</button>'
+        + '</div></div>'
+        + '<div style="display:flex;gap:24px;font-size:13px;margin-bottom:8px">'
+        + '<span><strong>' + expected + '</strong> expected</span>'
+        + '<span style="color:var(--green)"><strong>' + found + '</strong> found</span>';
+      if (a.status === 'completed') {
+        html += '<span style="color:' + (missing > 0 ? 'var(--red)' : 'var(--green)') + '"><strong>' + missing + '</strong> missing</span>';
+      } else {
+        html += '<span style="color:var(--text3)"><strong>' + (expected - found) + '</strong> remaining</span>';
+      }
+      html += '</div>'
+        + '<div style="height:6px;background:var(--surface3);border-radius:3px;overflow:hidden">'
+        + '<div style="height:100%;width:' + pct + '%;background:var(--green);border-radius:3px"></div>'
+        + '</div></div></div>';
     });
+
+    tableEl.innerHTML = html;
   } catch(e) {
     document.getElementById('audits-table').innerHTML = '<div class="table-empty">Failed to load audits</div>';
   }
@@ -72,43 +76,22 @@ window.viewAudit = viewAudit;
 // ─── New Audit ────────────────────────────────
 
 async function openNewAudit() {
-  var categories = [];
-  try {
-    var r = await API.getCategories();
-    categories = r.flat || r.data || [];
-  } catch(e) {}
-
-  var html = '<div class="form-group"><label class="form-label">Scope</label>'
-    + '<select id="audit-category" class="form-select">'
-    + '<option value="">All assets</option>';
-  categories.forEach(function(c) {
-    if (c.parent_id) {
-      html += '<option value="' + esc(c.id) + '">' + (c.icon || '') + ' ' + esc(c.name) + '</option>';
-    }
-  });
-  html += '</select>'
-    + '<div class="form-hint">Optionally limit to a specific category</div></div>';
-
-  html += '<div class="form-group"><label class="form-label">Notes</label>'
-    + '<textarea id="audit-notes" class="form-textarea" placeholder="e.g. Q2 2026 stocktake"></textarea></div>';
+  var html = '<div class="form-group"><label class="form-label">Audit Name</label>'
+    + '<input type="text" id="audit-notes" class="form-input" placeholder="e.g. Q2 2026 Stocktake">'
+    + '</div>';
 
   html += '<button class="btn primary full" onclick="doStartAudit()">Start Audit</button>';
-
   openModal('Start New Audit', html);
 }
 window.openNewAudit = openNewAudit;
 
 async function doStartAudit() {
   try {
-    var data = {
+    var result = await API.startAudit({
       notes: document.getElementById('audit-notes').value.trim() || undefined
-    };
-    var cat = document.getElementById('audit-category').value;
-    if (cat) data.category_id = cat;
-
-    var result = await API.startAudit(data);
+    });
     closeModal();
-    toast('Audit started — ' + result.total_expected + ' assets to verify', 'success');
+    toast('Audit started — ' + result.total_expected + ' assets to check', 'success');
     navigate('#/audits/' + result.id);
   } catch(e) { /* toasted */ }
 }
@@ -127,154 +110,139 @@ async function renderAuditDetail(auditId) {
     var missing = items.filter(function(i) { return i.status === 'missing'; });
     var pending = items.filter(function(i) { return i.status === 'pending'; });
     var unexpected = items.filter(function(i) { return i.status === 'moved'; });
+    var isActive = audit.status === 'in_progress';
 
-    var html = '<div style="margin-bottom:16px"><button class="btn sm" onclick="navigate(\'#/audits\')">&larr; Back to Audits</button></div>';
+    var html = '<div style="margin-bottom:16px"><button class="btn sm" onclick="navigate(\'#/audits\')">&larr; Back</button></div>';
 
     // Header
-    var statusColor = audit.status === 'completed' ? 'var(--green)' : 'var(--amber)';
-    var statusLabel = audit.status === 'completed' ? 'Completed' : 'In Progress';
     html += '<div class="detail-header">'
       + '<div class="detail-header-info">'
-      + '<div class="detail-header-name">Audit <span class="status-badge" style="--status-color:' + statusColor + '">' + statusLabel + '</span></div>'
-      + '<div style="font-size:12px;font-family:var(--mono);color:var(--text3)">Started ' + fmtDateTime(audit.started_at)
-      + (audit.completed_at ? ' &middot; Completed ' + fmtDateTime(audit.completed_at) : '') + '</div>'
-      + (audit.notes ? '<div style="font-size:13px;color:var(--text2);margin-top:4px">' + esc(audit.notes) + '</div>' : '')
-      + '</div>'
+      + '<div class="detail-header-name">' + esc(audit.notes || 'Audit') + ' '
+      + '<span class="status-badge" style="--status-color:' + (isActive ? 'var(--amber)' : 'var(--green)') + '">'
+      + (isActive ? 'In Progress' : 'Completed') + '</span></div>'
+      + '<div style="font-size:12px;font-family:var(--mono);color:var(--text3)">'
+      + fmtDateTime(audit.started_at)
+      + (audit.completed_at ? ' — ' + fmtDateTime(audit.completed_at) : '')
+      + '</div></div>'
       + '<div class="detail-header-actions">';
 
-    if (audit.status === 'in_progress') {
+    if (isActive) {
       html += '<button class="btn primary sm" onclick="openAuditScan(\'' + esc(auditId) + '\')">Scan Asset</button>'
-        + '<button class="btn danger sm" onclick="doCompleteAudit(\'' + esc(auditId) + '\')">Complete Audit</button>';
+        + '<button class="btn sm" onclick="doCompleteAudit(\'' + esc(auditId) + '\')">Finish Audit</button>';
     }
-    html += '</div></div>';
-
-    // KPIs
-    html += '<div class="kpi-row" style="margin-bottom:20px">'
-      + auditKpi('Expected', audit.total_expected || items.length, 'var(--accent)')
-      + auditKpi('Found', found.length, 'var(--green)')
-      + auditKpi('Missing', audit.status === 'completed' ? missing.length : pending.length, pending.length > 0 && audit.status !== 'completed' ? 'var(--text3)' : (missing.length > 0 ? 'var(--red)' : 'var(--green)'))
-      + auditKpi('Unexpected', unexpected.length, unexpected.length > 0 ? 'var(--amber)' : 'var(--text3)')
-      + '</div>';
-
-    // Progress bar
-    var total = items.length || 1;
-    var pctFound = Math.round((found.length / total) * 100);
-    html += '<div style="margin-bottom:24px">'
-      + '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">'
-      + '<span>Progress</span><span style="font-family:var(--mono);font-weight:600">' + pctFound + '%</span></div>'
-      + '<div style="height:8px;background:var(--surface3);border-radius:4px;overflow:hidden">'
-      + '<div style="height:100%;width:' + pctFound + '%;background:var(--green);border-radius:4px;transition:width 0.3s"></div>'
+    html += '<button class="btn danger sm" onclick="deleteAudit(\'' + esc(auditId) + '\')">Delete</button>'
       + '</div></div>';
 
-    // Item tables
-    if (missing.length > 0 && audit.status === 'completed') {
-      html += auditItemTable('Missing', missing, 'var(--red)');
-    }
-    if (unexpected.length > 0) {
-      html += auditItemTable('Unexpected', unexpected, 'var(--amber)');
-    }
-    if (pending.length > 0 && audit.status !== 'completed') {
-      html += auditItemTable('Not Yet Scanned', pending, 'var(--text3)');
-    }
-    if (found.length > 0) {
-      html += auditItemTable('Found', found, 'var(--green)');
-    }
+    // Stats row
+    var total = audit.total_expected || items.length || 1;
+    var pct = Math.round((found.length / total) * 100);
+    html += '<div style="display:flex;gap:16px;margin-bottom:16px">'
+      + statBox('Expected', total, 'var(--accent)')
+      + statBox('Found', found.length, 'var(--green)')
+      + statBox(isActive ? 'Remaining' : 'Missing', isActive ? pending.length : missing.length, isActive ? 'var(--text3)' : (missing.length > 0 ? 'var(--red)' : 'var(--green)'))
+      + (unexpected.length > 0 ? statBox('Unexpected', unexpected.length, 'var(--amber)') : '')
+      + '</div>';
+
+    // Progress
+    html += '<div style="margin-bottom:24px">'
+      + '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">'
+      + '<span>Progress</span><span style="font-family:var(--mono);font-weight:600">' + pct + '%</span></div>'
+      + '<div style="height:8px;background:var(--surface3);border-radius:4px;overflow:hidden">'
+      + '<div style="height:100%;width:' + pct + '%;background:var(--green);border-radius:4px"></div>'
+      + '</div></div>';
+
+    // Tables
+    if (missing.length > 0) html += itemTable('Missing', missing, 'var(--red)');
+    if (unexpected.length > 0) html += itemTable('Unexpected', unexpected, 'var(--amber)');
+    if (pending.length > 0 && isActive) html += itemTable('Not Yet Scanned', pending, 'var(--text3)');
+    if (found.length > 0) html += itemTable('Found', found, 'var(--green)');
 
     el.innerHTML = html;
   } catch(e) {
-    el.innerHTML = '<div class="table-empty">Audit not found: ' + esc(e.message) + '</div>';
+    el.innerHTML = '<div class="table-empty">Audit not found</div>';
   }
 }
 
-function auditKpi(label, value, color) {
-  return '<div class="kpi-card">'
-    + '<div class="kpi-label">' + label + '</div>'
-    + '<div class="kpi-value" style="color:' + color + '">' + value + '</div></div>';
+function statBox(label, value, color) {
+  return '<div style="flex:1;padding:16px;background:var(--surface2);border-radius:8px;text-align:center">'
+    + '<div style="font-size:24px;font-weight:700;color:' + color + ';font-family:var(--mono)">' + value + '</div>'
+    + '<div style="font-size:11px;text-transform:uppercase;color:var(--text3);margin-top:2px">' + label + '</div></div>';
 }
 
-function auditItemTable(title, items, color) {
-  var html = '<div class="card" style="margin-bottom:16px">'
+function itemTable(title, items, color) {
+  var html = '<div class="card" style="margin-bottom:12px">'
     + '<div class="card-header"><span class="card-title" style="color:' + color + '">' + esc(title) + ' (' + items.length + ')</span></div>'
     + '<div style="padding:0"><div class="table-wrap" style="border:none;border-radius:0"><table><thead><tr>'
-    + '<th>Tag</th><th>Name</th><th>Serial</th>'
-    + (items[0] && items[0].scanned_at ? '<th>Scanned</th>' : '')
-    + (items[0] && items[0].notes ? '<th>Notes</th>' : '')
-    + '</tr></thead><tbody>';
+    + '<th>Tag</th><th>Name</th><th>Serial</th></tr></thead><tbody>';
   items.forEach(function(i) {
     html += '<tr style="cursor:pointer" onclick="navigate(\'#/assets/' + esc(i.asset_id) + '\')">'
       + '<td class="mono">' + esc(i.asset_tag || '—') + '</td>'
       + '<td>' + esc(i.asset_name || '—') + '</td>'
-      + '<td class="mono">' + esc(i.serial_number || '—') + '</td>'
-      + (i.scanned_at ? '<td class="mono" style="font-size:11px">' + fmtDateTime(i.scanned_at) + '</td>' : '')
-      + (i.notes ? '<td style="font-size:12px">' + esc(i.notes) + '</td>' : '')
-      + '</tr>';
+      + '<td class="mono">' + esc(i.serial_number || '—') + '</td></tr>';
   });
   html += '</tbody></table></div></div></div>';
   return html;
 }
 
-// ─── Scan Modal ───────────────────────────────
+// ─── Scan ─────────────────────────────────────
 
 function openAuditScan(auditId) {
-  var html = '<div class="form-group"><label class="form-label">Asset Tag or Serial Number</label>'
-    + '<input type="text" id="scan-input" class="form-input" placeholder="e.g. WSC-L-0001 or scan QR code" autofocus '
+  var html = '<div class="form-group"><label class="form-label">Asset Tag</label>'
+    + '<input type="text" id="scan-input" class="form-input" placeholder="Type or scan asset tag" '
     + 'onkeydown="if(event.key===\'Enter\')doAuditScan(\'' + esc(auditId) + '\')">'
-    + '<div class="form-hint">Type an asset tag, serial number, or scan a QR code</div></div>';
-
-  html += '<div id="scan-result" style="margin-bottom:16px"></div>';
-
-  html += '<div style="display:flex;gap:8px">'
+    + '</div>'
+    + '<div id="scan-result" style="margin-bottom:16px"></div>'
+    + '<div style="display:flex;gap:8px">'
     + '<button class="btn primary" onclick="doAuditScan(\'' + esc(auditId) + '\')">Scan</button>'
     + '<button class="btn" onclick="closeModal();renderAuditDetail(\'' + esc(auditId) + '\')">Done</button>'
     + '</div>';
 
   openModal('Scan Asset', html);
-  setTimeout(function() {
-    var inp = document.getElementById('scan-input');
-    if (inp) inp.focus();
-  }, 50);
+  setTimeout(function() { var i = document.getElementById('scan-input'); if (i) i.focus(); }, 50);
 }
 window.openAuditScan = openAuditScan;
 
 async function doAuditScan(auditId) {
   var input = document.getElementById('scan-input').value.trim();
   if (!input) return;
-
   var resultEl = document.getElementById('scan-result');
 
   try {
     var result = await API.scanAudit(auditId, { asset_tag: input });
-
+    var msgs = { found: 'Found', already_scanned: 'Already scanned', unexpected: 'Not in this audit' };
     var colors = { found: 'var(--green)', already_scanned: 'var(--text3)', unexpected: 'var(--amber)' };
-    var labels = { found: 'Found', already_scanned: 'Already scanned', unexpected: 'Unexpected — not in this audit' };
-    var color = colors[result.status] || 'var(--text2)';
-    var label = labels[result.status] || result.status;
-
-    resultEl.innerHTML = '<div style="padding:12px;border-radius:8px;background:color-mix(in srgb, ' + color + ' 10%, transparent);border:1px solid color-mix(in srgb, ' + color + ' 30%, transparent);text-align:center">'
-      + '<div style="font-size:15px;font-weight:600;color:' + color + '">' + label + '</div>'
-      + '<div style="font-size:12px;font-family:var(--mono);color:var(--text3);margin-top:4px">' + esc(input) + '</div>'
-      + '</div>';
-
-    // Clear and refocus for next scan
+    resultEl.innerHTML = '<div style="padding:12px;border-radius:8px;text-align:center;background:color-mix(in srgb, ' + (colors[result.status] || 'var(--text2)') + ' 10%, transparent)">'
+      + '<div style="font-size:15px;font-weight:600;color:' + (colors[result.status] || 'var(--text2)') + '">' + (msgs[result.status] || result.status) + '</div>'
+      + '<div style="font-size:12px;font-family:var(--mono);color:var(--text3);margin-top:4px">' + esc(input) + '</div></div>';
     document.getElementById('scan-input').value = '';
     document.getElementById('scan-input').focus();
   } catch(e) {
-    resultEl.innerHTML = '<div style="padding:12px;border-radius:8px;background:color-mix(in srgb, var(--red) 10%, transparent);border:1px solid color-mix(in srgb, var(--red) 30%, transparent);text-align:center">'
+    resultEl.innerHTML = '<div style="padding:12px;border-radius:8px;text-align:center;background:color-mix(in srgb, var(--red) 10%, transparent)">'
       + '<div style="font-size:13px;color:var(--red)">' + esc(e.message) + '</div></div>';
   }
 }
 window.doAuditScan = doAuditScan;
 
-// ─── Complete Audit ───────────────────────────
+// ─── Complete & Delete ────────────────────────
 
 async function doCompleteAudit(auditId) {
-  var ok = await confirmDialog('Complete this audit? All unscanned assets will be marked as missing.', 'Complete Audit');
+  var ok = await confirmDialog('Finish this audit? All unscanned assets will be marked as missing.', 'Finish Audit');
   if (!ok) return;
-
   try {
     var result = await API.completeAudit(auditId);
-    toast('Audit completed — ' + result.total_found + ' found, ' + result.total_missing + ' missing', 'success');
+    toast('Done — ' + result.total_found + ' found, ' + result.total_missing + ' missing', 'success');
     renderAuditDetail(auditId);
   } catch(e) { /* toasted */ }
 }
 window.doCompleteAudit = doCompleteAudit;
+
+async function deleteAudit(auditId) {
+  var ok = await confirmDialog('Delete this audit permanently?', 'Delete');
+  if (!ok) return;
+  try {
+    await API.deleteAudit(auditId);
+    toast('Audit deleted', 'success');
+    navigate('#/audits');
+  } catch(e) { /* toasted */ }
+}
+window.deleteAudit = deleteAudit;
