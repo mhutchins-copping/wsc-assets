@@ -133,9 +133,12 @@ async function loadAssets() {
     var columns = [
       { key: 'asset_tag', label: 'Tag', sortable: true, mono: true },
       { key: 'name', label: 'Name', sortable: true },
+      { key: 'serial_number', label: 'Serial', mono: true },
       { key: 'category_name', label: 'Category', sortable: true },
+      { key: 'manufacturer', label: 'Manufacturer' },
       { key: 'status', label: 'Status', render: function(r) { return statusBadge(r.status); } },
-      { key: 'assigned_to_name', label: 'Assigned To', sortable: true }
+      { key: 'assigned_to_name', label: 'Assigned To', sortable: true },
+      { key: 'updated_at', label: 'Updated', sortable: true, render: function(r) { return '<span style="font-family:var(--mono);font-size:11px;color:var(--text3)">' + fmtDate(r.updated_at) + '</span>'; } }
     ];
 
     tableEl.innerHTML = renderTable({
@@ -192,11 +195,12 @@ async function renderAssetDetail(id) {
   try {
     var asset = await API.getAsset(id);
 
-    var html = '<div style="margin-bottom:16px"><button class="btn sm" onclick="navigate(\'#/assets\')">&larr; Back to Assets</button></div>';
+    var html = '<div style="margin-bottom:12px"><button class="btn sm" onclick="navigate(\'#/assets\')">&larr; Back</button></div>';
 
     html += '<div class="detail-header">'
       + '<div class="detail-header-info">'
-      + '<div class="detail-header-tag">' + esc(asset.asset_tag) + '</div>'
+      + '<div class="detail-header-tag">' + esc(asset.asset_tag)
+      + (asset.serial_number ? ' &middot; S/N: ' + esc(asset.serial_number) : '') + '</div>'
       + '<div class="detail-header-name">' + esc(asset.name) + ' ' + statusBadge(asset.status) + '</div>'
       + '</div>'
       + '<div class="detail-header-actions">';
@@ -209,43 +213,42 @@ async function renderAssetDetail(id) {
     }
     html += '<button class="btn sm" onclick="navigate(\'#/assets/edit/' + esc(asset.id) + '\')">Edit</button>'
       + '<button class="btn sm" onclick="openMaintenanceForm(\'' + esc(asset.id) + '\')">+ Maintenance</button>'
-      + '<button class="btn sm" onclick="printAssetLabel(\'' + esc(asset.id) + '\')">Print Label</button>'
-      + '<button class="btn danger sm" onclick="retireAsset(\'' + esc(asset.id) + '\')">Retire</button>'
+      + '<button class="btn sm" onclick="printAssetLabel(\'' + esc(asset.id) + '\')">Print</button>'
       + '<button class="btn danger sm" onclick="permanentDeleteAsset(\'' + esc(asset.id) + '\')">Delete</button>'
       + '</div></div>';
 
-    // Info grid
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px">'
-      + '<div class="card"><div class="card-body"><div class="detail-grid">'
-      + detailField('Serial Number', asset.serial_number)
+    // Info grid: 3-column layout
+    html += '<div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px">'
+      // Left: Details card
+      + '<div class="card"><div class="card-header"><span class="card-title">Details</span></div>'
+      + '<div class="card-body"><div class="detail-grid" style="grid-template-columns:1fr 1fr 1fr">'
       + detailField('Category', asset.category_name)
       + detailField('Manufacturer', asset.manufacturer)
       + detailField('Model', asset.model)
       + detailField('Purchase Date', fmtDate(asset.purchase_date))
       + detailField('Purchase Cost', fmtCurrency(asset.purchase_cost))
-      + '</div></div></div>';
+      + detailField('Created', fmtDate(asset.created_at))
+      + '</div></div></div>'
 
-    // Right column: assignment + QR
-    html += '<div>';
-
-    // Assignment card
-    html += '<div class="card" style="margin-bottom:16px"><div class="card-header"><span class="card-title">Assignment</span></div><div class="card-body">';
+      // Right: Assignment + QR
+      + '<div>'
+      + '<div class="card" style="margin-bottom:12px"><div class="card-header"><span class="card-title">Assignment</span></div><div class="card-body">';
     if (asset.assigned_to) {
-      html += '<div style="font-size:15px;font-weight:600;margin-bottom:4px">' + esc(asset.assigned_to_name || '—') + '</div>'
-        + '<div style="font-size:12px;font-family:var(--mono);color:var(--text3)">'
+      html += '<div style="font-size:14px;font-weight:600;margin-bottom:2px">' + esc(asset.assigned_to_name || '—') + '</div>'
+        + '<div style="font-size:11px;color:var(--text3)">'
         + esc(asset.assigned_to_department || '') + (asset.assigned_to_email ? ' &middot; ' + esc(asset.assigned_to_email) : '')
         + '</div>'
-        + '<div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-top:4px">Since ' + fmtDate(asset.assigned_date) + '</div>';
+        + '<div style="font-size:11px;color:var(--text3);margin-top:3px">Since ' + fmtDate(asset.assigned_date) + '</div>';
     } else {
-      html += '<div style="color:var(--text3);font-family:var(--mono);font-size:13px">Not assigned</div>';
+      html += '<div style="color:var(--text3);font-size:12px">Not assigned</div>';
     }
     html += '</div></div>';
 
     // QR Code card
     html += '<div class="card"><div class="card-header"><span class="card-title">QR Code</span></div>'
-      + '<div class="card-body" style="text-align:center">'
+      + '<div class="card-body" style="text-align:center;padding:12px">'
       + '<div id="asset-qr-code"></div>'
-      + '<div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-top:8px">' + esc(asset.asset_tag) + '</div>'
+      + '<div style="font-size:10px;font-family:var(--mono);color:var(--text3);margin-top:6px">' + esc(asset.asset_tag) + '</div>'
       + '</div></div>';
 
     html += '</div></div>';
@@ -253,8 +256,8 @@ async function renderAssetDetail(id) {
     // Hardware Specs (if any spec fields populated)
     var hasSpecs = asset.hostname || asset.os || asset.cpu || asset.ram_gb || asset.disk_gb || asset.mac_address;
     if (hasSpecs) {
-      html += '<div class="card" style="margin-bottom:16px"><div class="card-header"><span class="card-title">Hardware Specs</span></div>'
-        + '<div class="card-body"><div class="detail-grid" style="grid-template-columns:1fr 1fr 1fr">'
+      html += '<div class="card" style="margin-bottom:12px"><div class="card-header"><span class="card-title">Hardware Specs</span></div>'
+        + '<div class="card-body"><div class="detail-grid" style="grid-template-columns:1fr 1fr 1fr 1fr">'
         + detailField('Hostname', asset.hostname)
         + detailField('Operating System', asset.os)
         + detailField('CPU', asset.cpu)
@@ -268,8 +271,8 @@ async function renderAssetDetail(id) {
 
     // Notes
     if (asset.notes) {
-      html += '<div class="card" style="margin-bottom:16px"><div class="card-header"><span class="card-title">Notes</span></div>'
-        + '<div class="card-body"><div style="font-size:13px;white-space:pre-wrap">' + esc(asset.notes) + '</div></div></div>';
+      html += '<div class="card" style="margin-bottom:12px"><div class="card-header"><span class="card-title">Notes</span></div>'
+        + '<div class="card-body"><div style="font-size:12px;white-space:pre-wrap;color:var(--text2)">' + esc(asset.notes) + '</div></div></div>';
     }
 
     // Tabs: History + Maintenance

@@ -151,10 +151,17 @@ var Auth = {
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
-  // Update sidebar with user info
-  var footer = document.querySelector('.sidebar-footer-text');
-  if (footer && Auth.user) {
-    footer.textContent = Auth.user.display_name + ' \u00b7 ' + Auth.user.role;
+  // Update sidebar user profile
+  if (Auth.user) {
+    var nameEl = document.getElementById('sidebar-user-name');
+    var roleEl = document.getElementById('sidebar-user-role');
+    var avatarEl = document.getElementById('sidebar-avatar');
+    if (nameEl) nameEl.textContent = Auth.user.display_name || Auth.user.email;
+    if (roleEl) roleEl.textContent = Auth.user.role;
+    if (avatarEl) {
+      var initials = (Auth.user.display_name || Auth.user.email || '?').split(' ').map(function(w) { return w[0]; }).join('').toUpperCase().slice(0, 2);
+      avatarEl.textContent = initials;
+    }
   }
   if (typeof Router !== 'undefined') Router.handleRoute();
 }
