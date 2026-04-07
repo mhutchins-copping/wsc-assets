@@ -173,4 +173,14 @@ Both are set via `wrangler secret put` and stored encrypted in Cloudflare. They 
 
 ## Screenshots
 
+| Dashboard | Asset Detail |
+|-----------|-------------|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Asset Detail](docs/screenshots/asset-detail.png) |
+
+| People | Asset Registration |
+|--------|-------------------|
+| ![People](docs/screenshots/people.png) | ![Register Asset](docs/screenshots/asset-register.png) |
+
+## License
+
 Internal use — Walgett Shire Council.
