@@ -61,7 +61,11 @@ async function loadReports() {
     renderBarChart('rpt-os', data.by_os, 'os', 'count');
     renderBarChart('rpt-manufacturer', data.by_manufacturer, 'manufacturer', 'count');
   } catch(e) {
-    // Error already toasted by API
+    toast('Failed to load reports: ' + e.message, 'error');
+    ['rpt-status','rpt-category','rpt-department','rpt-assigned','rpt-age','rpt-cost','rpt-os','rpt-manufacturer'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.innerHTML = '<div class="table-empty" style="padding:20px 0">Failed to load</div>';
+    });
   }
 }
 window.loadReports = loadReports;

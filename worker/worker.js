@@ -1295,13 +1295,13 @@ async function getStats(env) {
 // ─── Reports ──────────────────────────────────────────
 
 async function getReports(env) {
-  // Status breakdown (including disposed)
-  const byStatus = await env.DB.prepare(
-    "SELECT status, COUNT(*) as count FROM assets GROUP BY status ORDER BY count DESC"
-  ).all();
+  async function q(fn) { try { return await fn(); } catch(e) { console.error(e); return null; } }
 
-  // By category (excluding disposed)
-  const byCategory = await env.DB.prepare(`
+  const byStatus = await q(() => env.DB.prepare(
+    "SELECT status, COUNT(*) as count FROM assets GROUP BY status ORDER BY count DESC"
+  ).all());
+
+  const byCategory = await q(() => env.DB.prepare(`
     SELECT c.name, c.icon, c.prefix, COUNT(a.id) as count,
            SUM(CASE WHEN a.status='deployed' THEN 1 ELSE 0 END) as deployed,
            SUM(CASE WHEN a.status='available' THEN 1 ELSE 0 END) as available,
@@ -1310,30 +1310,27 @@ async function getReports(env) {
     LEFT JOIN assets a ON a.category_id = c.id AND a.status != 'disposed'
     GROUP BY c.id
     ORDER BY count DESC
-  `).all();
+  `).all());
 
-  // By department (via assigned person)
-  const byDepartment = await env.DB.prepare(`
+  const byDepartment = await q(() => env.DB.prepare(`
     SELECT COALESCE(p.department, 'Unassigned') as department, COUNT(a.id) as count
     FROM assets a
     LEFT JOIN people p ON a.assigned_to = p.id
     WHERE a.status = 'deployed'
     GROUP BY department
     ORDER BY count DESC
-  `).all();
+  `).all());
 
-  // Top assigned people
-  const topAssigned = await env.DB.prepare(`
+  const topAssigned = await q(() => env.DB.prepare(`
     SELECT p.name, p.department, COUNT(a.id) as count
     FROM people p
     INNER JOIN assets a ON a.assigned_to = p.id AND a.status = 'deployed'
     GROUP BY p.id
     ORDER BY count DESC
     LIMIT 15
-  `).all();
+  `).all());
 
-  // Asset age distribution (by purchase_date)
-  const ageDistribution = await env.DB.prepare(`
+  const ageDistribution = await q(() => env.DB.prepare(`
     SELECT
       CASE
         WHEN purchase_date IS NULL THEN 'Unknown'
@@ -1349,77 +1346,54 @@ async function getReports(env) {
     GROUP BY age_group
     ORDER BY
       CASE age_group
-        WHEN '< 1 year' THEN 1
-        WHEN '1-2 years' THEN 2
-        WHEN '2-3 years' THEN 3
-        WHEN '3-5 years' THEN 4
-        WHEN '5+ years' THEN 5
-        ELSE 6
+        WHEN '< 1 year' THEN 1 WHEN '1-2 years' THEN 2 WHEN '2-3 years' THEN 3
+        WHEN '3-5 years' THEN 4 WHEN '5+ years' THEN 5 ELSE 6
       END
-  `).all();
+  `).all());
 
-  // Cost summary
-  const costSummary = await env.DB.prepare(`
-    SELECT
-      COUNT(*) as total_assets,
-      SUM(purchase_cost) as total_cost,
-      AVG(purchase_cost) as avg_cost,
-      MAX(purchase_cost) as max_cost
-    FROM assets
-    WHERE status != 'disposed' AND purchase_cost IS NOT NULL AND purchase_cost > 0
-  `).first();
+  const costSummary = await q(() => env.DB.prepare(`
+    SELECT COUNT(*) as total_assets, SUM(purchase_cost) as total_cost,
+           AVG(purchase_cost) as avg_cost, MAX(purchase_cost) as max_cost
+    FROM assets WHERE status != 'disposed' AND purchase_cost IS NOT NULL AND purchase_cost > 0
+  `).first());
 
-  // Cost by category
-  const costByCategory = await env.DB.prepare(`
+  const costByCategory = await q(() => env.DB.prepare(`
     SELECT c.name, c.icon, SUM(a.purchase_cost) as total_cost, COUNT(a.id) as count
     FROM categories c
     INNER JOIN assets a ON a.category_id = c.id AND a.status != 'disposed' AND a.purchase_cost > 0
-    GROUP BY c.id
-    ORDER BY total_cost DESC
-  `).all();
+    GROUP BY c.id ORDER BY total_cost DESC
+  `).all());
 
-  // Recently added (last 30 days)
-  const recentlyAdded = await env.DB.prepare(`
-    SELECT COUNT(*) as count FROM assets
-    WHERE created_at >= datetime('now', '-30 days')
-  `).first();
+  const recentlyAdded = await q(() => env.DB.prepare(
+    "SELECT COUNT(*) as count FROM assets WHERE created_at >= datetime('now', '-30 days')"
+  ).first());
 
-  // Disposed count
-  const disposedCount = await env.DB.prepare(
+  const disposedCount = await q(() => env.DB.prepare(
     "SELECT COUNT(*) as count FROM assets WHERE status = 'disposed'"
-  ).first();
+  ).first());
 
-  // OS breakdown (for enrolled devices)
-  const byOS = await env.DB.prepare(`
+  const byOS = await q(() => env.DB.prepare(`
     SELECT COALESCE(os, 'Not enrolled') as os, COUNT(*) as count
-    FROM assets
-    WHERE status != 'disposed'
-    GROUP BY os
-    ORDER BY count DESC
-  `).all();
+    FROM assets WHERE status != 'disposed' GROUP BY os ORDER BY count DESC
+  `).all());
 
-  // Manufacturer breakdown
-  const byManufacturer = await env.DB.prepare(`
+  const byManufacturer = await q(() => env.DB.prepare(`
     SELECT COALESCE(manufacturer, 'Unknown') as manufacturer, COUNT(*) as count
-    FROM assets
-    WHERE status != 'disposed'
-    GROUP BY manufacturer
-    ORDER BY count DESC
-    LIMIT 10
-  `).all();
+    FROM assets WHERE status != 'disposed' GROUP BY manufacturer ORDER BY count DESC LIMIT 10
+  `).all());
 
   return json({
-    by_status: byStatus.results,
-    by_category: byCategory.results,
-    by_department: byDepartment.results,
-    top_assigned: topAssigned.results,
-    age_distribution: ageDistribution.results,
+    by_status: (byStatus && byStatus.results) || [],
+    by_category: (byCategory && byCategory.results) || [],
+    by_department: (byDepartment && byDepartment.results) || [],
+    top_assigned: (topAssigned && topAssigned.results) || [],
+    age_distribution: (ageDistribution && ageDistribution.results) || [],
     cost_summary: costSummary || {},
-    cost_by_category: costByCategory.results,
-    recently_added: recentlyAdded?.count || 0,
-    disposed_count: disposedCount?.count || 0,
-    by_os: byOS.results,
-    by_manufacturer: byManufacturer.results
+    cost_by_category: (costByCategory && costByCategory.results) || [],
+    recently_added: (recentlyAdded && recentlyAdded.count) || 0,
+    disposed_count: (disposedCount && disposedCount.count) || 0,
+    by_os: (byOS && byOS.results) || [],
+    by_manufacturer: (byManufacturer && byManufacturer.results) || []
   });
 }
 
