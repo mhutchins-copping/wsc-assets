@@ -393,17 +393,6 @@ async function saveMaintenance(assetId) {
 }
 window.saveMaintenance = saveMaintenance;
 
-async function retireAsset(assetId) {
-  var ok = await confirmDialog('Are you sure you want to retire this asset?', 'Retire');
-  if (!ok) return;
-  try {
-    await API.deleteAsset(assetId);
-    toast('Asset retired', 'success');
-    navigate('#/assets');
-  } catch(e) { /* toasted */ }
-}
-window.retireAsset = retireAsset;
-
 async function permanentDeleteAsset(assetId) {
   var ok = await confirmDialog('Permanently delete this asset? This cannot be undone.', 'Delete Forever');
   if (!ok) return;

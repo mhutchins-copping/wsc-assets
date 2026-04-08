@@ -45,7 +45,6 @@ var Router = {
       '/': 'dashboard',
       '/assets': param === 'new' ? 'asset-form' : (param && param.indexOf('edit/') === 0 ? 'asset-form' : (param ? 'asset-detail' : 'assets')),
       '/people': param ? 'person-detail' : 'people',
-      '/locations': 'locations',
       '/categories': 'categories',
       '/audits': param ? 'audit-detail' : 'audits',
       '/reports': 'reports',

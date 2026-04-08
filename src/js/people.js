@@ -115,12 +115,12 @@ async function renderPersonDetail(id) {
   try {
     var person = await API.getPerson(id);
 
-    var html = '<div style="margin-bottom:16px"><button class="btn sm" onclick="navigate(\'#/people\')">&larr; Back to People</button></div>';
+    var html = '<div style="margin-bottom:10px"><button class="btn sm" onclick="navigate(\'#/people\')">&larr; Back</button></div>';
 
     html += '<div class="detail-header">'
       + '<div class="detail-header-info">'
       + '<div class="detail-header-name">' + esc(person.name) + '</div>'
-      + '<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--text2)">';
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--text2)">';
     if (person.position) html += '<span>' + esc(person.position) + '</span>';
     if (person.department) html += '<span>&middot; ' + esc(person.department) + '</span>';
     html += '</div></div>'
@@ -130,7 +130,7 @@ async function renderPersonDetail(id) {
       + '</div></div>';
 
     // Contact info card
-    html += '<div class="card" style="margin-bottom:20px"><div class="card-header"><span class="card-title">Contact Details</span></div>'
+    html += '<div class="card" style="margin-bottom:14px"><div class="card-header"><span class="card-title">Contact Details</span></div>'
       + '<div class="card-body"><div class="detail-grid">'
       + detailFieldP('Email', person.email)
       + detailFieldP('Phone', person.phone)
@@ -160,8 +160,8 @@ async function renderPersonDetail(id) {
 
     // Notes
     if (person.notes) {
-      html += '<div class="card" style="margin-top:16px"><div class="card-header"><span class="card-title">Notes</span></div>'
-        + '<div class="card-body"><div style="font-size:13px;white-space:pre-wrap">' + esc(person.notes) + '</div></div></div>';
+      html += '<div class="card" style="margin-top:12px"><div class="card-header"><span class="card-title">Notes</span></div>'
+        + '<div class="card-body"><div style="font-size:12px;white-space:pre-wrap;color:var(--text2)">' + esc(person.notes) + '</div></div></div>';
     }
 
     el.innerHTML = html;

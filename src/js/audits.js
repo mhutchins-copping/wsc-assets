@@ -43,7 +43,7 @@ async function renderAuditsList() {
         + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
         + '<div>'
         + '<span style="font-weight:600;font-size:14px">' + esc(a.notes || 'Audit') + '</span> '
-        + '<span class="status-badge" style="--status-color:' + (isActive ? 'var(--amber)' : 'var(--green)') + '">'
+        + '<span class="badge ' + (isActive ? 'maintenance' : 'available') + '">'
         + (isActive ? 'In Progress' : 'Completed') + '</span>'
         + '</div>'
         + '<div style="display:flex;gap:8px;align-items:center">'
@@ -112,13 +112,13 @@ async function renderAuditDetail(auditId) {
     var unexpected = items.filter(function(i) { return i.status === 'moved'; });
     var isActive = audit.status === 'in_progress';
 
-    var html = '<div style="margin-bottom:16px"><button class="btn sm" onclick="navigate(\'#/audits\')">&larr; Back</button></div>';
+    var html = '<div style="margin-bottom:10px"><button class="btn sm" onclick="navigate(\'#/audits\')">&larr; Back</button></div>';
 
     // Header
     html += '<div class="detail-header">'
       + '<div class="detail-header-info">'
       + '<div class="detail-header-name">' + esc(audit.notes || 'Audit') + ' '
-      + '<span class="status-badge" style="--status-color:' + (isActive ? 'var(--amber)' : 'var(--green)') + '">'
+      + '<span class="badge ' + (isActive ? 'maintenance' : 'available') + '">'
       + (isActive ? 'In Progress' : 'Completed') + '</span></div>'
       + '<div style="font-size:12px;font-family:var(--mono);color:var(--text3)">'
       + fmtDateTime(audit.started_at)
@@ -144,11 +144,11 @@ async function renderAuditDetail(auditId) {
       + '</div>';
 
     // Progress
-    html += '<div style="margin-bottom:24px">'
-      + '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">'
-      + '<span>Progress</span><span style="font-family:var(--mono);font-weight:600">' + pct + '%</span></div>'
-      + '<div style="height:8px;background:var(--surface3);border-radius:4px;overflow:hidden">'
-      + '<div style="height:100%;width:' + pct + '%;background:var(--green);border-radius:4px"></div>'
+    html += '<div style="margin-bottom:16px">'
+      + '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">'
+      + '<span>Progress</span><span style="font-weight:600">' + pct + '%</span></div>'
+      + '<div style="height:5px;background:var(--surface3);border-radius:3px;overflow:hidden">'
+      + '<div style="height:100%;width:' + pct + '%;background:var(--green);border-radius:3px"></div>'
       + '</div></div>';
 
     // Tables
@@ -164,9 +164,9 @@ async function renderAuditDetail(auditId) {
 }
 
 function statBox(label, value, color) {
-  return '<div style="flex:1;padding:16px;background:var(--surface2);border-radius:8px;text-align:center">'
-    + '<div style="font-size:24px;font-weight:700;color:' + color + ';font-family:var(--mono)">' + value + '</div>'
-    + '<div style="font-size:11px;text-transform:uppercase;color:var(--text3);margin-top:2px">' + label + '</div></div>';
+  return '<div style="flex:1;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);text-align:center">'
+    + '<div style="font-size:20px;font-weight:700;color:' + color + '">' + value + '</div>'
+    + '<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text3);margin-top:2px">' + label + '</div></div>';
 }
 
 function itemTable(title, items, color) {
