@@ -360,11 +360,11 @@ async function route(request, env, url) {
     return updateAsset(request, env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/assets\/([^/]+)$/) && method === 'DELETE') {
-    return deleteAsset(env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
+    return deleteAsset(request, env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/assets\/([^/]+)\/purge$/) && method === 'DELETE') {
     if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
-    return purgeAsset(env, path.match(/^\/api\/assets\/([^/]+)\/purge$/)[1]);
+    return purgeAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/purge$/)[1]);
   }
 
   // AI-powered label extraction from photo
@@ -475,7 +475,7 @@ async function logActivity(env, { asset_id, action, details, performed_by, perso
   await env.DB.prepare(
     `INSERT INTO activity_log (id, asset_id, action, details, performed_by, person_id, location_id, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(id(), asset_id || null, action, details || null, performed_by || 'Matt', person_id || null, location_id || null, now()).run();
+  ).bind(id(), asset_id || null, action, details || null, performed_by || null, person_id || null, location_id || null, now()).run();
 }
 
 // ─── Assets ────────────────────────────────────────────
@@ -641,7 +641,9 @@ async function createAsset(request, env) {
     await env.DB.prepare('UPDATE assets SET status = ? WHERE id = ?').bind('deployed', assetId).run();
   }
 
-  await logActivity(env, { asset_id: assetId, action: 'create', details: `Created asset ${tag}: ${data.name}` });
+  const user = request._user;
+  const performed_by = user ? (user.display_name || user.email) : null;
+  await logActivity(env, { asset_id: assetId, action: 'create', details: `Created asset ${tag}: ${data.name}`, performed_by });
 
   return json({ id: assetId, asset_tag: tag }, 201);
 }
@@ -712,28 +714,34 @@ async function updateAsset(request, env, assetId) {
     }
   }
 
+  const user = request._user;
+  const performed_by = user ? (user.display_name || user.email) : null;
   await logActivity(env, {
     asset_id: assetId,
     action: 'update',
-    details: changes.length ? `Updated: ${changes.join(', ')}` : 'Updated asset'
+    details: changes.length ? `Updated: ${changes.join(', ')}` : 'Updated asset',
+    performed_by
   });
 
   return json({ ok: true });
 }
 
-async function deleteAsset(env, assetId) {
+async function deleteAsset(request, env, assetId) {
   const existing = await env.DB.prepare('SELECT * FROM assets WHERE id = ?').bind(assetId).first();
   if (!existing) return json({ error: 'Asset not found' }, 404);
+
+  const user = request._user;
+  const performed_by = user ? (user.display_name || user.email) : null;
 
   // Soft delete — set status to disposed
   await env.DB.prepare("UPDATE assets SET status = 'disposed', updated_at = ? WHERE id = ?").bind(now(), assetId).run();
 
-  await logActivity(env, { asset_id: assetId, action: 'dispose', details: `Disposed asset ${existing.asset_tag}` });
+  await logActivity(env, { asset_id: assetId, action: 'dispose', details: `Disposed asset ${existing.asset_tag}`, performed_by });
 
   return json({ ok: true });
 }
 
-async function purgeAsset(env, assetId) {
+async function purgeAsset(request, env, assetId) {
   const existing = await env.DB.prepare('SELECT * FROM assets WHERE id = ?').bind(assetId).first();
   if (!existing) return json({ error: 'Asset not found' }, 404);
 
@@ -762,13 +770,16 @@ async function checkoutAsset(request, env, assetId) {
   `).bind(data.person_id, ts, data.location_id || null, ts, assetId).run();
 
   const person = await env.DB.prepare('SELECT name FROM people WHERE id = ?').bind(data.person_id).first();
+  const user = request._user;
+  const performed_by = user ? (user.display_name || user.email) : null;
 
   await logActivity(env, {
     asset_id: assetId,
     action: 'checkout',
     details: data.notes || `Checked out to ${person?.name || 'unknown'}`,
     person_id: data.person_id,
-    location_id: data.location_id || asset.location_id
+    location_id: data.location_id || asset.location_id,
+    performed_by
   });
 
   return json({ ok: true });
@@ -794,12 +805,15 @@ async function checkinAsset(request, env, assetId) {
     ? await env.DB.prepare('SELECT name FROM people WHERE id = ?').bind(previousPerson).first()
     : null;
 
+  const user = request._user;
+  const performed_by = user ? (user.display_name || user.email) : null;
   await logActivity(env, {
     asset_id: assetId,
     action: 'checkin',
     details: data.notes || `Checked in from ${person?.name || 'unknown'} (condition: ${condition})`,
     person_id: previousPerson,
-    location_id: asset.location_id
+    location_id: asset.location_id,
+    performed_by
   });
 
   return json({ ok: true, status: newStatus });
@@ -820,14 +834,17 @@ async function addMaintenance(request, env, assetId) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     maintenanceId, assetId, data.type, data.description,
-    data.cost || null, data.performed_by || 'Matt', data.date || now().slice(0, 10),
+    data.cost || null, data.performed_by || null, data.date || now().slice(0, 10),
     data.next_due || null, now()
   ).run();
 
+  const user = request._user;
+  const performed_by = user ? (user.display_name || user.email) : null;
   await logActivity(env, {
     asset_id: assetId,
     action: 'maintenance',
-    details: `${data.type}: ${data.description}`
+    details: `${data.type}: ${data.description}`,
+    performed_by
   });
 
   return json({ id: maintenanceId }, 201);
