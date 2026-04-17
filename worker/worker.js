@@ -356,6 +356,7 @@ async function route(request, env, url) {
     return deleteAsset(env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/assets\/([^/]+)\/purge$/) && method === 'DELETE') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
     return purgeAsset(env, path.match(/^\/api\/assets\/([^/]+)\/purge$/)[1]);
   }
 
@@ -418,17 +419,30 @@ async function route(request, env, url) {
   if (path === '/api/stats' && method === 'GET') return getStats(env);
   if (path === '/api/reports' && method === 'GET') return getReports(env);
 
-  // Import / Export
-  if (path === '/api/import/csv' && method === 'POST') return importCSV(request, env);
-  if (path === '/api/export/csv' && method === 'GET') return exportCSV(env, url);
+  // Import / Export — mutate or reveal bulk data; admin only.
+  if (path === '/api/import/csv' && method === 'POST') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
+    return importCSV(request, env);
+  }
+  if (path === '/api/export/csv' && method === 'GET') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
+    return exportCSV(env, url);
+  }
 
-  // Entra ID user sync
-  if (path === '/api/people/sync-entra' && method === 'POST') return syncEntraUsers(request, env);
+  // Entra ID user sync — hits Microsoft Graph with tenant creds; admin only.
+  if (path === '/api/people/sync-entra' && method === 'POST') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
+    return syncEntraUsers(request, env);
+  }
 
   return null;
 }
 
 // ─── Helpers ───────────────────────────────────────────
+
+function isAdmin(request) {
+  return !!(request._user && request._user.role === 'admin');
+}
 
 function id() {
   const bytes = new Uint8Array(8);
