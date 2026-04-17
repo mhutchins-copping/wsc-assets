@@ -90,7 +90,9 @@ CREATE TABLE IF NOT EXISTS maintenance_log (
 
 CREATE TABLE IF NOT EXISTS audits (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  location_id TEXT REFERENCES locations(id) NOT NULL,
+  -- Nullable: audits are site-wide today and startAudit() doesn't record one.
+  -- Kept on the table for future per-location audits.
+  location_id TEXT REFERENCES locations(id),
   status TEXT DEFAULT 'in_progress',
   started_at TEXT DEFAULT (datetime('now')),
   completed_at TEXT,
@@ -146,3 +148,5 @@ CREATE INDEX IF NOT EXISTS idx_people_active ON people(active);
 CREATE INDEX IF NOT EXISTS idx_people_department ON people(department);
 CREATE INDEX IF NOT EXISTS idx_maintenance_asset ON maintenance_log(asset_id);
 CREATE INDEX IF NOT EXISTS idx_audit_items_audit ON audit_items(audit_id);
+CREATE INDEX IF NOT EXISTS idx_audit_items_asset ON audit_items(asset_id);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
