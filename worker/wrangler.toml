@@ -17,3 +17,5 @@ database_id = "5e966e81-a2b2-4fe7-9b2b-ee29cb02d4e6"
 [vars]
 ASSET_TAG_PREFIX = "WSC"
 CORS_ORIGIN = "https://assets.it-wsc.com"
+NOTIFICATIONS_ENABLED = "true"
+# NOTIFICATION_SENDER = "notifications@walgett.nsw.gov.au"  # Set via: wrangler secret put NOTIFICATION_SENDER

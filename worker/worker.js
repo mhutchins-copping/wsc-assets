@@ -1,6 +1,8 @@
 // WSC IT Asset Management System — Cloudflare Worker API
 // Auth: SSO email identity (Cloudflare Access) mapped to internal users, or API key
 
+import { notify } from './lib/notify.js';
+
 export default {
   async fetch(request, env) {
     const response = await dispatch(request, env);
@@ -229,6 +231,14 @@ async function authMasterKey(request, env) {
       performed_by: admin.display_name
     });
 
+    // Send notification
+    try {
+      await notify(env, 'master_key_login', {
+        actor: admin.display_name,
+        ip
+      });
+    } catch (e) { console.error('notify error:', e); }
+
     return json({
       authorized: true,
       user: { id: admin.id, email: admin.email, display_name: admin.display_name, role: admin.role }
@@ -278,6 +288,18 @@ async function createUser(request, env) {
     INSERT INTO users (id, email, display_name, role, active)
     VALUES (?, ?, ?, ?, 1)
   `).bind(userId, data.email.toLowerCase(), data.display_name || data.email, data.role || 'user').run();
+
+  const currentUser = request._user;
+  const actor = currentUser ? (currentUser.display_name || currentUser.email) : null;
+
+  // Send notification
+  try {
+    await notify(env, 'user_created', {
+      user: { id: userId, email: data.email.toLowerCase(), display_name: data.display_name || data.email, role: data.role || 'user' },
+      actor,
+      actorEmail: currentUser?.email
+    });
+  } catch (e) { console.error('notify error:', e); }
 
   return json({ id: userId }, 201);
 }
@@ -645,6 +667,15 @@ async function createAsset(request, env) {
   const performed_by = user ? (user.display_name || user.email) : null;
   await logActivity(env, { asset_id: assetId, action: 'create', details: `Created asset ${tag}: ${data.name}`, performed_by });
 
+  // Send notification
+  try {
+    await notify(env, 'asset_created', {
+      asset: { id: assetId, asset_tag: tag, name: data.name },
+      actor: performed_by,
+      actorEmail: user?.email
+    });
+  } catch (e) { console.error('notify error:', e); }
+
   return json({ id: assetId, asset_tag: tag }, 201);
 }
 
@@ -738,6 +769,15 @@ async function deleteAsset(request, env, assetId) {
 
   await logActivity(env, { asset_id: assetId, action: 'dispose', details: `Disposed asset ${existing.asset_tag}`, performed_by });
 
+  // Send notification
+  try {
+    await notify(env, 'asset_disposed', {
+      asset: { id: assetId, asset_tag: existing.asset_tag, name: existing.name },
+      actor: performed_by,
+      actorEmail: user?.email
+    });
+  } catch (e) { console.error('notify error:', e); }
+
   return json({ ok: true });
 }
 
@@ -745,10 +785,22 @@ async function purgeAsset(request, env, assetId) {
   const existing = await env.DB.prepare('SELECT * FROM assets WHERE id = ?').bind(assetId).first();
   if (!existing) return json({ error: 'Asset not found' }, 404);
 
+  const user = request._user;
+  const performed_by = user ? (user.display_name || user.email) : null;
+
   await env.DB.prepare('DELETE FROM activity_log WHERE asset_id = ?').bind(assetId).run();
   await env.DB.prepare('DELETE FROM maintenance_log WHERE asset_id = ?').bind(assetId).run();
   await env.DB.prepare('DELETE FROM audit_items WHERE asset_id = ?').bind(assetId).run();
   await env.DB.prepare('DELETE FROM assets WHERE id = ?').bind(assetId).run();
+
+  // Send notification
+  try {
+    await notify(env, 'asset_purged', {
+      asset: { id: assetId, asset_tag: existing.asset_tag, name: existing.name },
+      actor: performed_by,
+      actorEmail: user?.email
+    });
+  } catch (e) { console.error('notify error:', e); }
 
   return json({ ok: true });
 }
@@ -769,7 +821,7 @@ async function checkoutAsset(request, env, assetId) {
     WHERE id = ?
   `).bind(data.person_id, ts, data.location_id || null, ts, assetId).run();
 
-  const person = await env.DB.prepare('SELECT name FROM people WHERE id = ?').bind(data.person_id).first();
+  const person = await env.DB.prepare('SELECT name, department FROM people WHERE id = ?').bind(data.person_id).first();
   const user = request._user;
   const performed_by = user ? (user.display_name || user.email) : null;
 
@@ -781,6 +833,16 @@ async function checkoutAsset(request, env, assetId) {
     location_id: data.location_id || asset.location_id,
     performed_by
   });
+
+  // Send notification
+  try {
+    await notify(env, 'asset_checkout', {
+      asset: { id: assetId, asset_tag: asset.asset_tag, name: asset.name },
+      person,
+      actor: performed_by,
+      actorEmail: user?.email
+    });
+  } catch (e) { console.error('notify error:', e); }
 
   return json({ ok: true });
 }
@@ -815,6 +877,17 @@ async function checkinAsset(request, env, assetId) {
     location_id: asset.location_id,
     performed_by
   });
+
+  // Send notification
+  try {
+    await notify(env, 'asset_checkin', {
+      asset: { id: assetId, asset_tag: asset.asset_tag, name: asset.name },
+      person,
+      condition,
+      actor: performed_by,
+      actorEmail: user?.email
+    });
+  } catch (e) { console.error('notify error:', e); }
 
   return json({ ok: true, status: newStatus });
 }
