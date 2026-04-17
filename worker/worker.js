@@ -3,58 +3,94 @@
 
 export default {
   async fetch(request, env) {
-    const url = new URL(request.url);
-
-    // CORS preflight
-    if (request.method === 'OPTIONS') return corsResponse();
-
-    // Auth identity endpoint — checks SSO email against internal users (no prior auth needed)
-    if (url.pathname === '/api/auth/identify' && request.method === 'POST') {
-      try { return await authIdentify(request, env); }
-      catch (err) { return json({ error: err.message }, 500); }
-    }
-
-    // Master key login — fallback when SSO is unavailable (e.g. from home)
-    if (url.pathname === '/api/auth/master-key' && request.method === 'POST') {
-      try { return await authMasterKey(request, env); }
-      catch (err) { return json({ error: err.message }, 500); }
-    }
-
-    // User management routes (admin only, checked inside each handler)
-    if (url.pathname.startsWith('/api/auth/users')) {
-      try {
-        const res = await routeUserManagement(request, env, url);
-        if (res) return res;
-      } catch (err) { return json({ error: err.message }, 500); }
-      return json({ error: 'Not found' }, 404);
-    }
-
-    // Auth check for all other /api/* routes
-    if (url.pathname.startsWith('/api/')) {
-      const user = await authenticate(request, env);
-      if (!user) {
-        return json({ error: 'Unauthorized' }, 401);
-      }
-      request._user = user;
-    }
-
-    // Image upload/serve via R2
-    if (url.pathname.startsWith('/images/')) {
-      return handleImages(request, env, url);
-    }
-
-    // Route matching
-    try {
-      const res = await route(request, env, url);
-      if (res) return res;
-    } catch (err) {
-      console.error(err);
-      return json({ error: err.message || 'Internal server error' }, 500);
-    }
-
-    return json({ error: 'Not found' }, 404);
+    const response = await dispatch(request, env);
+    return applyCors(response, request, env);
   }
 };
+
+async function dispatch(request, env) {
+  const url = new URL(request.url);
+
+  // CORS preflight
+  if (request.method === 'OPTIONS') return corsResponse();
+
+  // Auth identity endpoint — checks SSO email against internal users (no prior auth needed)
+  if (url.pathname === '/api/auth/identify' && request.method === 'POST') {
+    try { return await authIdentify(request, env); }
+    catch (err) { return json({ error: err.message }, 500); }
+  }
+
+  // Master key login — fallback when SSO is unavailable (e.g. from home)
+  if (url.pathname === '/api/auth/master-key' && request.method === 'POST') {
+    try { return await authMasterKey(request, env); }
+    catch (err) { return json({ error: err.message }, 500); }
+  }
+
+  // User management routes (admin only, checked inside each handler)
+  if (url.pathname.startsWith('/api/auth/users')) {
+    try {
+      const res = await routeUserManagement(request, env, url);
+      if (res) return res;
+    } catch (err) { return json({ error: err.message }, 500); }
+    return json({ error: 'Not found' }, 404);
+  }
+
+  // Auth check for all other /api/* routes
+  if (url.pathname.startsWith('/api/')) {
+    const user = await authenticate(request, env);
+    if (!user) {
+      return json({ error: 'Unauthorized' }, 401);
+    }
+    request._user = user;
+  }
+
+  // Image upload/serve via R2
+  if (url.pathname.startsWith('/images/')) {
+    return handleImages(request, env, url);
+  }
+
+  // Route matching
+  try {
+    const res = await route(request, env, url);
+    if (res) return res;
+  } catch (err) {
+    console.error(err);
+    return json({ error: err.message || 'Internal server error' }, 500);
+  }
+
+  return json({ error: 'Not found' }, 404);
+}
+
+// Rewrite the permissive CORS headers set by individual handlers to reflect a
+// single configured origin (env.CORS_ORIGIN). Only echoes the request Origin if
+// it matches. Credentials are allowed so the CF Access cookie can be sent.
+function applyCors(response, request, env) {
+  const allowedOrigin = env.CORS_ORIGIN || '';
+  const origin = request.headers.get('Origin') || '';
+  const headers = new Headers(response.headers);
+
+  if (allowedOrigin && origin === allowedOrigin) {
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Access-Control-Allow-Credentials', 'true');
+    headers.append('Vary', 'Origin');
+  } else if (!allowedOrigin) {
+    // No configured origin — keep wildcard for local/dev setups.
+    headers.set('Access-Control-Allow-Origin', '*');
+    headers.delete('Access-Control-Allow-Credentials');
+  } else {
+    // Origin doesn't match the allow-list — strip CORS exposure entirely so the
+    // browser rejects the response.
+    headers.delete('Access-Control-Allow-Origin');
+    headers.delete('Access-Control-Allow-Credentials');
+    headers.append('Vary', 'Origin');
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
 
 // ─── Auth ──────────────────────────────────────────────
 // Two auth paths:
