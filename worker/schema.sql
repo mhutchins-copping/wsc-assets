@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS users (
   display_name TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'user',
   active INTEGER DEFAULT 1,
+  notifications_enabled INTEGER DEFAULT 1,
   created_at TEXT DEFAULT (datetime('now')),
   last_login TEXT
 );
