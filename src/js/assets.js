@@ -854,19 +854,25 @@ saveAsset = async function(editId) {
     if (editId) {
       result = await API.updateAsset(editId, data);
       if (imageFile && imageFile !== scannedFile) {
-        var imageUrl = await API.uploadImage(editId, imageFile);
-        await API.updateAsset(editId, { image_url: imageUrl });
+        try {
+          var imageUrl = await API.uploadImage(editId, imageFile);
+          await API.updateAsset(editId, { image_url: imageUrl });
+        } catch(e) { console.warn('Image upload failed:', e.message); }
       } else if (scannedFile) {
-        var imageUrl2 = await API.uploadImage(editId, scannedFile);
-        await API.updateAsset(editId, { image_url: imageUrl2 });
+        try {
+          var imageUrl2 = await API.uploadImage(editId, scannedFile);
+          await API.updateAsset(editId, { image_url: imageUrl2 });
+        } catch(e) { console.warn('Image upload failed:', e.message); }
       }
       toast('Asset updated', 'success');
       navigate('#/assets/' + editId);
     } else {
       result = await API.createAsset(data);
       if (imageFile && result.id) {
-        var imageUrl3 = await API.uploadImage(result.id, imageFile);
-        await API.updateAsset(result.id, { image_url: imageUrl3 });
+        try {
+          var imageUrl3 = await API.uploadImage(result.id, imageFile);
+          await API.updateAsset(result.id, { image_url: imageUrl3 });
+        } catch(e) { console.warn('Image upload failed:', e.message); }
       }
       toast('Asset created: ' + (result.asset_tag || ''), 'success');
       navigate('#/assets/' + result.id);
