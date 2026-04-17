@@ -173,13 +173,20 @@ async function authMasterKey(request, env) {
 
   if (!key) return json({ error: 'Master key required' }, 400);
 
-  // Check rate limit — block after too many failed attempts from same IP
+  // Check rate limit — block after too many failed attempts from same IP.
+  // Cutoff is computed in JS and bound; never interpolate values into SQL,
+  // even trusted ones, to keep one consistent pattern everywhere.
   try {
+    const cutoffMs = Date.now() - MASTER_KEY_LOCKOUT_MINUTES * 60 * 1000;
+    const cutoff = new Date(cutoffMs)
+      .toLocaleString('sv-SE', { timeZone: 'Australia/Sydney' })
+      .replace('T', ' ')
+      .slice(0, 19);
     const recent = await env.DB.prepare(
       `SELECT COUNT(*) as attempts FROM activity_log
        WHERE action = 'master_key_failed' AND details LIKE ?
-       AND created_at > datetime(?, '-${MASTER_KEY_LOCKOUT_MINUTES} minutes')`
-    ).bind('%' + ip + '%', now()).first();
+       AND created_at > ?`
+    ).bind('%' + ip + '%', cutoff).first();
 
     if (recent && recent.attempts >= MASTER_KEY_MAX_ATTEMPTS) {
       await logActivity(env, {
