@@ -1609,8 +1609,24 @@ async function exportCSV(env, url) {
 
 // ─── R2 Image Handling ─────────────────────────────────
 
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+
+// Only allow safe R2 keys: two path segments (assetId/filename), ASCII letters/
+// digits/dots/dashes/underscores. Blocks path traversal, absolute paths, and
+// overwrites of arbitrary keys.
+function safeImageKey(key) {
+  if (!key || key.length > 200) return null;
+  if (!/^[A-Za-z0-9_\-]+\/[A-Za-z0-9_\-.]+$/.test(key)) return null;
+  if (key.includes('..')) return null;
+  return key;
+}
+
 async function handleImages(request, env, url) {
-  const key = url.pathname.replace('/images/', '');
+  if (!env.IMAGES) return json({ error: 'Image storage not configured' }, 503);
+
+  const key = safeImageKey(url.pathname.replace('/images/', ''));
+  if (!key) return json({ error: 'Invalid image key' }, 400);
 
   if (request.method === 'GET') {
     const object = await env.IMAGES.get(key);
@@ -1625,23 +1641,35 @@ async function handleImages(request, env, url) {
     });
   }
 
-  if (request.method === 'PUT' || request.method === 'POST') {
-    if (!authenticate(request, env)) return json({ error: 'Unauthorized' }, 401);
+  // Mutating operations require an authenticated caller. authenticate() is
+  // async — previously the `if (!authenticate(...))` check awaited nothing and
+  // so always passed because a Promise is truthy.
+  if (request.method === 'PUT' || request.method === 'POST' || request.method === 'DELETE') {
+    const user = await authenticate(request, env);
+    if (!user) return json({ error: 'Unauthorized' }, 401);
 
-    const contentType = request.headers.get('Content-Type') || 'image/jpeg';
+    if (request.method === 'DELETE') {
+      await env.IMAGES.delete(key);
+      return json({ ok: true });
+    }
+
+    const contentType = (request.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+    if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
+      return json({ error: 'Unsupported image type' }, 415);
+    }
+
+    const declaredLen = parseInt(request.headers.get('Content-Length') || '0', 10);
+    if (declaredLen && declaredLen > MAX_IMAGE_BYTES) {
+      return json({ error: 'Image too large' }, 413);
+    }
+
     const imageData = await request.arrayBuffer();
+    if (imageData.byteLength > MAX_IMAGE_BYTES) {
+      return json({ error: 'Image too large' }, 413);
+    }
 
-    await env.IMAGES.put(key, imageData, {
-      httpMetadata: { contentType }
-    });
-
+    await env.IMAGES.put(key, imageData, { httpMetadata: { contentType } });
     return json({ url: `/images/${key}` }, 201);
-  }
-
-  if (request.method === 'DELETE') {
-    if (!authenticate(request, env)) return json({ error: 'Unauthorized' }, 401);
-    await env.IMAGES.delete(key);
-    return json({ ok: true });
   }
 
   return json({ error: 'Method not allowed' }, 405);
