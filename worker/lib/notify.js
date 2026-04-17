@@ -43,90 +43,142 @@ function formatTimestamp(date = new Date()) {
 
 function buildEmail(event, data) {
   const baseUrl = 'https://assets.it-wsc.com/#/assets/';
-  let subject, verbSentence, contextLines = '', assetUrl = '';
+  let subject, actionColor, actionLabel, details = [], timestamp, assetUrl = '';
+  const timestampStr = formatTimestamp();
 
   switch (event) {
     case 'asset_created':
-      subject = `[WSC Assets] Asset created — ${data.asset.asset_tag}`;
-      verbSentence = 'A new asset was added to the register.';
-      contextLines = `Asset:    ${data.asset.asset_tag} — ${data.asset.name}`;
+      subject = `[WSC Assets] New Asset — ${data.asset.asset_tag}`;
+      actionColor = '#10b981';
+      actionLabel = 'Created';
+      details.push({ label: 'Asset Tag', value: data.asset.asset_tag });
+      details.push({ label: 'Name', value: data.asset.name });
+      if (data.asset.serial_number) details.push({ label: 'Serial', value: data.asset.serial_number });
+      if (data.asset.manufacturer) details.push({ label: 'Manufacturer', value: data.asset.manufacturer });
+      if (data.asset.model) details.push({ label: 'Model', value: data.asset.model });
       assetUrl = baseUrl + data.asset.id;
       break;
 
     case 'asset_checkout':
-      subject = `[WSC Assets] Checked out — ${data.asset.asset_tag} → ${data.person?.name || 'Unknown'}`;
-      verbSentence = 'An asset was assigned to a person.';
-      contextLines = `Asset:    ${data.asset.asset_tag} — ${data.asset.name}\nAssigned to: ${data.person?.name || 'Unknown'}${data.person?.department ? ' (' + data.person.department + ')' : ''}`;
+      subject = `[WSC Assets] Checked Out — ${data.asset.asset_tag}`;
+      actionColor = '#3b82f6';
+      actionLabel = 'Checked Out';
+      details.push({ label: 'Asset Tag', value: data.asset.asset_tag });
+      details.push({ label: 'Name', value: data.asset.name });
+      details.push({ label: 'Assigned To', value: data.person?.name || 'Unknown' });
+      if (data.person?.department) details.push({ label: 'Department', value: data.person.department });
       assetUrl = baseUrl + data.asset.id;
       break;
 
     case 'asset_checkin':
-      subject = `[WSC Assets] Checked in — ${data.asset.asset_tag}`;
-      verbSentence = 'An asset was returned.';
-      contextLines = `Asset:    ${data.asset.asset_tag} — ${data.asset.name}\nReturned from: ${data.person?.name || 'Unknown'}\nCondition: ${data.condition || 'good'}`;
+      subject = `[WSC Assets] Checked In — ${data.asset.asset_tag}`;
+      actionColor = '#f59e0b';
+      actionLabel = 'Checked In';
+      details.push({ label: 'Asset Tag', value: data.asset.asset_tag });
+      details.push({ label: 'Name', value: data.asset.name });
+      details.push({ label: 'Returned From', value: data.person?.name || 'Unknown' });
+      details.push({ label: 'Condition', value: data.condition || 'good' });
       assetUrl = baseUrl + data.asset.id;
       break;
 
     case 'asset_disposed':
-      subject = `[WSC Assets] Asset disposed — ${data.asset.asset_tag}`;
-      verbSentence = 'An asset was disposed.';
-      contextLines = `Asset:    ${data.asset.asset_tag} — ${data.asset.name}\nStatus: disposed`;
+      subject = `[WSC Assets] Disposed — ${data.asset.asset_tag}`;
+      actionColor = '#ef4444';
+      actionLabel = 'Disposed';
+      details.push({ label: 'Asset Tag', value: data.asset.asset_tag });
+      details.push({ label: 'Name', value: data.asset.name });
+      details.push({ label: 'Status', value: 'Disposed' });
       assetUrl = baseUrl + data.asset.id;
       break;
 
     case 'asset_purged':
-      subject = `[WSC Assets] Asset purged — ${data.asset.asset_tag}`;
-      verbSentence = 'An asset was permanently deleted (purged).';
-      contextLines = `Asset:    ${data.asset.asset_tag} — ${data.asset.name}\nStatus: permanently deleted`;
+      subject = `[WSC Assets] Permanently Deleted — ${data.asset.asset_tag}`;
+      actionColor = '#dc2626';
+      actionLabel = 'Purged';
+      details.push({ label: 'Asset Tag', value: data.asset.asset_tag });
+      details.push({ label: 'Name', value: data.asset.name });
+      details.push({ label: 'Status', value: 'Permanently Deleted' });
       break;
 
     case 'master_key_login':
-      subject = `[WSC Assets] Master key login — ${data.actor}`;
-      verbSentence = 'A master key login occurred.';
-      contextLines = `Admin: ${data.actor}\nIP: ${data.ip || 'Unknown'}`;
+      subject = `[WSC Assets] Master Key Login — ${data.actor}`;
+      actionColor = '#7c3aed';
+      actionLabel = 'Security Alert';
+      details.push({ label: 'Admin', value: data.actor });
+      details.push({ label: 'IP Address', value: data.ip || 'Unknown' });
+      details.push({ label: 'Time', value: timestampStr });
       break;
 
     case 'user_created':
-      subject = `[WSC Assets] User created — ${data.user.email}`;
-      verbSentence = 'A new user was added to the system.';
-      contextLines = `Name:  ${data.user.display_name}\nEmail: ${data.user.email}\nRole:  ${data.user.role}`;
+      subject = `[WSC Assets] New User — ${data.user.display_name}`;
+      actionColor = '#10b981';
+      actionLabel = 'User Created';
+      details.push({ label: 'Name', value: data.user.display_name });
+      details.push({ label: 'Email', value: data.user.email });
+      details.push({ label: 'Role', value: data.user.role || 'user' });
       break;
 
     default:
       throw new Error('Unknown event type: ' + event);
   }
 
-  const timestamp = formatTimestamp();
-  const actorLine = data.actor ? `Performed by: ${data.actor}${data.actorEmail ? ' (' + data.actorEmail + ')' : ''}` : '';
+  const actorLine = data.actor ? `Performed by ${data.actor}` : '';
+  const actionBg = actionColor + '20';
+  const actionBorder = actionColor;
 
   const html = `<!DOCTYPE html>
 <html>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #333;">
-${verbSentence}
-<br><br>
-<pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto;">
-${contextLines}
-</pre>
-<br>
-${actorLine ? actorLine + '<br>' : ''}
-At:           ${timestamp}
-${assetUrl ? '<br><a href="' + assetUrl + '">View asset</a>' : ''}
-<br><br>
-—<br>
-WSC IT Asset Management
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif">
+  <div style="max-width:600px;margin:0 auto;padding:20px">
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);padding:24px;border-radius:12px 12px 0 0">
+      <h1 style="margin:0;color:#fff;font-size:20px;font-weight:600">WSC IT Asset Management</h1>
+      <p style="margin:4px 0 0;color:#bfdbfe;font-size:13px">Walgett Shire Council</p>
+    </div>
+    
+    <!-- Action Badge -->
+    <div style="background:${actionBg};border-left:4px solid ${actionBorder};padding:16px 20px;margin:0">
+      <div style="color:${actionColor};font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">${actionLabel}</div>
+    </div>
+    
+    <!-- Content -->
+    <div style="background:#fff;padding:24px;border-radius:0 0 12px 12px;box-shadow:0 1px 3px rgba(0,0,0,0.1)">
+      <!-- Details Table -->
+      <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+        ${details.map(d => `
+        <tr>
+          <td style="padding:10px 0;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:13px;width:35%">${d.label}</td>
+          <td style="padding:10px 0;border-bottom:1px solid #e5e7eb;color:#111827;font-size:14px;font-weight:500">${d.value}</td>
+        </tr>`).join('')}
+      </table>
+      
+      <!-- Footer Info -->
+      <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:8px">
+        ${actorLine ? `<p style="margin:0 0 4px;color:#6b7280;font-size:13px">${actorLine}</p>` : ''}
+        <p style="margin:0 0 16px;color:#6b7280;font-size:13px">${timestampStr}</p>
+        ${assetUrl ? `<a href="${assetUrl}" style="display:inline-block;background:#2563eb;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:500">View in WSC Assets →</a>` : ''}
+      </div>
+    </div>
+    
+    <!-- Footer -->
+    <p style="text-align:center;color:#9ca3af;font-size:12px;margin:20px 0 0">This is an automated notification from WSC IT Asset Management.</p>
+  </div>
 </body>
 </html>`;
 
-  const text = `${verbSentence}
+  const text = `WSC IT Asset Management — ${actionLabel.toUpperCase()}
+${'='.repeat(50)}
 
-Asset:    ${data.asset?.asset_tag || 'N/A'} — ${data.asset?.name || 'N/A'}
-${contextLines}
+${details.map(d => `${d.label}: ${d.value}`).join('\n')}
 
-${actorLine ? actorLine + '\n' : ''}At:           ${timestamp}
-${assetUrl ? '\nView asset: ' + assetUrl : ''}
+${actorLine ? 'Performed by: ' + actorLine + '\n' : ''}${timestampStr}${assetUrl ? '\n\nView in WSC Assets: ' + assetUrl : ''}
 
 —
-WSC IT Asset Management`;
+This is an automated notification from WSC IT Asset Management.`;
 
   return { subject, html, text };
 }
