@@ -111,20 +111,6 @@ CREATE TABLE IF NOT EXISTS audit_items (
   notes TEXT
 );
 
-CREATE TABLE IF NOT EXISTS software_licenses (
-  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-  name TEXT NOT NULL,
-  vendor TEXT,
-  license_key TEXT,
-  total_seats INTEGER,
-  used_seats INTEGER DEFAULT 0,
-  purchase_date TEXT,
-  expiry_date TEXT,
-  cost REAL,
-  notes TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
-);
-
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
   email TEXT UNIQUE NOT NULL,
