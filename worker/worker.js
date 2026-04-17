@@ -1982,7 +1982,13 @@ or "low" and note the ambiguity.`;
     const text = data.content?.[0]?.text;
     if (!text) return json({ error: 'Empty response from AI' }, 502);
 
-    const extracted = JSON.parse(text);
+    // Strip markdown code fences (AI sometimes wraps JSON in ```json ... ```)
+    let jsonText = text.trim();
+    if (jsonText.startsWith('```')) {
+      jsonText = jsonText.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '').trim();
+    }
+
+    const extracted = JSON.parse(jsonText);
     const serial = extracted.serial_number?.trim() || null;
 
     // Dedup: check for existing non-disposed asset with same serial
