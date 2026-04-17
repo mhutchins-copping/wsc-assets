@@ -25,14 +25,14 @@ var API = {
     opts = opts || {};
     var url = this.baseUrl + path;
     var headers = {};
-    // Auth: SSO email header, master key, or API key
-    var email = Auth && Auth.getEmail ? Auth.getEmail() : '';
+    // Auth paths:
+    //  - Cloudflare Access cookie (CF_Authorization) rides along automatically via credentials:'include'
+    //    and the worker reads Cf-Access-Authenticated-User-Email at the edge.
+    //  - Master key (break-glass): sent as X-Api-Key.
+    //  - Stored API key (scripts/external): sent as X-Api-Key.
     var masterKey = Auth && Auth._masterKey ? Auth._masterKey : '';
     if (masterKey) {
-      // Master key auth — send as API key since worker validates it the same way
       headers['X-Api-Key'] = masterKey;
-    } else if (email) {
-      headers['X-SSO-Email'] = email;
     } else if (this.apiKey) {
       headers['X-Api-Key'] = this.apiKey;
     }
@@ -46,7 +46,10 @@ var API = {
       var res = await fetch(url, {
         method: opts.method || 'GET',
         headers: Object.assign(headers, opts.headers || {}),
-        body: opts.body || undefined
+        body: opts.body || undefined,
+        // Send the Cloudflare Access cookie on cross-origin calls so the worker
+        // can read the Cf-Access-Authenticated-User-Email header at the edge.
+        credentials: 'include'
       });
 
       if (!res.ok) {

@@ -62,10 +62,9 @@ export default {
 // 2. API key (scripts/external access)
 
 async function authenticate(request, env) {
-  // 1. Cloudflare Access header (set by CF Access, cannot be spoofed)
-  // Falls back to X-SSO-Email from frontend for development
-  const ssoEmail = request.headers.get('Cf-Access-Authenticated-User-Email')
-    || request.headers.get('X-SSO-Email');
+  // Cloudflare Access injects this header at the edge and strips any client-sent
+  // copy, so it cannot be spoofed. Never accept a user-controlled fallback here.
+  const ssoEmail = request.headers.get('Cf-Access-Authenticated-User-Email');
   if (ssoEmail) {
     try {
       const user = await env.DB.prepare(
@@ -269,7 +268,7 @@ async function deleteUser(request, env, userId, currentUser) {
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Api-Key, X-SSO-Email',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Api-Key',
   'Access-Control-Max-Age': '86400',
 };
 
