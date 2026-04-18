@@ -202,13 +202,13 @@ function renderSettings() {
 
     + '</div></div>';
 
-  // Initialize
+  // Initialize after render
   setTimeout(function() {
     refreshSystemStatus();
     API.init();
   }, 100);
 
-  return '';
+  return html;
 }
 
 // Quick functions
