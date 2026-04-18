@@ -119,18 +119,26 @@ var API = {
 
   // ─── Images (R2)
   uploadImage: async function(assetId, file) {
+    console.log('uploadImage called:', assetId, file.name, file.size, file.type);
     // Sanitise both halves of the key so it passes the worker's strict regex
     // (letters/digits/_/- in the prefix, plus . in the filename).
     var safeAsset = String(assetId || '').replace(/[^A-Za-z0-9_-]/g, '');
     var extMatch = /\.([A-Za-z0-9]{1,8})$/.exec(file.name || '');
     var ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
     var key = safeAsset + '/' + Date.now() + '.' + ext;
-    await this.fetch('/images/' + key, {
-      method: 'PUT',
-      body: file,
-      headers: { 'Content-Type': file.type || 'image/jpeg' }
-    });
-    return '/images/' + key;
+    console.log('Uploading to:', '/images/' + key, 'Content-Type:', file.type || 'image/jpeg');
+    try {
+      var res = await this.fetch('/images/' + key, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type || 'image/jpeg' }
+      });
+      console.log('Upload response:', res);
+      return '/images/' + key;
+    } catch(e) {
+      console.error('Upload error:', e.message, e.response ? await e.response.text() : '');
+      throw e;
+    }
   },
 
   // ─── AI Label Extraction

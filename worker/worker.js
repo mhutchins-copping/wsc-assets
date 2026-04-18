@@ -1806,21 +1806,27 @@ async function handleImages(request, env, url) {
     }
 
     const contentType = (request.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+    console.log('Image upload - key:', key, 'contentType:', contentType);
     if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
+      console.log('Image upload - rejected: unsupported type');
       return json({ error: 'Unsupported image type' }, 415);
     }
 
     const declaredLen = parseInt(request.headers.get('Content-Length') || '0', 10);
     if (declaredLen && declaredLen > MAX_IMAGE_BYTES) {
+      console.log('Image upload - rejected: too large', declaredLen);
       return json({ error: 'Image too large' }, 413);
     }
 
     const imageData = await request.arrayBuffer();
+    console.log('Image upload - received bytes:', imageData.byteLength);
     if (imageData.byteLength > MAX_IMAGE_BYTES) {
       return json({ error: 'Image too large' }, 413);
     }
 
+    console.log('Image upload - saving to R2...');
     await env.IMAGES.put(key, imageData, { httpMetadata: { contentType } });
+    console.log('Image upload - saved to R2:', key);
     return json({ url: `/images/${key}` }, 201);
   }
 
