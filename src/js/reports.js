@@ -29,15 +29,7 @@ Router.register('/reports', function() {
     + '<div class="card-body" id="rpt-assigned">' + skeleton(4) + '</div></div>'
     + '</div>'
 
-    // Row 3: Age + Cost
-    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px">'
-    + '<div class="card"><div class="card-header"><span class="card-title">Asset Age Distribution</span></div>'
-    + '<div class="card-body" id="rpt-age">' + skeleton(4) + '</div></div>'
-    + '<div class="card"><div class="card-header"><span class="card-title">Cost by Category</span></div>'
-    + '<div class="card-body" id="rpt-cost">' + skeleton(4) + '</div></div>'
-    + '</div>'
-
-    // Row 4: OS + Manufacturer
+    // Row 3: OS + Manufacturer
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px">'
     + '<div class="card"><div class="card-header"><span class="card-title">Operating Systems</span></div>'
     + '<div class="card-body" id="rpt-os">' + skeleton(4) + '</div></div>'
@@ -56,13 +48,11 @@ async function loadReports() {
     renderCategoryTable('rpt-category', data.by_category);
     renderBarChart('rpt-department', data.by_department, 'department', 'count');
     renderAssignedTable('rpt-assigned', data.top_assigned);
-    renderBarChart('rpt-age', data.age_distribution, 'age_group', 'count', ageColor);
-    renderCostTable('rpt-cost', data.cost_by_category);
     renderBarChart('rpt-os', data.by_os, 'os', 'count');
     renderBarChart('rpt-manufacturer', data.by_manufacturer, 'manufacturer', 'count');
   } catch(e) {
     toast('Failed to load reports: ' + e.message, 'error');
-    ['rpt-status','rpt-category','rpt-department','rpt-assigned','rpt-age','rpt-cost','rpt-os','rpt-manufacturer'].forEach(function(id) {
+    ['rpt-status','rpt-category','rpt-department','rpt-assigned','rpt-os','rpt-manufacturer'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.innerHTML = '<div class="table-empty" style="padding:20px 0">Failed to load</div>';
     });
@@ -82,8 +72,8 @@ function renderReportKPIs(data) {
   el.innerHTML = kpiCard('rpt-k-total', 'Active Assets', total, 'Excludes disposed', 'var(--accent)')
     + kpiCard('rpt-k-deployed', 'Deployed', statusMap.deployed || 0, 'Currently assigned', '#2563eb')
     + kpiCard('rpt-k-available', 'Available', statusMap.available || 0, 'Ready for use', '#10b981')
-    + kpiCard('rpt-k-cost', 'Total Value', fmtCurrency(data.cost_summary.total_cost), (data.cost_summary.total_assets || 0) + ' assets with cost', '#8b5cf6')
-    + kpiCard('rpt-k-new', 'Added (30d)', data.recently_added || 0, 'Last 30 days', '#f59e0b')
+    + kpiCard('rpt-k-maint', 'Maintenance', statusMap.maintenance || 0, 'Out of service', '#f59e0b')
+    + kpiCard('rpt-k-new', 'Added (30d)', data.recently_added || 0, 'Last 30 days', '#8b5cf6')
     + kpiCard('rpt-k-disposed', 'Disposed', data.disposed_count || 0, 'End of life', '#6b7280');
 }
 
@@ -91,11 +81,6 @@ function renderReportKPIs(data) {
 
 function statusColor(val) {
   var colors = { deployed: '#2563eb', available: '#10b981', maintenance: '#f59e0b', retired: '#6b7280', disposed: '#ef4444' };
-  return colors[val] || 'var(--accent)';
-}
-
-function ageColor(val) {
-  var colors = { '< 1 year': '#10b981', '1-2 years': '#2563eb', '2-3 years': '#8b5cf6', '3-5 years': '#f59e0b', '5+ years': '#ef4444', 'Unknown': '#6b7280' };
   return colors[val] || 'var(--accent)';
 }
 
@@ -167,35 +152,6 @@ function renderAssignedTable(containerId, items) {
       + '<td style="text-align:right;font-family:var(--mono);font-weight:600">' + p.count + '</td>'
       + '</tr>';
   });
-  html += '</tbody></table>';
-  el.innerHTML = html;
-}
-
-function renderCostTable(containerId, items) {
-  var el = document.getElementById(containerId);
-  if (!el) return;
-  if (!items || !items.length) {
-    el.innerHTML = '<div class="table-empty" style="padding:20px 0">No cost data</div>';
-    return;
-  }
-
-  var html = '<table class="table"><thead><tr>'
-    + '<th>Category</th><th style="text-align:right">Assets</th><th style="text-align:right">Total Cost</th>'
-    + '</tr></thead><tbody>';
-
-  var grandTotal = 0;
-  items.forEach(function(c) {
-    grandTotal += c.total_cost || 0;
-    html += '<tr>'
-      + '<td>' + (c.icon ? c.icon + ' ' : '') + esc(c.name) + '</td>'
-      + '<td style="text-align:right;font-family:var(--mono)">' + c.count + '</td>'
-      + '<td style="text-align:right;font-family:var(--mono);font-weight:600">' + fmtCurrency(c.total_cost) + '</td>'
-      + '</tr>';
-  });
-  html += '<tr style="border-top:2px solid var(--border);font-weight:700">'
-    + '<td>Total</td><td></td>'
-    + '<td style="text-align:right;font-family:var(--mono)">' + fmtCurrency(grandTotal) + '</td>'
-    + '</tr>';
   html += '</tbody></table>';
   el.innerHTML = html;
 }

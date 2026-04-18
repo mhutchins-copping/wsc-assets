@@ -222,12 +222,10 @@ async function renderAssetDetail(id) {
       // Left column
       + '<div class="asset-detail-col">'
       + '<div class="card"><div class="card-header"><span class="card-title">Details</span></div>'
-      + '<div class="card-body"><div class="detail-grid" style="grid-template-columns:1fr 1fr 1fr">'
+      + '<div class="card-body"><div class="detail-grid" style="grid-template-columns:1fr 1fr">'
       + detailField('Category', asset.category_name)
       + detailField('Manufacturer', asset.manufacturer)
       + detailField('Model', asset.model)
-      + detailField('Purchase Date', fmtDate(asset.purchase_date))
-      + detailField('Purchase Cost', fmtCurrency(asset.purchase_cost))
       + detailField('Created', fmtDate(asset.created_at))
       + '</div></div></div>';
 
@@ -525,13 +523,6 @@ async function renderAssetForm(editId) {
     + '<input type="text" id="af-model" class="form-input" list="dl-mdl" value="' + esc(asset ? asset.model : '') + '" placeholder="e.g. Latitude 5540">'
     + datalist('dl-mdl', _models) + '</div></div>';
 
-  // Purchase date + cost
-  html += '<div class="form-row">'
-    + '<div class="form-group"><label class="form-label">Purchase Date</label>'
-    + '<input type="date" id="af-pdate" class="form-input" value="' + esc(asset ? asset.purchase_date || '' : '') + '"></div>'
-    + '<div class="form-group"><label class="form-label">Purchase Cost ($)</label>'
-    + '<input type="number" id="af-pcost" class="form-input" step="0.01" value="' + (asset && asset.purchase_cost ? asset.purchase_cost : '') + '" placeholder="0.00"></div></div>';
-
   // Assign to
   html += '<div class="form-row">'
     + '<div class="form-group"><label class="form-label">Assign To</label>'
@@ -646,8 +637,6 @@ async function saveAsset(editId) {
     manufacturer: document.getElementById('af-manufacturer').value.trim() || null,
     model: document.getElementById('af-model').value.trim() || null,
     status: document.getElementById('af-status').value,
-    purchase_date: document.getElementById('af-pdate').value || null,
-    purchase_cost: parseFloat(document.getElementById('af-pcost').value) || null,
     assigned_to: document.getElementById('af-assign').value || null,
     notes: document.getElementById('af-notes').value.trim() || null,
     hostname: document.getElementById('af-hostname').value.trim() || null,
@@ -857,8 +846,6 @@ saveAsset = async function(editId) {
     manufacturer: document.getElementById('af-manufacturer').value.trim() || null,
     model: document.getElementById('af-model').value.trim() || null,
     status: document.getElementById('af-status').value,
-    purchase_date: document.getElementById('af-pdate').value || null,
-    purchase_cost: parseFloat(document.getElementById('af-pcost').value) || null,
     assigned_to: document.getElementById('af-assign').value || null,
     notes: document.getElementById('af-notes').value.trim() || null,
     hostname: document.getElementById('af-hostname').value.trim() || null,
