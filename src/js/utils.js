@@ -144,7 +144,7 @@ function openSearchOverlay() {
     overlay.className = 'search-overlay';
     overlay.onclick = function(e) { if (e.target === overlay) overlay.classList.remove('open'); };
     overlay.innerHTML = '<div class="search-overlay-card">'
-      + '<input type="text" class="search-overlay-input" id="search-overlay-input" placeholder="Search assets, people, locations..." oninput="searchOverlayDebounced(this.value)">'
+      + '<input type="text" class="search-overlay-input" id="search-overlay-input" placeholder="Search assets by name, tag, serial, or assignee…" oninput="searchOverlayDebounced(this.value)">'
       + '<div class="search-overlay-results" id="search-overlay-results">'
       + '<div class="search-overlay-empty">Type to search across all assets</div>'
       + '</div></div>';
