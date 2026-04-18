@@ -2,10 +2,18 @@
 
 Router.register('/settings', function() {
   var el = document.getElementById('view-settings');
+  if (!el) return;
   var isAdmin = Auth.isAdmin();
 
-  el.innerHTML = renderSettings();
-  if (isAdmin) loadUserList();
+  try {
+    el.innerHTML = renderSettings();
+    if (isAdmin) loadUserList();
+    setTimeout(window.refreshSystemStatus, 100);
+  } catch(err) {
+    console.error('[settings] render failed:', err);
+    el.innerHTML = '<div class="settings-error" style="padding:16px">Settings failed to render: '
+      + esc(err && err.message ? err.message : String(err)) + '</div>';
+  }
 });
 
 function renderSettings() {
@@ -16,7 +24,7 @@ function renderSettings() {
   return '<div class="settings-page">'
 
     // === Quick Access (top) ===
-    '<div class="settings-section">'
+    + '<div class="settings-section">'
     + '<div class="settings-section-title">Quick Access</div>'
     + '<div class="settings-cards">'
 
@@ -50,7 +58,7 @@ function renderSettings() {
     + '</div></div>'
 
     // === Settings (all users)
-    '<div class="settings-section">'
+    + '<div class="settings-section">'
     + '<div class="settings-section-title">Settings</div>'
 
     // API Connection
@@ -100,7 +108,7 @@ function renderSettings() {
     + '</div></div>'
 
     // === Dev Tools (admin only) ===
-    (Auth.isAdmin() ?
+    + (Auth.isAdmin() ?
     '<div class="settings-section settings-section-dev">'
     + '<div class="settings-section-title">'
     + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 00-7.94 7.94l-6.91 6.91a2 2 0 01-.9.5H7a2 2 0 01-2-2v-.9a2 2 0 01.5-.9l6.91-6.91a6 6 0 007.94-7.94l-3.76 3.76z"/></svg>'
@@ -190,7 +198,7 @@ function renderSettings() {
     : '')
 
     // === About ===
-    '<div class="settings-section">'
+    + '<div class="settings-section">'
     + '<div class="settings-section-title">About</div>'
     + '<div class="settings-card">'
     + '<div class="settings-about">'
@@ -201,14 +209,6 @@ function renderSettings() {
     + '</div></div>'
 
     + '</div></div>';
-
-  // Initialize after render
-  setTimeout(function() {
-    refreshSystemStatus();
-    API.init();
-  }, 100);
-
-  return html;
 }
 
 // Quick functions
