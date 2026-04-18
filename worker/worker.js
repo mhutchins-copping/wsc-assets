@@ -938,13 +938,13 @@ async function generateTag(env, categoryId) {
   }
 
   const fullPrefix = `${prefix}-${catPrefix}-`;
-  return nextTagNumber(env, fullPrefix);
+  return await nextTagNumber(env, fullPrefix);
 }
 
 async function nextTag(env, prefix) {
   const prefixStr = env.ASSET_TAG_PREFIX || 'WSC';
   const fullPrefix = `${prefixStr}-${prefix}-`;
-  const tag = nextTagNumber(env, fullPrefix);
+  const tag = await nextTagNumber(env, fullPrefix);
   return json({ tag });
 }
 
