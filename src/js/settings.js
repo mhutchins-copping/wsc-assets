@@ -8,7 +8,6 @@ Router.register('/settings', function() {
   try {
     el.innerHTML = renderSettings();
     if (isAdmin) loadUserList();
-    setTimeout(window.refreshSystemStatus, 100);
   } catch(err) {
     console.error('[settings] render failed:', err);
     el.innerHTML = '<div class="settings-error" style="padding:16px">Settings failed to render: '
@@ -20,109 +19,43 @@ function renderSettings() {
   var currentUrl = API.baseUrl || '';
   var hasKey = !!API.apiKey;
   var tagPrefix = localStorage.getItem('wsc_tag_prefix') || 'WSC';
+  var isAdmin = Auth.isAdmin();
+  var displayName = Auth.user ? Auth.user.display_name : '—';
+  var role = Auth.user ? Auth.user.role : '—';
 
   return '<div class="settings-page">'
 
-    // === Quick Access (top) ===
+    // === Identity strip ===
+    + '<div class="settings-identity">'
+    + '<div>'
+    + '<strong>' + esc(displayName) + '</strong>'
+    + '<span class="settings-identity-role">' + esc(role) + '</span>'
+    + '</div>'
+    + '<button class="btn danger sm" onclick="doLogout()">Sign Out</button>'
+    + '</div>'
+
+    // === Preferences (all users) ===
     + '<div class="settings-section">'
-    + '<div class="settings-section-title">Quick Access</div>'
-    + '<div class="settings-cards">'
-
-    // User Profile Card
+    + '<div class="settings-section-title">Preferences</div>'
     + '<div class="settings-card">'
-    + '<div class="settings-card-header">'
-    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
-    + 'Your Profile'
-    + '</div>'
-    + '<div class="settings-card-body">'
-    + '<div class="settings-info-row"><span>Name</span><span>' + esc(Auth.user ? Auth.user.display_name : '—') + '</span></div>'
-    + '<div class="settings-info-row"><span>Email</span><span>' + esc(Auth.user ? Auth.user.email : '—') + '</span></div>'
-    + '<div class="settings-info-row"><span>Role</span><span>' + esc(Auth.user ? Auth.user.role : '—') + '</span></div>'
-    + '<div class="settings-info-row"><span>Sessions as</span><span>' + (Auth.user ? Auth.user.role : 'Anonymous') + '</span></div>'
-    + '<div style="margin-top:12px"><button class="btn danger sm" onclick="doLogout()">Sign Out</button></div>'
-    + '</div></div>'
-
-    // System Status Card
-    + '<div class="settings-card">'
-    + '<div class="settings-card-header">'
-    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'
-    + 'System Status'
-    + '</div>'
-    + '<div class="settings-card-body">'
-    + '<div class="settings-info-row"><span>API</span><span class="status-ok">Connected</span></div>'
-    + '<div class="settings-info-row"><span>Assets</span><span id="settings-asset-count">—</span></div>'
-    + '<div class="settings-info-row"><span>Last sync</span><span id="settings-last-sync">—</span></div>'
-    + '<div style="margin-top:12px"><button class="btn sm" onclick="refreshSystemStatus()">Refresh</button></div>'
-    + '</div></div>'
-
-    + '</div></div>'
-
-    // === Settings (all users)
-    + '<div class="settings-section">'
-    + '<div class="settings-section-title">Settings</div>'
-
-    // API Connection (admin only — contains infra URL and API key)
-    + (Auth.isAdmin() ?
-    '<div class="settings-card">'
-    + '<div class="settings-card-header">'
-    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12h6"/></svg>'
-    + 'API Connection'
-    + '</div>'
-    + '<div class="settings-card-body">'
-    + '<div class="settings-api-display">'
-    + '<div class="settings-api-label">API URL</div>'
-    + '<div class="settings-api-value">' + esc(currentUrl) + '</div>'
-    + '</div>'
-    + '<div style="margin-top:8px">'
-    + '<button class="btn sm" onclick="testApiConnection()">Test Connection</button>'
-    + '</div>'
-    + '<details class="settings-advanced"><summary>Advanced Options</summary>'
-    + '<div class="form-group" style="margin-top:12px">'
-    + '<label class="form-label">Worker URL Override</label>'
-    + '<input type="text" id="settings-api-url" class="form-input" placeholder="https://api.it-wsc.com" value="' + esc(localStorage.getItem('wsc_api_url') || '') + '">'
-    + '</div>'
-    + '<div class="form-group">'
-    + '<label class="form-label">API Key (external scripts)</label>'
-    + '<input type="password" id="settings-api-key" class="form-input" placeholder="' + (hasKey ? '••••••••' : 'Optional') + '">'
-    + '</div>'
-    + '<div style="display:flex;gap:8px">'
-    + '<button class="btn primary sm" onclick="saveApiSettings()">Save</button>'
-    + '<button class="btn sm" onclick="clearApiOverride()">Reset</button>'
-    + '</div>'
-    + '</details></div></div>'
-    : '')
-
-    // Asset Defaults
-    + '<div class="settings-card">'
-    + '<div class="settings-card-header">'
-    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>'
-    + 'Asset Defaults'
-    + '</div>'
     + '<div class="settings-card-body">'
     + '<div class="form-group">'
     + '<label class="form-label">Asset Tag Prefix</label>'
     + '<input type="text" id="settings-tag-prefix" class="form-input" value="' + esc(tagPrefix) + '" placeholder="WSC" maxlength="10">'
     + '<div class="form-hint">Used for auto-generated tags (e.g. ' + esc(tagPrefix) + '-L-0001)</div>'
     + '</div>'
-    + '<button class="btn primary" onclick="saveDefaults()">Save Defaults</button>'
+    + '<button class="btn primary" onclick="saveDefaults()">Save</button>'
     + '</div></div>'
-
-    + '</div></div>'
-
-    // === Dev Tools (admin only) ===
-    + (Auth.isAdmin() ?
-    '<div class="settings-section settings-section-dev">'
-    + '<div class="settings-section-title">'
-    + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 00-7.94 7.94l-6.91 6.91a2 2 0 01-.9.5H7a2 2 0 01-2-2v-.9a2 2 0 01.5-.9l6.91-6.91a6 6 0 007.94-7.94l-3.76 3.76z"/></svg>'
-    + 'Dev Tools <span class="settings-dev-badge">Admin</span>'
     + '</div>'
+
+    // === Admin ===
+    + (isAdmin ?
+    '<div class="settings-section settings-section-dev">'
+    + '<div class="settings-section-title">Admin <span class="settings-dev-badge">Admin</span></div>'
 
     // Device Enrollment
     + '<div class="settings-card">'
-    + '<div class="settings-card-header">'
-    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>'
-    + 'Device Enrollment'
-    + '</div>'
+    + '<div class="settings-card-header">Device Enrollment</div>'
     + '<div class="settings-card-body">'
     + '<div class="form-hint" style="margin-bottom:12px">Enroll a Windows PC as an asset. Run the script on the target PC, paste the JSON result below.</div>'
     + '<button class="btn sm" onclick="copyEnrollScript()">Copy Script</button>'
@@ -133,10 +66,7 @@ function renderSettings() {
 
     // CSV Import/Export
     + '<div class="settings-card">'
-    + '<div class="settings-card-header">'
-    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>'
-    + 'Import / Export'
-    + '</div>'
+    + '<div class="settings-card-header">Import / Export</div>'
     + '<div class="settings-card-body">'
     + '<div class="form-group">'
     + '<label class="form-label">Import from CSV</label>'
@@ -160,10 +90,7 @@ function renderSettings() {
 
     // Entra ID
     + '<div class="settings-card">'
-    + '<div class="settings-card-header">'
-    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>'
-    + 'Entra ID Sync'
-    + '</div>'
+    + '<div class="settings-card-header">Entra ID Sync</div>'
     + '<div class="settings-card-body">'
     + '<div class="form-hint" style="margin-bottom:12px">Sync users from Microsoft Entra ID. Requires User.Read.All permission.</div>'
     + '<div class="form-group">'
@@ -187,43 +114,40 @@ function renderSettings() {
 
     // User Management
     + '<div class="settings-card">'
-    + '<div class="settings-card-header">'
-    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>'
-    + 'User Management'
+    + '<div class="settings-card-header">User Management'
     + '<button class="btn sm primary" style="margin-left:auto" onclick="openAddUserModal()">+ Add</button>'
     + '</div>'
     + '<div class="settings-card-body">'
     + '<div id="user-list-container">Loading...</div>'
     + '</div></div>'
 
-    + '</div></div>'
+    // API Connection (collapsed, at bottom — infrastructure only)
+    + '<details class="settings-card settings-advanced">'
+    + '<summary class="settings-card-header" style="cursor:pointer">API Connection</summary>'
+    + '<div class="settings-card-body">'
+    + '<div class="settings-info-row"><span>API URL</span><span class="mono">' + esc(currentUrl) + '</span></div>'
+    + '<div style="margin-top:8px;display:flex;gap:8px">'
+    + '<button class="btn sm" onclick="testApiConnection()">Test Connection</button>'
+    + '</div>'
+    + '<div class="form-group" style="margin-top:12px">'
+    + '<label class="form-label">Worker URL Override</label>'
+    + '<input type="text" id="settings-api-url" class="form-input" placeholder="https://api.it-wsc.com" value="' + esc(localStorage.getItem('wsc_api_url') || '') + '">'
+    + '</div>'
+    + '<div class="form-group">'
+    + '<label class="form-label">API Key (external scripts)</label>'
+    + '<input type="password" id="settings-api-key" class="form-input" placeholder="' + (hasKey ? '••••••••' : 'Optional') + '">'
+    + '</div>'
+    + '<div style="display:flex;gap:8px">'
+    + '<button class="btn primary sm" onclick="saveApiSettings()">Save</button>'
+    + '<button class="btn sm" onclick="clearApiOverride()">Reset</button>'
+    + '</div>'
+    + '</div></details>'
+
+    + '</div>'
     : '')
 
-    // === About ===
-    + '<div class="settings-section">'
-    + '<div class="settings-section-title">About</div>'
-    + '<div class="settings-card">'
-    + '<div class="settings-about">'
-    + '<div class="settings-about-name">WSC Assets</div>'
-    + '<div class="settings-about-version">v1.0.0</div>'
-    + '<div class="settings-about-desc">Walgett Shire Council — IT Asset Management</div>'
-    + '<div class="settings-about-tech">Built with Vanilla JS + Vite · Cloudflare Workers + D1 + R2 + Pages</div>'
-    + '</div></div>'
-
-    + '</div></div>';
+    + '</div>';
 }
-
-// Quick functions
-window.refreshSystemStatus = function() {
-  if (!API.baseUrl) return;
-  API.getStats().then(function(stats) {
-    var countEl = document.getElementById('settings-asset-count');
-    if (countEl) countEl.textContent = (stats.total || 0) + ' assets';
-
-    var syncEl = document.getElementById('settings-last-sync');
-    if (syncEl) syncEl.textContent = new Date().toLocaleTimeString();
-  }).catch(function() {});
-};
 
 async function testApiConnection() {
   try {
