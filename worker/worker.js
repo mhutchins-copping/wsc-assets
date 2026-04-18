@@ -186,14 +186,15 @@ async function authMasterKey(request, env) {
       .slice(0, 19);
     const recent = await env.DB.prepare(
       `SELECT COUNT(*) as attempts FROM activity_log
-       WHERE action = 'master_key_failed' AND details LIKE ?
+       WHERE action = 'master_key_failed' AND ip_address = ?
        AND created_at > ?`
-    ).bind('%' + ip + '%', cutoff).first();
+    ).bind(ip, cutoff).first();
 
     if (recent && recent.attempts >= MASTER_KEY_MAX_ATTEMPTS) {
       await logActivity(env, {
         action: 'master_key_blocked',
-        details: `Rate limited: ${ip} (${recent.attempts} failed attempts)`
+        details: `Rate limited: ${recent.attempts} failed attempts`,
+        ip_address: ip
       });
       return json({ authorized: false, error: 'Too many failed attempts. Try again later.' }, 429);
     }
@@ -205,7 +206,8 @@ async function authMasterKey(request, env) {
     try {
       await logActivity(env, {
         action: 'master_key_failed',
-        details: `Failed master key attempt from ${ip}`
+        details: 'Failed master key attempt',
+        ip_address: ip
       });
     } catch (e) { /* best effort */ }
     return json({ authorized: false, error: 'Invalid master key' }, 401);
@@ -493,11 +495,11 @@ async function body(request) {
   return request.json();
 }
 
-async function logActivity(env, { asset_id, action, details, performed_by, person_id, location_id }) {
+async function logActivity(env, { asset_id, action, details, performed_by, person_id, location_id, ip_address }) {
   await env.DB.prepare(
-    `INSERT INTO activity_log (id, asset_id, action, details, performed_by, person_id, location_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(id(), asset_id || null, action, details || null, performed_by || null, person_id || null, location_id || null, now()).run();
+    `INSERT INTO activity_log (id, asset_id, action, details, performed_by, person_id, location_id, ip_address, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(id(), asset_id || null, action, details || null, performed_by || null, person_id || null, location_id || null, ip_address || null, now()).run();
 }
 
 // ─── Assets ────────────────────────────────────────────

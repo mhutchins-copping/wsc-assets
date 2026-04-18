@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS assets (
 
 CREATE TABLE IF NOT EXISTS activity_log (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  ip_address TEXT,
   asset_id TEXT REFERENCES assets(id),
   action TEXT NOT NULL,
   details TEXT,
@@ -131,6 +132,7 @@ CREATE INDEX IF NOT EXISTS idx_assets_tag ON assets(asset_tag);
 CREATE INDEX IF NOT EXISTS idx_assets_serial ON assets(serial_number);
 CREATE INDEX IF NOT EXISTS idx_activity_asset ON activity_log(asset_id);
 CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_activity_rate_limit ON activity_log(action, ip_address, created_at);
 CREATE INDEX IF NOT EXISTS idx_people_active ON people(active);
 CREATE INDEX IF NOT EXISTS idx_people_department ON people(department);
 CREATE INDEX IF NOT EXISTS idx_maintenance_asset ON maintenance_log(asset_id);
