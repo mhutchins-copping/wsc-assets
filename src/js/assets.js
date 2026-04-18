@@ -251,6 +251,14 @@ async function renderAssetDetail(id) {
       + '<div style="font-size:10px;font-family:var(--mono);color:var(--text3);margin-top:6px">' + esc(asset.asset_tag) + '</div>'
       + '</div></div>';
 
+    // Image card (if image exists)
+    if (asset.image_url) {
+      html += '<div class="card" style="margin-top:12px"><div class="card-header"><span class="card-title">Photo</span></div>'
+        + '<div class="card-body" style="text-align:center;padding:8px">'
+        + '<img src="https://api.it-wsc.com' + esc(asset.image_url) + '" style="max-width:100%;border-radius:4px">'
+        + '</div></div>';
+    }
+
     html += '</div></div>';
 
     // Hardware Specs (if any spec fields populated)
