@@ -788,10 +788,13 @@ async function purgeAsset(request, env, assetId) {
   const user = request._user;
   const performed_by = user ? (user.display_name || user.email) : null;
 
-  await env.DB.prepare('DELETE FROM activity_log WHERE asset_id = ?').bind(assetId).run();
-  await env.DB.prepare('DELETE FROM maintenance_log WHERE asset_id = ?').bind(assetId).run();
-  await env.DB.prepare('DELETE FROM audit_items WHERE asset_id = ?').bind(assetId).run();
-  await env.DB.prepare('DELETE FROM assets WHERE id = ?').bind(assetId).run();
+  // Atomic delete: all succeed or none do
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM activity_log WHERE asset_id = ?').bind(assetId),
+    env.DB.prepare('DELETE FROM maintenance_log WHERE asset_id = ?').bind(assetId),
+    env.DB.prepare('DELETE FROM audit_items WHERE asset_id = ?').bind(assetId),
+    env.DB.prepare('DELETE FROM assets WHERE id = ?').bind(assetId)
+  ]);
 
   // Send notification
   try {
