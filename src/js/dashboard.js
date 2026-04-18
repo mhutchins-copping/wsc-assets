@@ -164,4 +164,12 @@ function fmtRelative(dateStr) {
   return Math.floor(diff / 86400) + 'd ago';
 }
 
+function kpiCard(id, label, value, sub, accent) {
+  return '<div class="kpi-card" id="' + id + '">'
+    + '<div class="kpi-label">' + esc(label) + '</div>'
+    + '<div class="kpi-value" style="color:' + (accent || 'var(--text)') + '">' + esc(value) + '</div>'
+    + '<div class="kpi-sub">' + esc(sub) + '</div></div>';
+}
+
 window.loadDashboardData = loadDashboardData;
+window.kpiCard = kpiCard;

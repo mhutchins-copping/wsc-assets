@@ -1390,58 +1390,21 @@ async function deleteAudit(env, auditId) {
 // ─── Stats ─────────────────────────────────────────────
 
 async function getStats(env) {
-  const byStatus = await env.DB.prepare(
-    "SELECT status, COUNT(*) as count FROM assets WHERE status != 'disposed' GROUP BY status"
-  ).all();
-
-  const byCategory = await env.DB.prepare(`
-    SELECT c.name, c.icon, COUNT(a.id) as count
-    FROM categories c
-    LEFT JOIN assets a ON a.category_id = c.id AND a.status != 'disposed'
-    WHERE c.parent_id IS NOT NULL
-    GROUP BY c.id
-    ORDER BY count DESC
-  `).all();
-
-  const byLocation = await env.DB.prepare(`
-    SELECT l.name, COUNT(a.id) as count
-    FROM locations l
-    LEFT JOIN assets a ON a.location_id = l.id AND a.status != 'disposed'
-    GROUP BY l.id
-    ORDER BY count DESC
-  `).all();
-
-  const total = await env.DB.prepare(
-    "SELECT COUNT(*) as count FROM assets WHERE status != 'disposed'"
-  ).first();
-
-  // Warranty expiring in 30/60/90 days
-  const warrantyAlerts = await env.DB.prepare(`
-    SELECT a.id, a.asset_tag, a.name, a.warranty_expiry,
-           CAST(julianday(a.warranty_expiry) - julianday('now') AS INTEGER) as days_remaining
-    FROM assets a
-    WHERE a.warranty_expiry IS NOT NULL
-      AND a.status != 'disposed'
-      AND julianday(a.warranty_expiry) > julianday('now')
-      AND julianday(a.warranty_expiry) <= julianday('now', '+90 days')
-    ORDER BY a.warranty_expiry ASC
-  `).all();
-
-  // Recent activity
-  const recentActivity = await env.DB.prepare(`
-    SELECT al.*, a.asset_tag, a.name as asset_name, p.name as person_name
-    FROM activity_log al
-    LEFT JOIN assets a ON al.asset_id = a.id
-    LEFT JOIN people p ON al.person_id = p.id
-    ORDER BY al.created_at DESC
-    LIMIT 10
-  `).all();
+  // Run all queries in parallel via batch
+  const [byStatusRes, byCategoryRes, byLocationRes, totalRes, warrantyAlerts, recentActivity] = await env.DB.batch([
+    env.DB.prepare("SELECT status, COUNT(*) as count FROM assets WHERE status != 'disposed' GROUP BY status"),
+    env.DB.prepare("SELECT c.name, c.icon, COUNT(a.id) as count FROM categories c LEFT JOIN assets a ON a.category_id = c.id AND a.status != 'disposed' WHERE c.parent_id IS NOT NULL GROUP BY c.id ORDER BY count DESC"),
+    env.DB.prepare("SELECT l.name, COUNT(a.id) as count FROM locations l LEFT JOIN assets a ON a.location_id = l.id AND a.status != 'disposed' GROUP BY l.id ORDER BY count DESC"),
+    env.DB.prepare("SELECT COUNT(*) as count FROM assets WHERE status != 'disposed'"),
+    env.DB.prepare("SELECT a.id, a.asset_tag, a.name, a.warranty_expiry, CAST(julianday(a.warranty_expiry) - julianday('now') AS INTEGER) as days_remaining FROM assets a WHERE a.warranty_expiry IS NOT NULL AND a.status != 'disposed' AND julianday(a.warranty_expiry) > julianday('now') AND julianday(a.warranty_expiry) <= julianday('now', '+90 days') ORDER BY a.warranty_expiry ASC"),
+    env.DB.prepare("SELECT al.*, a.asset_tag, a.name as asset_name, p.name as person_name FROM activity_log al LEFT JOIN assets a ON al.asset_id = a.id LEFT JOIN people p ON al.person_id = p.id ORDER BY al.created_at DESC LIMIT 10")
+  ]);
 
   return json({
-    total: total.count,
-    by_status: byStatus.results,
-    by_category: byCategory.results,
-    by_location: byLocation.results,
+    total: totalRes.results[0].count,
+    by_status: byStatusRes.results,
+    by_category: byCategoryRes.results,
+    by_location: byLocationRes.results,
     warranty_alerts: warrantyAlerts.results,
     recent_activity: recentActivity.results
   });
