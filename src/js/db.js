@@ -133,7 +133,7 @@ var API = {
         body: file,
         headers: { 'Content-Type': file.type || 'image/jpeg' }
       });
-      console.log('Upload response:', res);
+      console.log('Upload response status:', res.status || res.ok, 'url:', res.url || res);
       return '/images/' + key;
     } catch(e) {
       console.error('Upload error:', e.message, e.response ? await e.response.text() : '');
