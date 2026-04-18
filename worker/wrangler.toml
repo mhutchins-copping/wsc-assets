@@ -8,10 +8,10 @@ binding = "DB"
 database_name = "wsc-assets-db"
 database_id = "5e966e81-a2b2-4fe7-9b2b-ee29cb02d4e6"
 
-# R2 Bucket (asset photos) — uncomment after enabling R2 in Cloudflare Dashboard
-# [[r2_buckets]]
-# binding = "IMAGES"
-# bucket_name = "wsc-assets-images"
+# R2 Bucket (asset photos)
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "wsc-assets-images"
 
 # Environment variables (set API_KEY via: wrangler secret put API_KEY)
 [vars]
