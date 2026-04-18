@@ -7,3 +7,6 @@ worker/node_modules/
 .env.*
 *.pem
 credentials.json
+# Local safety exports written by scripts/restore-db.sh. Backups live in
+# GitHub Actions artifacts, not in the repo.
+backups/

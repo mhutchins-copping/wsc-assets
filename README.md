@@ -83,5 +83,6 @@ Internal use only. All rights reserved.
 
 ---
 
-<sub>System owner: Matt Hutchins-Copping, WSC IT.
+<sub>System owner (role): IT Officer, Walgett Shire Council.
+Current maintainer: Matthew Hutchins-Copping.
 Source and issues: [github.com/mhutchins-copping/wsc-assets](https://github.com/mhutchins-copping/wsc-assets).</sub>

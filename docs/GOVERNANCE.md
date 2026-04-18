@@ -1,34 +1,42 @@
 # Governance — one-page summary
 
-A short, non-technical overview for Executive Leadership, RMT, and anyone
-else who needs to understand what this system is, who owns it, and what
-happens if it breaks.
+> **Document:** Governance Summary
+> **Version:** 1.1
+> **Last updated:** 2026-04-18
+> **Owner (role):** IT Officer, Walgett Shire Council
+> **Review cycle:** Annual — next review due 2027-04-18
+
+A short, non-technical overview of WSC Assets for Executive Leadership,
+RMT, and anyone else who needs to understand what this system is, who
+owns it, and what happens if it breaks.
 
 ## What it is
 
 **WSC Assets** is Walgett Shire Council's internal IT asset register.
-It tracks council hardware (laptops, desktops, phones, peripherals), who
-has what, maintenance history, and asset audits. It replaces an informal
-spreadsheet that previously filled this role.
+It tracks council hardware (laptops, desktops, phones, peripherals),
+assignment status, maintenance history, and periodic asset audits. It
+replaces an informal spreadsheet that previously filled this role.
 
 - **Live at:** <https://assets.it-wsc.com>
-- **Users:** Council IT, currently one permanent admin. Access can be
-  granted to additional staff on a per-person basis.
+- **Users:** Council IT staff. Access is granted per person by the
+  current system owner.
 - **Data classification:** Internal use only. Contains device identifiers
   and staff assignment records. No PII beyond staff name, email, and
-  department (already held elsewhere in Entra ID).
+  department — all already held in the council's existing Entra ID tenant.
 
 ## Ownership
 
-| Role                 | Person                                     |
-| -------------------- | ------------------------------------------ |
-| System owner         | Matt Hutchins-Copping (IT, WSC)            |
-| Technical maintainer | Matt Hutchins-Copping                      |
-| Vendor / support     | Self-hosted; Cloudflare as infrastructure  |
+| Role                     | Current holder                                  |
+| ------------------------ | ----------------------------------------------- |
+| System owner (role)      | IT Officer                                      |
+| System owner (current)   | Matthew Hutchins-Copping                        |
+| Technical maintainer     | As above (single maintainer)                    |
+| Successor                | Appointed by Council on handover                |
+| Vendor / external support| Self-hosted; Cloudflare provides infrastructure |
 
-This is a council-owned system, not a third-party SaaS product. The source
-code is in a GitHub repository administered by the system owner. Council
-holds full control of the data, deployments, and access policies.
+This is a council-owned system, not a third-party SaaS product. The
+source code is in a GitHub repository administered by the system owner.
+Council holds full control of the data, deployments, and access policies.
 
 ## Where the data lives
 
@@ -39,22 +47,42 @@ holds full control of the data, deployments, and access policies.
   Cloudflare Access.
 
 Cloudflare data residency: the active region is set to APAC and data is
-stored in Asia-Pacific data centres. This is verifiable in the Cloudflare
+stored in Asia-Pacific data centres. Verifiable in the Cloudflare
 dashboard.
+
+## Dependency inventory
+
+External services the system relies on, with the blast radius of each
+being unavailable:
+
+| Service              | Purpose                                    | Criticality |
+| -------------------- | ------------------------------------------ | ----------- |
+| Cloudflare Access    | SSO enforcement at the edge                | High        |
+| Cloudflare Workers   | API runtime                                | High        |
+| Cloudflare D1        | Primary database                           | High        |
+| Cloudflare Pages     | Static frontend hosting                    | High        |
+| Cloudflare R2        | Asset photo storage                        | Medium      |
+| Microsoft Entra ID   | Identity provider (SSO + directory sync)   | High        |
+| Microsoft Graph API  | Staff directory sync, email notifications  | Medium      |
+| GitHub               | Source code, CI/CD, backup artifact host   | High        |
+| Anthropic API        | AI-assisted label scanning (optional)      | Low         |
+
+"High" = system is unusable if this is unavailable. "Medium" = system
+functional but a feature is degraded. "Low" = optional feature only.
 
 ## How access is controlled
 
 Two layers of authentication:
 
 1. **Cloudflare Access** enforces Microsoft Entra ID single sign-on. Only
-   identities ending in `@walgett.nsw.gov.au` can reach the application at
-   all.
-2. **Internal user allow-list** — passing SSO is not sufficient. Each user
-   must be explicitly added by an admin within the app. Default-deny.
+   identities ending in `@walgett.nsw.gov.au` can reach the application
+   at all.
+2. **Internal user allow-list** — passing SSO is not sufficient. Each
+   user must be explicitly added by an admin within the app. Default-deny.
 
 Audit: every login and every change to an asset is logged to an activity
-table with the acting user, timestamp, and (for sensitive operations) IP
-address.
+table with the acting user, timestamp, and (for sensitive operations)
+source IP address.
 
 ## Backup and recovery
 
@@ -64,21 +92,23 @@ address.
   the system and the backups).
 - **Retention:** 90 days rolling.
 - **RPO (Recovery Point Objective):** Up to 7 days of data loss in the
-  worst case, assuming weekly backups.
+  worst case, assuming weekly backups and no manual trigger in between.
 - **RTO (Recovery Time Objective):** Approximately 1 hour for a full
-  database restore from backup, performed by the system owner.
+  database restore from backup, via an automated restore script.
 
-A restore runbook is documented in `docs/OPERATIONS.md`.
+The restore process is scripted (`scripts/restore-db.sh`) so it does not
+depend on a human operator remembering the correct sequence of SQL
+commands at 2am. Full runbook in `docs/OPERATIONS.md`.
 
 ## Continuity and failure modes
 
-| Failure                           | Effect                                  | Recovery                        |
-| --------------------------------- | --------------------------------------- | ------------------------------- |
-| Cloudflare outage                 | App offline until Cloudflare recovers   | Wait; no data loss.             |
-| Microsoft Entra ID outage         | SSO unavailable                         | Break-glass master-key login.   |
-| Database corruption               | App may return errors                   | Restore from weekly backup.     |
-| System owner unavailable          | New changes blocked; app keeps running  | Documentation in `docs/` hands over ownership.|
-| Cloudflare account compromised    | Access and data at risk                 | Off-provider backups on GitHub. |
+| Failure                          | Effect                                  | Recovery                          |
+| -------------------------------- | --------------------------------------- | --------------------------------- |
+| Cloudflare outage                | App offline until Cloudflare recovers   | Wait; no data loss.               |
+| Microsoft Entra ID outage        | SSO unavailable                         | Break-glass master-key login.     |
+| Database corruption              | App may return errors                   | Run scripted restore from backup. |
+| System owner unavailable         | New changes blocked; app keeps running  | Documentation hands over ownership.|
+| Cloudflare account compromised   | Access and data at risk                 | Off-provider backups on GitHub.   |
 
 The system is not classed as business-critical. A 24-hour outage would be
 inconvenient but would not prevent council operations.
@@ -97,49 +127,59 @@ If usage were to grow to where paid tiers apply, the ceilings are:
 - **Pages:** Unlimited static hosting.
 - **R2:** 10GB storage free. Asset photos are well under this.
 
-A realistic paid-tier scenario would cost less than $20/month.
-
-## Security posture — summary
-
-- SSO + explicit allow-list (two-layer auth).
-- All communication over HTTPS with HTTP Strict Transport Security.
-- API calls to external browsers require either a signed CF Access
-  identity cookie or, for authorised enrolment scripts, a secret API key
-  stored as a Wrangler secret.
-- Write-destructive endpoints (bulk import, user purge, Entra sync) are
-  admin-only and server-enforced.
-- Rate limiting on the master-key path; rate-limit failures are logged
-  separately with source IP.
-- No secrets in the Git repository; all secrets managed via Cloudflare's
-  Wrangler secret store (encrypted at rest, not visible to the dashboard).
-- Detailed security model in `docs/ARCHITECTURE.md`.
+A realistic paid-tier scenario would cost less than AUD $30/month.
 
 ## Known limitations (disclosed honestly)
 
-- **Bus factor:** One technical maintainer. Documentation mitigates this
-  but does not eliminate it.
+- **Single-maintainer risk.** One technical maintainer currently.
+  Documentation mitigates this but does not eliminate it. On handover,
+  a successor inherits both the code and the three documents in `docs/`.
 - **No independent penetration test.** The application has been built
-  against current OWASP Top 10 guidance and reviewed for the common issues
-  (auth bypass, injection, CORS, access control), but no third-party
-  audit has been conducted.
+  against current OWASP Top 10 guidance and reviewed for the common
+  issues (auth bypass, injection, CORS, access control), but no
+  third-party audit has been conducted.
 - **Not load-tested at scale.** Designed for a ~150-device council. It
-  would likely comfortably handle 10× that, but has not been proven.
+  would likely handle 10× that comfortably, but has not been proven.
 
-## Questions this is likely to answer
+## Appendix A — Security controls summary
 
-**"Where's the data?"** Cloudflare APAC region. Backups on GitHub.
+| Control                          | Implementation                                     |
+| -------------------------------- | -------------------------------------------------- |
+| Multi-factor authentication      | Enforced via Entra ID policy on council accounts.  |
+| Single sign-on                   | Enforced at edge via Cloudflare Access.            |
+| Role-based access control        | `admin` / `user` / `viewer` roles, server-enforced.|
+| Default-deny authorisation       | Internal `users` allow-list; SSO alone insufficient.|
+| Transport encryption             | HTTPS only; HSTS enforced at edge.                 |
+| Secret management                | Wrangler secret store; never in Git.               |
+| Audit logging                    | Every mutation logged with user, timestamp, IP.    |
+| Security event logging           | Separate channel for auth events (master-key etc).|
+| Rate limiting                    | Applied to break-glass master-key endpoint.        |
+| Least privilege                  | API endpoints check role; destructive ops admin-only.|
+| Dependency hygiene               | Vanilla JS frontend; minimal server dependencies.  |
+| Backup integrity                 | Off-provider backups; retention 90 days.           |
 
-**"What's the licensing cost?"** Zero at current scale.
+## Appendix B — Questions this document is intended to answer
 
-**"What if Matt leaves?"** The code, infrastructure, and this
-documentation stay. Any competent sysadmin with basic web development
-familiarity can take it over; the stack is mainstream and well-documented.
+**"Where's the data physically stored?"**
+Cloudflare APAC region. Backups on GitHub.
 
-**"Why not buy something?"** Evaluated — see `docs/ARCHITECTURE.md`.
-Commercial options either cost more than makes sense at council scale, or
-don't fit how IT operates here.
+**"What's the licensing cost?"**
+Zero at current scale.
 
-**"What if Cloudflare disappears overnight?"** Off-provider backups on
-GitHub mean the data is recoverable. Rebuilding the application on a
-different stack would require development effort but is not impossible;
-all code is open and in the repo.
+**"What if the current maintainer leaves?"**
+The code, infrastructure, and three documents in `docs/` stay. Any
+competent sysadmin with basic web development familiarity can take it
+over; the stack is mainstream and well-documented.
+
+**"Why not buy a commercial product?"**
+Evaluated — see `docs/ARCHITECTURE.md`. Commercial options either cost
+disproportionately at council scale, or don't fit how IT operates here.
+
+**"What if Cloudflare disappears overnight?"**
+Off-provider backups on GitHub mean the data is recoverable. Rebuilding
+the application on a different stack would require development effort
+but is not impossible; all code is open and in the repo.
+
+**"Who's authorised to sign this off?"**
+General Manager or delegated authority. Annual review cycle — next review
+date at the top of this document.
