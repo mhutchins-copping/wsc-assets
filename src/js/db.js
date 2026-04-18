@@ -37,7 +37,7 @@ var API = {
       headers['X-Api-Key'] = this.apiKey;
     }
 
-    if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
+    if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData) && !(opts.body instanceof Blob) && !(opts.body instanceof ArrayBuffer)) {
       headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(opts.body);
     }
