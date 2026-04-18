@@ -1225,6 +1225,50 @@ tbody td.mono {
   .filter-pill { padding: 3px 8px; font-size: 11px; }
 }
 
+/* ─── Settings Page ──────────────────────────── */
+.settings-page { max-width: 960px; margin: 0 auto; }
+.settings-section { margin-bottom: 24px; }
+.settings-section-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text3); margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+.settings-section-dev { border: 1px solid var(--amber); border-radius: var(--radius); padding: 16px; background: var(--surface2); }
+.settings-dev-badge { font-size: 10px; background: var(--amber); color: #000; padding: 2px 6px; border-radius: 4px; font-weight: 500; }
+.settings-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+@media (max-width: 700px) { .settings-cards { grid-template-columns: 1fr; } }
+
+.settings-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.settings-card-header { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.settings-card-header svg { color: var(--text3); }
+.settings-card-body { padding: 16px; }
+
+.settings-info-row { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; }
+.settings-info-row span:first-child { color: var(--text3); }
+.settings-info-row span:last-child { font-weight: 500; }
+.status-ok { color: var(--green); }
+.status-warn { color: var(--amber); }
+.status-error { color: var(--red); }
+
+.settings-api-display { background: var(--surface3); padding: 10px 12px; border-radius: var(--radius-sm); }
+.settings-api-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; }
+.settings-api-value { font-family: var(--mono); font-size: 12px; margin-top: 2px; word-break: break-all; }
+
+.settings-advanced { margin-top: 12px; font-size: 12px; color: var(--text3); cursor: pointer; }
+.settings-advanced[open] { margin-top: 8px; }
+
+.settings-empty { color: var(--text3); font-size: 13px; padding: 16px 0; font-style: italic; }
+.settings-error { color: var(--red); font-size: 12px; padding: 8px; background: var(--surface3); border-radius: var(--radius-sm); }
+.settings-success { color: var(--green); font-size: 12px; padding: 8px; background: var(--surface3); border-radius: var(--radius-sm); }
+.settings-warn { color: var(--amber); font-size: 12px; padding: 8px; background: var(--surface3); border-radius: var(--radius-sm); }
+.settings-syncing { color: var(--accent); font-size: 12px; padding: 8px; background: var(--surface3); border-radius: var(--radius-sm); }
+.settings-csv-info { font-size: 12px; padding: 8px 12px; background: var(--surface3); border-radius: var(--radius-sm); }
+.settings-csv-info span { color: var(--text3); }
+.settings-importing { font-size: 12px; padding: 8px; color: var(--accent); }
+.settings-import-result { font-size: 12px; padding: 8px 12px; background: var(--surface3); border-radius: var(--radius-sm); }
+
+.settings-about { text-align: center; padding: 20px; }
+.settings-about-name { font-size: 18px; font-weight: 600; }
+.settings-about-version { font-size: 12px; color: var(--text3); margin-top: 4px; }
+.settings-about-desc { font-size: 13px; margin-top: 8px; }
+.settings-about-tech { font-size: 11px; color: var(--text3); margin-top: 8px; font-family: var(--mono); }
+
 /* ─── Dashboard v2 ───────────────────────────── */
 .dash-kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
 .dash-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }

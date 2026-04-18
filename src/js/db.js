@@ -2,12 +2,15 @@
 // Wraps all fetch calls to the Cloudflare Worker API
 
 var API = {
-  baseUrl: 'https://api.it-wsc.com',  // Hardcoded — no per-device config needed
-  apiKey: '',   // Optional — origin-based auth used when accessed via Cloudflare Access
+  baseUrl: 'https://api.it-wsc.com',  // Hardcoded default
+  apiKey: '',
 
   init: function() {
-    // Allow override from localStorage (for dev/testing), otherwise use hardcoded default
-    this.baseUrl = localStorage.getItem('wsc_api_url') || this.baseUrl;
+    // Default to hardcoded, localStorage override only if explicitly set
+    var savedUrl = localStorage.getItem('wsc_api_url');
+    if (savedUrl && savedUrl.trim()) {
+      this.baseUrl = savedUrl.trim();
+    }
     this.apiKey = localStorage.getItem('wsc_api_key') || '';
   },
 

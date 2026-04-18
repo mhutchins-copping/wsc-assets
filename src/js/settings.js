@@ -1,155 +1,237 @@
-// ─── Steps 11 + 12: Settings + Import/Export ───
+// ─── Settings View ─────────────────────────
 
 Router.register('/settings', function() {
   var el = document.getElementById('view-settings');
+  var isAdmin = Auth.isAdmin();
 
+  el.innerHTML = renderSettings();
+  if (isAdmin) loadUserList();
+});
+
+function renderSettings() {
   var currentUrl = API.baseUrl || '';
   var hasKey = !!API.apiKey;
   var tagPrefix = localStorage.getItem('wsc_tag_prefix') || 'WSC';
 
-  el.innerHTML =
-    // API Configuration
-    '<div class="card" style="margin-bottom:20px">'
-    + '<div class="card-header"><span class="card-title">API Connection</span></div>'
-    + '<div class="card-body">'
-    + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'
-    + '<div style="font-size:13px"><strong>API:</strong> <span style="font-family:var(--mono);font-size:12px">' + esc(currentUrl) + '</span></div>'
-    + '<button class="btn sm" onclick="testApiConnection()">Test</button>'
+  return '<div class="settings-page">'
+
+    // === Quick Access (top) ===
+    '<div class="settings-section">'
+    + '<div class="settings-section-title">Quick Access</div>'
+    + '<div class="settings-cards">'
+
+    // User Profile Card
+    + '<div class="settings-card">'
+    + '<div class="settings-card-header">'
+    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
+    + 'Your Profile'
     + '</div>'
-    + '<div class="form-hint">Authentication is handled automatically via Cloudflare Access. API key is only needed for external script access.</div>'
-    + '<details style="margin-top:12px"><summary style="cursor:pointer;font-size:12px;color:var(--text3)">Advanced: Override API settings</summary>'
+    + '<div class="settings-card-body">'
+    + '<div class="settings-info-row"><span>Name</span><span>' + esc(Auth.user ? Auth.user.display_name : '—') + '</span></div>'
+    + '<div class="settings-info-row"><span>Email</span><span>' + esc(Auth.user ? Auth.user.email : '—') + '</span></div>'
+    + '<div class="settings-info-row"><span>Role</span><span>' + esc(Auth.user ? Auth.user.role : '—') + '</span></div>'
+    + '<div class="settings-info-row"><span>Sessions as</span><span>' + (Auth.user ? Auth.user.role : 'Anonymous') + '</span></div>'
+    + '<div style="margin-top:12px"><button class="btn danger sm" onclick="doLogout()">Sign Out</button></div>'
+    + '</div></div>'
+
+    // System Status Card
+    + '<div class="settings-card">'
+    + '<div class="settings-card-header">'
+    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'
+    + 'System Status'
+    + '</div>'
+    + '<div class="settings-card-body">'
+    + '<div class="settings-info-row"><span>API</span><span class="status-ok">Connected</span></div>'
+    + '<div class="settings-info-row"><span>Assets</span><span id="settings-asset-count">—</span></div>'
+    + '<div class="settings-info-row"><span>Last sync</span><span id="settings-last-sync">—</span></div>'
+    + '<div style="margin-top:12px"><button class="btn sm" onclick="refreshSystemStatus()">Refresh</button></div>'
+    + '</div></div>'
+
+    + '</div></div>'
+
+    // === Settings (all users)
+    '<div class="settings-section">'
+    + '<div class="settings-section-title">Settings</div>'
+
+    // API Connection
+    + '<div class="settings-card">'
+    + '<div class="settings-card-header">'
+    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12h6"/></svg>'
+    + 'API Connection'
+    + '</div>'
+    + '<div class="settings-card-body">'
+    + '<div class="settings-api-display">'
+    + '<div class="settings-api-label">API URL</div>'
+    + '<div class="settings-api-value">' + esc(currentUrl) + '</div>'
+    + '</div>'
     + '<div style="margin-top:8px">'
-    + '<div class="form-group">'
+    + '<button class="btn sm" onclick="testApiConnection()">Test Connection</button>'
+    + '</div>'
+    + '<details class="settings-advanced"><summary>Advanced Options</summary>'
+    + '<div class="form-group" style="margin-top:12px">'
     + '<label class="form-label">Worker URL Override</label>'
-    + '<input type="text" id="settings-api-url" class="form-input" placeholder="Default: https://api.it-wsc.com" value="' + (localStorage.getItem('wsc_api_url') ? esc(localStorage.getItem('wsc_api_url')) : '') + '">'
+    + '<input type="text" id="settings-api-url" class="form-input" placeholder="https://api.it-wsc.com" value="' + esc(localStorage.getItem('wsc_api_url') || '') + '">'
     + '</div>'
     + '<div class="form-group">'
-    + '<label class="form-label">API Key (for external scripts)</label>'
-    + '<input type="password" id="settings-api-key" class="form-input" placeholder="' + (hasKey ? 'Key saved' : 'Optional') + '">'
+    + '<label class="form-label">API Key (external scripts)</label>'
+    + '<input type="password" id="settings-api-key" class="form-input" placeholder="' + (hasKey ? '••••••••' : 'Optional') + '">'
     + '</div>'
     + '<div style="display:flex;gap:8px">'
-    + '<button class="btn sm" onclick="saveApiSettings()">Save Override</button>'
-    + '<button class="btn sm" onclick="clearApiOverride()">Reset to Default</button>'
-    + '</div></div></details>'
-    + '</div></div>'
+    + '<button class="btn primary sm" onclick="saveApiSettings()">Save</button>'
+    + '<button class="btn sm" onclick="clearApiOverride()">Reset</button>'
+    + '</div>'
+    + '</details></div></div>'
 
     // Asset Defaults
-    + '<div class="card" style="margin-bottom:20px">'
-    + '<div class="card-header"><span class="card-title">Asset Defaults</span></div>'
-    + '<div class="card-body">'
-    + '<div class="form-group"><label class="form-label">Asset Tag Prefix</label>'
-    + '<input type="text" id="settings-tag-prefix" class="form-input" value="' + esc(tagPrefix) + '" placeholder="WSC" maxlength="10">'
-    + '<div class="form-hint">Prefix for auto-generated tags (e.g. WSC-L-0001)</div></div>'
-    + '<button class="btn" onclick="saveDefaults()">Save Defaults</button>'
-    + '</div></div>'
-
-    // Import / Export
-    + '<div class="card" style="margin-bottom:20px">'
-    + '<div class="card-header"><span class="card-title">Import / Export</span></div>'
-    + '<div class="card-body">'
-
-    // CSV Import
-    + '<div style="margin-bottom:20px">'
-    + '<label class="form-label">Import Assets from CSV</label>'
-    + '<div class="form-hint" style="margin-bottom:8px">Required columns: <code>name</code>. Optional: <code>asset_tag, serial_number, category, manufacturer, model, status, purchase_date, purchase_cost, assigned_to, notes</code></div>'
-    + '<input type="file" id="csv-import-file" accept=".csv" class="form-input" style="padding:8px" onchange="previewCSV(this)">'
-    + '<div id="csv-preview" style="margin-top:12px"></div>'
-    + '<div id="csv-import-result" style="margin-top:12px"></div>'
+    + '<div class="settings-card">'
+    + '<div class="settings-card-header">'
+    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>'
+    + 'Asset Defaults'
     + '</div>'
-
-    // Column mapping
-    + '<div id="csv-mapping" style="display:none;margin-bottom:20px">'
-    + '<label class="form-label">Column Mapping</label>'
-    + '<div class="form-hint" style="margin-bottom:8px">Verify the detected column mapping below. Adjust if needed.</div>'
-    + '<div id="csv-mapping-fields"></div>'
-    + '<div style="display:flex;gap:8px;margin-top:12px">'
-    + '<button class="btn primary" onclick="runCSVImport()">Import</button>'
-    + '<button class="btn" onclick="cancelCSVImport()">Cancel</button>'
+    + '<div class="settings-card-body">'
+    + '<div class="form-group">'
+    + '<label class="form-label">Asset Tag Prefix</label>'
+    + '<input type="text" id="settings-tag-prefix" class="form-input" value="' + esc(tagPrefix) + '" placeholder="WSC" maxlength="10">'
+    + '<div class="form-hint">Used for auto-generated tags (e.g. ' + esc(tagPrefix) + '-L-0001)</div>'
+    + '</div>'
+    + '<button class="btn primary" onclick="saveDefaults()">Save Defaults</button>'
     + '</div></div>'
+
+    + '</div></div>'
+
+    // === Dev Tools (admin only) ===
+    (Auth.isAdmin() ?
+    '<div class="settings-section settings-section-dev">'
+    + '<div class="settings-section-title">'
+    + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 00-7.94 7.94l-6.91 6.91a2 2 0 01-.9.5H7a2 2 0 01-2-2v-.9a2 2 0 01.5-.9l6.91-6.91a6 6 0 007.94-7.94l-3.76 3.76z"/></svg>'
+    + 'Dev Tools <span class="settings-dev-badge">Admin</span>'
+    + '</div>'
 
     // Device Enrollment
-    + '<div style="margin-bottom:20px">'
-    + '<label class="form-label">Device Enrollment</label>'
-    + '<div class="form-hint" style="margin-bottom:8px">Collect hardware info from a Windows PC and register it as an asset. Two steps: run the script on the PC, then paste the result here.</div>'
-    + '<div style="display:flex;gap:8px;margin-bottom:12px">'
-    + '<button class="btn" onclick="copyEnrollScript()">1. Copy Collection Script</button>'
+    + '<div class="settings-card">'
+    + '<div class="settings-card-header">'
+    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>'
+    + 'Device Enrollment'
     + '</div>'
-    + '<div class="form-hint" style="margin-bottom:12px">Open <strong>PowerShell</strong> on the target PC, paste the script, then paste the copied JSON below:</div>'
-    + '<textarea id="enroll-json" class="form-input" rows="4" placeholder="Paste the JSON from the PowerShell script here..." style="font-family:var(--mono);font-size:12px"></textarea>'
-    + '<div style="display:flex;gap:8px;margin-top:8px">'
-    + '<button class="btn primary" onclick="enrollFromClipboard()">2. Enroll Device</button>'
-    + '</div>'
+    + '<div class="settings-card-body">'
+    + '<div class="form-hint" style="margin-bottom:12px">Enroll a Windows PC as an asset. Run the script on the target PC, paste the JSON result below.</div>'
+    + '<button class="btn sm" onclick="copyEnrollScript()">Copy Script</button>'
+    + '<textarea id="enroll-json" class="form-input" rows="3" placeholder="Paste JSON from PowerShell script..." style="font-family:var(--mono);font-size:11px;margin-top:12px"></textarea>'
+    + '<button class="btn primary" style="margin-top:8px" onclick="enrollFromClipboard()">Enroll Device</button>'
     + '<div id="enroll-result" style="margin-top:8px"></div>'
-    + '</div>'
-
-    // Export
-    + '<div>'
-    + '<label class="form-label">Export</label>'
-    + '<div style="display:flex;gap:8px;margin-top:4px">'
-    + '<button class="btn" onclick="exportAssetCSV()">Export All Assets (CSV)</button>'
-    + '<button class="btn" onclick="window.print()">Print Asset Register (PDF)</button>'
     + '</div></div>'
 
+    // CSV Import/Export
+    + '<div class="settings-card">'
+    + '<div class="settings-card-header">'
+    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>'
+    + 'Import / Export'
+    + '</div>'
+    + '<div class="settings-card-body">'
+    + '<div class="form-group">'
+    + '<label class="form-label">Import from CSV</label>'
+    + '<input type="file" id="csv-import-file" accept=".csv" class="form-input" onchange="previewCSV(this)">'
+    + '<div id="csv-preview" style="margin-top:8px"></div>'
+    + '<div id="csv-mapping" style="display:none;margin-top:12px">'
+    + '<label class="form-label">Column Mapping</label>'
+    + '<div id="csv-mapping-fields"></div>'
+    + '<div style="display:flex;gap:8px;margin-top:8px">'
+    + '<button class="btn primary sm" onclick="runCSVImport()">Import</button>'
+    + '<button class="btn sm" onclick="cancelCSVImport()">Cancel</button>'
+    + '</div>'
+    + '</div>'
+    + '<div id="csv-import-result"></div>'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;margin-top:16px">'
+    + '<button class="btn sm" onclick="exportAssetCSV()">Export CSV</button>'
+    + '<button class="btn sm" onclick="window.print()">Print PDF</button>'
+    + '</div>'
     + '</div></div>'
 
-    // Entra ID Integration
-    + '<div class="card" style="margin-bottom:20px">'
-    + '<div class="card-header"><span class="card-title">Entra ID Integration</span></div>'
-    + '<div class="card-body">'
-    + '<div class="form-hint" style="margin-bottom:12px">Sync users from Microsoft Entra ID (Azure AD) into the People directory. Requires an app registration with <code>User.Read.All</code> application permission.</div>'
-    + '<div class="form-row">'
-    + '<div class="form-group"><label class="form-label">Tenant ID</label>'
-    + '<input type="text" id="entra-tenant-id" class="form-input" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value="' + esc(localStorage.getItem('wsc_entra_tenant') || '') + '"></div>'
-    + '<div class="form-group"><label class="form-label">Client ID</label>'
-    + '<input type="text" id="entra-client-id" class="form-input" placeholder="App registration client ID" value="' + esc(localStorage.getItem('wsc_entra_client') || '') + '"></div>'
+    // Entra ID
+    + '<div class="settings-card">'
+    + '<div class="settings-card-header">'
+    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>'
+    + 'Entra ID Sync'
     + '</div>'
-    + '<div class="form-group"><label class="form-label">Client Secret</label>'
-    + '<input type="password" id="entra-client-secret" class="form-input" placeholder="' + (localStorage.getItem('wsc_entra_secret') ? 'Secret saved — enter new to change' : 'App registration client secret') + '">'
+    + '<div class="settings-card-body">'
+    + '<div class="form-hint" style="margin-bottom:12px">Sync users from Microsoft Entra ID. Requires User.Read.All permission.</div>'
+    + '<div class="form-group">'
+    + '<label class="form-label">Tenant ID</label>'
+    + '<input type="text" id="entra-tenant-id" class="form-input" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value="' + esc(localStorage.getItem('wsc_entra_tenant') || '') + '">'
     + '</div>'
-    + '<div style="display:flex;gap:8px;align-items:center">'
-    + '<button class="btn" onclick="saveEntraConfig()">Save Config</button>'
-    + '<button class="btn primary" onclick="syncEntraUsers()">Sync Users from Entra</button>'
+    + '<div class="form-group">'
+    + '<label class="form-label">Client ID</label>'
+    + '<input type="text" id="entra-client-id" class="form-input" placeholder="App registration client ID" value="' + esc(localStorage.getItem('wsc_entra_client') || '') + '">'
+    + '</div>'
+    + '<div class="form-group">'
+    + '<label class="form-label">Client Secret</label>'
+    + '<input type="password" id="entra-client-secret" class="form-input" placeholder="••••••••">'
+    + '</div>'
+    + '<div style="display:flex;gap:8px">'
+    + '<button class="btn sm" onclick="saveEntraConfig()">Save Config</button>'
+    + '<button class="btn primary sm" onclick="syncEntraUsers()">Sync Users</button>'
     + '</div>'
     + '<div id="entra-sync-result" style="margin-top:12px"></div>'
     + '</div></div>'
 
-    // User Management (admin only)
-    + (Auth.isAdmin() ?
-    '<div class="card" style="margin-bottom:20px">'
-    + '<div class="card-header"><span class="card-title">User Management</span>'
-    + '<button class="btn sm primary" onclick="openAddUserModal()">+ Add User</button></div>'
-    + '<div class="card-body">'
-    + '<div class="form-hint" style="margin-bottom:12px">Users are mapped from SSO (Cloudflare Access + Entra ID). Only users listed here can access the app after SSO login.</div>'
-    + '<div id="user-list-container">Loading users...</div>'
-    + '</div></div>' : '')
+    // User Management
+    + '<div class="settings-card">'
+    + '<div class="settings-card-header">'
+    + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>'
+    + 'User Management'
+    + '<button class="btn sm primary" style="margin-left:auto" onclick="openAddUserModal()">+ Add</button>'
+    + '</div>'
+    + '<div class="settings-card-body">'
+    + '<div id="user-list-container">Loading...</div>'
+    + '</div></div>'
 
-    // Session
-    + '<div class="card" style="margin-bottom:20px">'
-    + '<div class="card-header"><span class="card-title">Session</span></div>'
-    + '<div class="card-body">'
-    + '<div style="display:flex;gap:12px;align-items:center">'
-    + '<div style="font-size:13px">Signed in as <strong>' + esc(Auth.user ? Auth.user.display_name : '') + '</strong>'
-    + ' <span style="font-family:var(--mono);font-size:11px;color:var(--text3)">(' + esc(Auth.user ? Auth.user.email : '') + ')</span>'
-    + ' &middot; Role: <strong>' + esc(Auth.user ? Auth.user.role : '') + '</strong></div>'
-    + '<button class="btn danger sm" onclick="doLogout()">Sign Out</button>'
-    + '</div></div></div>'
+    + '</div></div>'
+    : '')
 
-    // About
-    + '<div class="card">'
-    + '<div class="card-header"><span class="card-title">About</span></div>'
-    + '<div class="card-body">'
-    + '<div style="font-size:13px;line-height:2">'
-    + '<strong>WSC Assets</strong> v1.0.0<br>'
-    + 'Walgett Shire Council — IT Asset Management<br>'
-    + '<span style="font-family:var(--mono);font-size:11px;color:var(--text3)">Built with Vanilla JS + Vite &middot; Cloudflare Workers + D1 + R2 + Pages</span><br>'
-    + '<span style="font-family:var(--mono);font-size:11px;color:var(--text3)">Domain: assets.it-wsc.com</span>'
-    + '</div></div></div>';
+    // === About ===
+    '<div class="settings-section">'
+    + '<div class="settings-section-title">About</div>'
+    + '<div class="settings-card">'
+    + '<div class="settings-about">'
+    + '<div class="settings-about-name">WSC Assets</div>'
+    + '<div class="settings-about-version">v1.0.0</div>'
+    + '<div class="settings-about-desc">Walgett Shire Council — IT Asset Management</div>'
+    + '<div class="settings-about-tech">Built with Vanilla JS + Vite · Cloudflare Workers + D1 + R2 + Pages</div>'
+    + '</div></div>'
 
-  // Load user list if admin
-  if (Auth.isAdmin()) setTimeout(loadUserList, 100);
-});
+    + '</div></div>';
 
-// ─── API Settings ──────────────────────────────
+  // Initialize
+  setTimeout(function() {
+    refreshSystemStatus();
+    API.init();
+  }, 100);
+
+  return '';
+}
+
+// Quick functions
+window.refreshSystemStatus = function() {
+  if (!API.baseUrl) return;
+  API.getStats().then(function(stats) {
+    var countEl = document.getElementById('settings-asset-count');
+    if (countEl) countEl.textContent = (stats.total || 0) + ' assets';
+
+    var syncEl = document.getElementById('settings-last-sync');
+    if (syncEl) syncEl.textContent = new Date().toLocaleTimeString();
+  }).catch(function() {});
+};
+
+async function testApiConnection() {
+  try {
+    var result = await API.getStats();
+    toast('Connected — ' + (result.total || 0) + ' assets', 'success');
+  } catch(e) {
+    toast('Connection failed: ' + e.message, 'error');
+  }
+}
+window.testApiConnection = testApiConnection;
 
 function saveApiSettings() {
   var url = document.getElementById('settings-api-url').value.trim();
@@ -157,6 +239,7 @@ function saveApiSettings() {
   if (url) API.setUrl(url);
   if (key) API.setKey(key);
   toast('Settings saved', 'success');
+  API.init();
 }
 window.saveApiSettings = saveApiSettings;
 
@@ -165,23 +248,11 @@ function clearApiOverride() {
   localStorage.removeItem('wsc_api_key');
   API.baseUrl = 'https://api.it-wsc.com';
   API.apiKey = '';
-  var urlInput = document.getElementById('settings-api-url');
-  var keyInput = document.getElementById('settings-api-key');
-  if (urlInput) urlInput.value = '';
-  if (keyInput) keyInput.value = '';
-  toast('Reset to default API settings', 'success');
+  document.getElementById('settings-api-url').value = '';
+  document.getElementById('settings-api-key').value = '';
+  toast('Reset to default', 'success');
 }
 window.clearApiOverride = clearApiOverride;
-
-async function testApiConnection() {
-  try {
-    var result = await API.getStats();
-    toast('Connected! ' + (result.total || 0) + ' assets in database', 'success');
-  } catch(e) {
-    toast('Connection failed: ' + e.message, 'error');
-  }
-}
-window.testApiConnection = testApiConnection;
 
 function saveDefaults() {
   var prefix = document.getElementById('settings-tag-prefix').value.trim();
@@ -190,11 +261,11 @@ function saveDefaults() {
 }
 window.saveDefaults = saveDefaults;
 
-// ─── CSV Import with Column Mapping ────────────
+function doLogout() { window.logout(); }
+window.doLogout = doLogout;
 
-var _csvData = null;
-var _csvHeaders = null;
-var _csvRows = null;
+// === CSV Import/Export ===
+var _csvData = null, _csvHeaders = null, _csvRows = null;
 
 function previewCSV(input) {
   if (!input.files.length) return;
@@ -209,55 +280,15 @@ function previewCSV(input) {
     _csvHeaders = lines[0].split(',').map(function(h) { return h.trim().replace(/['"]/g, '').toLowerCase(); });
     _csvRows = lines.length - 1;
 
-    // Show preview
-    var previewEl = document.getElementById('csv-preview');
-    previewEl.innerHTML = '<div style="padding:12px;background:var(--surface2);border-radius:var(--radius-sm);font-family:var(--mono);font-size:12px">'
-      + '<div style="font-weight:600;margin-bottom:4px">' + _csvRows + ' rows detected</div>'
-      + '<div style="color:var(--text3)">Columns: ' + _csvHeaders.join(', ') + '</div>'
-      + '</div>';
-
-    // Show mapping UI
-    var mappingEl = document.getElementById('csv-mapping');
-    mappingEl.style.display = 'block';
-
-    var knownFields = ['asset_tag', 'name', 'serial_number', 'category', 'manufacturer', 'model', 'status', 'purchase_date', 'purchase_cost', 'assigned_to', 'notes'];
-
-    var fieldsHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
-    knownFields.forEach(function(field) {
-      var detected = _csvHeaders.indexOf(field) !== -1;
-      var matchIdx = _csvHeaders.indexOf(field);
-
-      // Try fuzzy match
-      if (matchIdx === -1) {
-        _csvHeaders.forEach(function(h, i) {
-          if (h.replace(/[_\s-]/g, '') === field.replace(/[_\s-]/g, '')) matchIdx = i;
-        });
-      }
-
-      fieldsHtml += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0">'
-        + '<span style="font-size:12px;font-family:var(--mono);min-width:120px;color:' + (detected ? 'var(--green)' : 'var(--text3)') + '">'
-        + (detected ? '&#10003; ' : '') + field + '</span>'
-        + '<select class="form-select" data-map-field="' + field + '" style="font-size:12px;padding:4px 8px">'
-        + '<option value="">— skip —</option>';
-
-      _csvHeaders.forEach(function(h, i) {
-        fieldsHtml += '<option value="' + i + '"' + (i === matchIdx ? ' selected' : '') + '>' + esc(h) + '</option>';
-      });
-
-      fieldsHtml += '</select></div>';
-    });
-    fieldsHtml += '</div>';
-
-    document.getElementById('csv-mapping-fields').innerHTML = fieldsHtml;
+    document.getElementById('csv-preview').innerHTML = '<div class="settings-csv-info"><strong>' + _csvRows + '</strong> rows · <span>' + _csvHeaders.join(', ') + '</span></div>';
+    document.getElementById('csv-mapping').style.display = 'block';
   };
   reader.readAsText(file);
 }
 window.previewCSV = previewCSV;
 
 function cancelCSVImport() {
-  _csvData = null;
-  _csvHeaders = null;
-  _csvRows = null;
+  _csvData = null; _csvHeaders = null; _csvRows = null;
   document.getElementById('csv-preview').innerHTML = '';
   document.getElementById('csv-mapping').style.display = 'none';
   document.getElementById('csv-import-file').value = '';
@@ -269,7 +300,6 @@ async function runCSVImport() {
   if (!_csvData) { toast('No CSV loaded', 'error'); return; }
   if (!API.baseUrl) { toast('Configure API first', 'error'); return; }
 
-  // Build remapped CSV using column mapping
   var mappings = {};
   document.querySelectorAll('[data-map-field]').forEach(function(sel) {
     var field = sel.dataset.mapField;
@@ -278,48 +308,36 @@ async function runCSVImport() {
   });
 
   var lines = _csvData.split('\n').filter(function(l) { return l.trim(); });
-  var knownFields = Object.keys(mappings);
+  var fields = Object.keys(mappings);
+  var newCsv = fields.join(',') + '\n';
 
-  // Rebuild CSV with standard headers
-  var newCsv = knownFields.join(',') + '\n';
   for (var i = 1; i < lines.length; i++) {
-    var cols = parseCSVLineLocal(lines[i]);
-    var row = knownFields.map(function(f) {
-      var val = cols[mappings[f]] || '';
-      val = val.trim().replace(/^['"]|['"]$/g, '');
+    var cols = parseCSVLine(lines[i]);
+    var row = fields.map(function(f) {
+      var val = (cols[mappings[f]] || '').trim().replace(/^['"]|['"]$/g, '');
       if (val.indexOf(',') !== -1 || val.indexOf('"') !== -1) val = '"' + val.replace(/"/g, '""') + '"';
       return val;
     });
     newCsv += row.join(',') + '\n';
   }
 
-  var resultEl = document.getElementById('csv-import-result');
-  resultEl.innerHTML = '<div style="padding:12px;background:var(--accent-l);border-radius:var(--radius-sm);font-family:var(--mono);font-size:12px">'
-    + 'Importing ' + _csvRows + ' rows...</div>';
+  document.getElementById('csv-import-result').innerHTML = '<div class="settings-importing">Importing...</div>';
 
   try {
     var result = await API.importCSV(newCsv);
-    var html = '<div style="padding:12px;background:var(--green-l, #dcfce7);border-radius:var(--radius-sm);font-size:13px">'
-      + '<div style="font-weight:600;margin-bottom:4px">Import Complete</div>'
-      + '<div style="font-family:var(--mono);font-size:12px">'
-      + '<span style="color:var(--green)">&#10003; ' + result.created + ' created</span>';
-    if (result.skipped) html += ' &middot; <span style="color:var(--amber)">' + result.skipped + ' skipped</span>';
-    html += '</div>';
-    if (result.errors && result.errors.length) {
-      html += '<div style="margin-top:8px;font-size:11px;color:var(--red);max-height:100px;overflow-y:auto">'
-        + result.errors.join('<br>') + '</div>';
-    }
-    html += '</div>';
-    resultEl.innerHTML = html;
+    document.getElementById('csv-import-result').innerHTML = '<div class="settings-import-result">' +
+      '<strong>Imported:</strong> ' + result.created + ' assets' +
+      (result.skipped ? ' · <span>Skipped:</span> ' + result.skipped : '') +
+      '</div>';
     toast('Imported ' + result.created + ' assets', 'success');
     cancelCSVImport();
   } catch(e) {
-    resultEl.innerHTML = '<div style="padding:12px;background:var(--red-l, #fee2e2);border-radius:var(--radius-sm);font-size:13px;color:var(--red)">Import failed: ' + esc(e.message) + '</div>';
+    document.getElementById('csv-import-result').innerHTML = '<div class="settings-import-error">Failed: ' + e.message + '</div>';
   }
 }
 window.runCSVImport = runCSVImport;
 
-function parseCSVLineLocal(line) {
+function parseCSVLine(line) {
   var result = [];
   var current = '';
   var inQuotes = false;
@@ -336,62 +354,35 @@ function parseCSVLineLocal(line) {
   return result;
 }
 
-// ─── Session / User Management ────────────────
-
-function doLogout() { logout(); }
-window.doLogout = doLogout;
-
-// Load user list (admin only)
-async function loadUserList() {
+// === User Management ===
+function loadUserList() {
   var container = document.getElementById('user-list-container');
   if (!container) return;
 
-  try {
-    var res = await API.fetch('/api/auth/users');
+  API.fetch('/api/auth/users').then(function(res) {
     var users = res.data || [];
+    if (!users.length) { container.innerHTML = '<div class="settings-empty">No users</div>'; return; }
 
-    if (!users.length) {
-      container.innerHTML = '<div class="table-empty">No users configured</div>';
-      return;
-    }
-
-    var html = '<table class="table"><thead><tr>'
-      + '<th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th></th>'
-      + '</tr></thead><tbody>';
-
+    var html = '<table class="table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>';
     users.forEach(function(u) {
-      html += '<tr>'
-        + '<td>' + esc(u.display_name) + '</td>'
-        + '<td><span style="font-family:var(--mono);font-size:12px">' + esc(u.email) + '</span></td>'
-        + '<td>' + statusBadge(u.role) + '</td>'
-        + '<td>' + (u.active ? '<span style="color:var(--green)">Active</span>' : '<span style="color:var(--red)">Disabled</span>') + '</td>'
-        + '<td style="font-family:var(--mono);font-size:11px;color:var(--text3)">' + (u.last_login ? fmtDateTime(u.last_login) : 'Never') + '</td>'
-        + '<td style="text-align:right">'
-        + '<button class="btn sm" onclick="openEditUserModal(\'' + esc(u.id) + '\',\'' + esc(u.email) + '\',\'' + esc(u.display_name) + '\',\'' + esc(u.role) + '\',' + u.active + ')">Edit</button>'
-        + '</td></tr>';
+      html += '<tr><td>' + esc(u.display_name) + '</td>' +
+        '<td><span class="mono">' + esc(u.email) + '</span></td>' +
+        '<td>' + esc(u.role) + '</td>' +
+        '<td><span class="' + (u.active ? 'text-green' : 'text-red') + '">' + (u.active ? 'Active' : 'Disabled') + '</span></td>' +
+        '<td><button class="btn sm" onclick="openEditUser(\'' + u.id + '\',\'' + esc(u.email) + '\',\'' + esc(u.display_name) + '\',\'' + esc(u.role) + '\',' + u.active + ')">Edit</button></td></tr>';
     });
-
-    html += '</tbody></table>';
-    container.innerHTML = html;
-  } catch(e) {
-    container.innerHTML = '<div style="color:var(--red);font-size:13px">Failed to load users: ' + esc(e.message) + '</div>';
-  }
+    container.innerHTML = html + '</tbody></table>';
+  }).catch(function(e) {
+    container.innerHTML = '<div class="settings-error">Failed: ' + e.message + '</div>';
+  });
 }
 
 function openAddUserModal() {
   openModal('Add User',
-    '<div class="form-hint" style="margin-bottom:12px">Add a user by their Entra email. They will be able to access the app after signing in through SSO.</div>'
-    + '<div class="form-group"><label class="form-label">Email</label>'
-    + '<input type="email" id="au-email" class="form-input" placeholder="user@walgett.nsw.gov.au"></div>'
-    + '<div class="form-group"><label class="form-label">Display Name</label>'
-    + '<input type="text" id="au-name" class="form-input" placeholder="Full name"></div>'
-    + '<div class="form-group"><label class="form-label">Role</label>'
-    + '<select id="au-role" class="form-select">'
-    + '<option value="user">User</option>'
-    + '<option value="admin">Admin</option>'
-    + '<option value="viewer">Viewer (read-only)</option>'
-    + '</select></div>'
-    + '<button class="btn primary full" onclick="doAddUser()">Add User</button>'
+    '<div class="form-group"><label class="form-label">Email</label><input type="email" id="au-email" class="form-input" placeholder="user@walgett.nsw.gov.au"></div>' +
+    '<div class="form-group"><label class="form-label">Display Name</label><input type="text" id="au-name" class="form-input" placeholder="Full name"></div>' +
+    '<div class="form-group"><label class="form-label">Role</label><select id="au-role" class="form-select"><option value="user">User</option><option value="admin">Admin</option></select></div>' +
+    '<button class="btn primary full" onclick="doAddUser()">Add User</button>'
   );
 }
 window.openAddUserModal = openAddUserModal;
@@ -400,246 +391,136 @@ async function doAddUser() {
   var email = document.getElementById('au-email').value.trim();
   var name = document.getElementById('au-name').value.trim();
   var role = document.getElementById('au-role').value;
+  if (!email) { toast('Email required', 'error'); return; }
 
-  if (!email) { toast('Email is required', 'error'); return; }
-
-  try {
-    await API.fetch('/api/auth/users', {
-      method: 'POST',
-      body: { email: email, display_name: name || email, role: role }
-    });
-    closeModal();
-    toast('User added', 'success');
-    loadUserList();
-  } catch(e) { /* toasted */ }
+  await API.fetch('/api/auth/users', { method: 'POST', body: { email: email, display_name: name || email, role: role } });
+  closeModal(); toast('User added', 'success'); loadUserList();
 }
 window.doAddUser = doAddUser;
 
-function openEditUserModal(id, email, name, role, active) {
+function openEditUser(id, email, name, role, active) {
   openModal('Edit User',
-    '<div class="form-group"><label class="form-label">Email</label>'
-    + '<input type="email" id="eu-email" class="form-input" value="' + esc(email) + '"></div>'
-    + '<div class="form-group"><label class="form-label">Display Name</label>'
-    + '<input type="text" id="eu-name" class="form-input" value="' + esc(name) + '"></div>'
-    + '<div class="form-group"><label class="form-label">Role</label>'
-    + '<select id="eu-role" class="form-select">'
-    + '<option value="user"' + (role === 'user' ? ' selected' : '') + '>User</option>'
-    + '<option value="admin"' + (role === 'admin' ? ' selected' : '') + '>Admin</option>'
-    + '<option value="viewer"' + (role === 'viewer' ? ' selected' : '') + '>Viewer (read-only)</option>'
-    + '</select></div>'
-    + '<div class="form-group"><label class="form-label">Status</label>'
-    + '<select id="eu-active" class="form-select">'
-    + '<option value="1"' + (active ? ' selected' : '') + '>Active</option>'
-    + '<option value="0"' + (!active ? ' selected' : '') + '>Disabled</option>'
-    + '</select></div>'
-    + '<div style="display:flex;gap:8px">'
-    + '<button class="btn primary" onclick="doEditUser(\'' + esc(id) + '\')">Save</button>'
-    + '<button class="btn danger" onclick="doDeleteUser(\'' + esc(id) + '\')">Delete</button>'
-    + '</div>'
+    '<div class="form-group"><label class="form-label">Email</label><input type="email" id="eu-email" class="form-input" value="' + esc(email) + '"></div>' +
+    '<div class="form-group"><label class="form-label">Name</label><input type="text" id="eu-name" class="form-input" value="' + esc(name) + '"></div>' +
+    '<div class="form-group"><label class="form-label">Role</label><select id="eu-role" class="form-select"><option value="user">User</option><option value="admin">Admin</option></select></div>' +
+    '<div class="form-group"><label class="form-label">Status</label><select id="eu-active" class="form-select"><option value="1">Active</option><option value="0">Disabled</option></select></div>' +
+    '<div style="display:flex;gap:8px"><button class="btn primary" onclick="doEditUser(\'' + id + '\')">Save</button><button class="btn danger" onclick="doDeleteUser(\'' + id + '\')">Delete</button></div>'
   );
+  document.getElementById('eu-role').value = role;
+  document.getElementById('eu-active').value = active ? '1' : '0';
 }
-window.openEditUserModal = openEditUserModal;
+window.openEditUser = openEditUser;
 
-async function doEditUser(userId) {
-  try {
-    await API.fetch('/api/auth/users/' + userId, {
-      method: 'PUT',
-      body: {
-        email: document.getElementById('eu-email').value.trim(),
-        display_name: document.getElementById('eu-name').value.trim(),
-        role: document.getElementById('eu-role').value,
-        active: parseInt(document.getElementById('eu-active').value)
-      }
-    });
-    closeModal();
-    toast('User updated', 'success');
-    loadUserList();
-  } catch(e) { /* toasted */ }
+async function doEditUser(id) {
+  await API.fetch('/api/auth/users/' + id, { method: 'PUT', body: {
+    email: document.getElementById('eu-email').value.trim(),
+    display_name: document.getElementById('eu-name').value.trim(),
+    role: document.getElementById('eu-role').value,
+    active: parseInt(document.getElementById('eu-active').value)
+  }});
+  closeModal(); toast('User updated', 'success'); loadUserList();
 }
 window.doEditUser = doEditUser;
 
-async function doDeleteUser(userId) {
-  var ok = await confirmDialog('Permanently delete this user? They will lose access to the app.', 'Delete');
-  if (!ok) return;
-  try {
-    await API.fetch('/api/auth/users/' + userId, { method: 'DELETE' });
-    closeModal();
-    toast('User deleted', 'success');
-    loadUserList();
-  } catch(e) { /* toasted */ }
+async function doDeleteUser(id) {
+  if (!confirm('Delete user?')) return;
+  await API.fetch('/api/auth/users/' + id, { method: 'DELETE' });
+  closeModal(); toast('User deleted', 'success'); loadUserList();
 }
 window.doDeleteUser = doDeleteUser;
 
-// ─── Device Enrollment ───────────────────────
-
+// === Device Enrollment ===
 function buildEnrollScript() {
-  var script = '# WSC Assets — Hardware Collector\n'
-    + '# Paste into PowerShell. Collects device info and copies JSON to clipboard.\n\n'
-    + '$cs   = Get-CimInstance Win32_ComputerSystem\n'
-    + '$bios = Get-CimInstance Win32_BIOS\n'
-    + '$os   = Get-CimInstance Win32_OperatingSystem\n'
-    + '$cpu  = Get-CimInstance Win32_Processor | Select-Object -First 1\n'
-    + '$disk = Get-CimInstance Win32_DiskDrive | Where-Object { $_.MediaType -like "*fixed*" } | Select-Object -First 1\n\n'
-    + '$chassis = (Get-CimInstance Win32_SystemEnclosure).ChassisTypes\n'
-    + '$laptopTypes = @(8, 9, 10, 11, 14, 30, 31, 32)\n'
-    + '$isLaptop = ($chassis | Where-Object { $_ -in $laptopTypes }).Count -gt 0\n\n'
-    + '$ramGB = [math]::Round($cs.TotalPhysicalMemory / 1GB)\n'
-    + '$diskGB = if ($disk) { [math]::Round($disk.Size / 1GB) } else { 0 }\n\n'
-    + '$adapter = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.MACAddress } | Select-Object -First 1\n'
-    + '$mac = if ($adapter) { $adapter.MACAddress } else { "N/A" }\n'
-    + '$ip  = if ($adapter.IPAddress) { ($adapter.IPAddress | Where-Object { $_ -match "^\\d+\\.\\d+\\.\\d+\\.\\d+$" } | Select-Object -First 1) } else { "N/A" }\n\n'
-    + '$assetName = if ($cs.Model -match "^$([regex]::Escape($cs.Manufacturer))") { $cs.Model } else { "$($cs.Manufacturer) $($cs.Model)" }\n'
-    + '$assetName = $assetName -replace "System manufacturer", "" -replace "System Product Name", "" -replace "^\\s+|\\s+$", ""\n'
-    + 'if ([string]::IsNullOrWhiteSpace($assetName)) { $assetName = $cs.Name }\n\n'
-    + '$data = @{\n'
-    + '    name          = $assetName\n'
-    + '    serial_number = $bios.SerialNumber\n'
-    + '    category_id   = if ($isLaptop) { "cat_laptop" } else { "cat_desktop" }\n'
-    + '    manufacturer  = $cs.Manufacturer -replace "System manufacturer", "Unknown"\n'
-    + '    model         = $cs.Model -replace "System Product Name", "Unknown"\n'
-    + '    status        = "available"\n'
-    + '    hostname      = $cs.Name\n'
-    + '    os            = "$($os.Caption) $($os.Version)"\n'
-    + '    cpu           = $cpu.Name\n'
-    + '    ram_gb        = $ramGB\n'
-    + '    disk_gb       = $diskGB\n'
-    + '    mac_address   = $mac\n'
-    + '    ip_address    = $ip\n'
-    + '    enrolled_user = $cs.UserName\n'
-    + '    notes         = "Auto-enrolled $(Get-Date -Format \'yyyy-MM-dd HH:mm:ss\')"\n'
-    + '} | ConvertTo-Json\n\n'
-    + '$data | Set-Clipboard\n\n'
-    + 'Write-Host "" -ForegroundColor Yellow\n'
-    + 'Write-Host "=== $assetName ===" -ForegroundColor Yellow\n'
-    + 'Write-Host "  Serial:  $($bios.SerialNumber)"\n'
-    + 'Write-Host "  Type:    $(if ($isLaptop) {\'Laptop\'} else {\'Desktop\'})"\n'
-    + 'Write-Host "  CPU:     $($cpu.Name)"\n'
-    + 'Write-Host "  RAM:     ${ramGB} GB | Disk: ${diskGB} GB"\n'
-    + 'Write-Host "  MAC:     $mac | IP: $ip"\n'
-    + 'Write-Host "  User:    $($cs.UserName)"\n'
-    + 'Write-Host "=========================" -ForegroundColor Yellow\n'
-    + 'Write-Host ""\n'
-    + 'Write-Host "JSON copied to clipboard!" -ForegroundColor Green\n'
-    + 'Write-Host "Paste it into WSC Assets > Settings > Device Enrollment" -ForegroundColor Green\n'
-    + 'Write-Host ""\n'
-    + 'Write-Host "Press any key to exit..."; $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")\n';
-
-  return script.replace(/\\n/g, '\r\n');
+  var lines = [
+    '# WSC Assets Hardware Collector',
+    '$cs = Get-CimInstance Win32_ComputerSystem',
+    '$bios = Get-CimInstance Win32_BIOS',
+    '$os = Get-CimInstance Win32_OperatingSystem',
+    '$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1',
+    '$disk = Get-CimInstance Win32_DiskDrive | Where-Object { $_.MediaType -like \"*fixed*\" } | Select-Object -First 1',
+    '$chassis = (Get-CimInstance Win32_SystemEnclosure).ChassisTypes',
+    '$isLaptop = ($chassis | Where-Object { $_ -in @(8,9,10,11,14,30,31,32) }).Count -gt 0',
+    '$ram = [math]::Round($cs.TotalPhysicalMemory / 1GB)',
+    '$diskGB = if ($disk) { [math]::Round($disk.Size / 1GB) } else { 0 }',
+    '$adapter = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.MACAddress } | Select-Object -First 1',
+    '$mac = if ($adapter) { $adapter.MACAddress } else { \"N/A\" }',
+    '$name = if ($cs.Model -match $cs.Manufacturer) { $cs.Model } else { \"$($cs.Manufacturer) $($cs.Model)\" }',
+    '$data = @{',
+    '  name = $name',
+    '  serial_number = $bios.SerialNumber',
+    '  category_id = if ($isLaptop) { \"cat_laptop\" } else { \"cat_desktop\" }',
+    '  manufacturer = $cs.Manufacturer',
+    '  model = $cs.Model',
+    '  status = \"available\"',
+    '  hostname = $cs.Name',
+    '  os = \"$($os.Caption) $($os.Version)\"',
+    '  cpu = $cpu.Name',
+    '  ram_gb = $ram',
+    '  disk_gb = $diskGB',
+    '  mac_address = $mac',
+    '  notes = \"Auto-enrolled $(Get-Date -Format \'yyyy-MM-dd HH:mm\')\"',
+    '} | ConvertTo-Json',
+    '$data | Set-Clipboard',
+    'Write-Host \"JSON copied to clipboard!\" -ForegroundColor Green'
+  ];
+  return lines.join('\r\n');
 }
 
 function copyEnrollScript() {
   navigator.clipboard.writeText(buildEnrollScript()).then(function() {
-    toast('Script copied! Paste into PowerShell on the target PC', 'success');
-  }, function() {
-    toast('Copy failed — check browser clipboard permissions', 'error');
+    toast('Script copied to clipboard', 'success');
   });
 }
 window.copyEnrollScript = copyEnrollScript;
 
 async function enrollFromClipboard() {
-  var jsonText = document.getElementById('enroll-json').value.trim();
-  if (!jsonText) { toast('Paste the JSON from the PowerShell script first', 'error'); return; }
-  if (!API.baseUrl) { toast('API not configured', 'error'); return; }
+  var json = document.getElementById('enroll-json').value.trim();
+  if (!json) { toast('Paste JSON first', 'error'); return; }
 
-  var resultEl = document.getElementById('enroll-result');
   var data;
-  try {
-    data = JSON.parse(jsonText);
-  } catch(e) {
-    toast('Invalid JSON — make sure you copied the full output', 'error');
-    return;
-  }
+  try { data = JSON.parse(json); } catch(e) { toast('Invalid JSON', 'error'); return; }
 
-  if (!data.name || !data.serial_number) {
-    toast('JSON is missing required fields (name, serial_number)', 'error');
-    return;
-  }
-
-  resultEl.innerHTML = '<div style="padding:8px;color:var(--text3);font-size:13px">Checking for duplicates...</div>';
-
-  // Check if serial already exists
   try {
     var existing = await API.fetch('/api/assets/serial/' + encodeURIComponent(data.serial_number));
-    resultEl.innerHTML = '<div style="padding:12px;background:var(--amber-l, #fef3c7);border-radius:var(--radius-sm);font-size:13px">'
-      + 'This device is already registered as <strong>' + esc(existing.asset_tag) + '</strong> (' + esc(existing.name) + ')</div>';
+    document.getElementById('enroll-result').innerHTML = '<div class="settings-warn">Already registered: ' + existing.asset_tag + '</div>';
     return;
-  } catch(e) {
-    // 404 = not found, which is what we want
-  }
+  } catch(e) { /* ok */ }
 
-  resultEl.innerHTML = '<div style="padding:8px;color:var(--text3);font-size:13px">Registering asset...</div>';
-
-  try {
-    var result = await API.createAsset(data);
-    resultEl.innerHTML = '<div style="padding:12px;background:var(--green-l, #dcfce7);border-radius:var(--radius-sm);font-size:13px">'
-      + '<strong style="color:var(--green)">Enrolled!</strong> Asset Tag: <strong>' + esc(result.asset_tag) + '</strong>'
-      + ' <a href="#/assets/' + result.id + '" style="margin-left:8px">View Asset</a></div>';
-    document.getElementById('enroll-json').value = '';
-    toast('Device enrolled as ' + result.asset_tag, 'success');
-  } catch(e) {
-    resultEl.innerHTML = '<div style="padding:12px;background:var(--red-l, #fee2e2);border-radius:var(--radius-sm);font-size:13px;color:var(--red)">Failed: ' + esc(e.message) + '</div>';
-  }
+  var result = await API.createAsset(data);
+  document.getElementById('enroll-result').innerHTML = '<div class="settings-success">Enrolled: ' + result.asset_tag + '</div>';
+  document.getElementById('enroll-json').value = '';
+  toast('Device enrolled', 'success');
 }
 window.enrollFromClipboard = enrollFromClipboard;
 
-// ─── Entra ID Sync ─────────────────────────
-
+// === Entra Sync ===
 function saveEntraConfig() {
-  var tenant = document.getElementById('entra-tenant-id').value.trim();
-  var client = document.getElementById('entra-client-id').value.trim();
-  var secret = document.getElementById('entra-client-secret').value.trim();
-  if (tenant) localStorage.setItem('wsc_entra_tenant', tenant);
-  if (client) localStorage.setItem('wsc_entra_client', client);
-  if (secret) localStorage.setItem('wsc_entra_secret', secret);
-  toast('Entra config saved', 'success');
+  var t = document.getElementById('entra-tenant-id').value.trim();
+  var c = document.getElementById('entra-client-id').value.trim();
+  var s = document.getElementById('entra-client-secret').value.trim();
+  if (t) localStorage.setItem('wsc_entra_tenant', t);
+  if (c) localStorage.setItem('wsc_entra_client', c);
+  if (s) localStorage.setItem('wsc_entra_secret', s);
+  toast('Config saved', 'success');
 }
 window.saveEntraConfig = saveEntraConfig;
 
 async function syncEntraUsers() {
-  var tenant = document.getElementById('entra-tenant-id').value.trim() || localStorage.getItem('wsc_entra_tenant');
-  var client = document.getElementById('entra-client-id').value.trim() || localStorage.getItem('wsc_entra_client');
-  var secret = document.getElementById('entra-client-secret').value.trim() || localStorage.getItem('wsc_entra_secret');
+  var t = document.getElementById('entra-tenant-id').value.trim() || localStorage.getItem('wsc_entra_tenant');
+  var c = document.getElementById('entra-client-id').value.trim() || localStorage.getItem('wsc_entra_client');
+  var s = document.getElementById('entra-client-secret').value.trim() || localStorage.getItem('wsc_entra_secret');
+  if (!t || !c || !s) { toast('Fill in all fields', 'error'); return; }
 
-  if (!tenant || !client || !secret) {
-    toast('Fill in all Entra ID fields first', 'error');
-    return;
-  }
+  document.getElementById('entra-sync-result').innerHTML = '<div class="settings-syncing">Syncing...</div>';
 
-  if (!API.baseUrl) {
-    toast('API not configured', 'error');
-    return;
-  }
-
-  var resultEl = document.getElementById('entra-sync-result');
-  resultEl.innerHTML = '<div style="padding:12px;background:var(--accent-l);border-radius:var(--radius-sm);font-family:var(--mono);font-size:12px">'
-    + 'Connecting to Microsoft Graph API...</div>';
-
-  try {
-    var result = await API.syncEntra({
-      tenant_id: tenant,
-      client_id: client,
-      client_secret: secret,
-      domain: 'walgett.nsw.gov.au'
-    });
-
-    var html = '<div style="padding:12px;background:var(--green-l, #dcfce7);border-radius:var(--radius-sm);font-size:13px">'
-      + '<div style="font-weight:600;margin-bottom:4px">Sync Complete</div>'
-      + '<div style="font-family:var(--mono);font-size:12px">'
-      + 'Fetched: ' + result.total_fetched + ' users<br>'
-      + '<span style="color:var(--green)">&#10003; ' + result.created + ' created</span>'
-      + ' &middot; <span style="color:var(--accent)">' + result.updated + ' updated</span>';
-    if (result.deleted) html += ' &middot; <span style="color:var(--red)">' + result.deleted + ' removed</span>';
-    if (result.skipped) html += ' &middot; <span style="color:var(--text3)">' + result.skipped + ' skipped</span>';
-    html += '</div>';
-    if (result.errors && result.errors.length) {
-      html += '<div style="margin-top:8px;font-size:11px;color:var(--red);max-height:100px;overflow-y:auto">'
-        + result.errors.join('<br>') + '</div>';
-    }
-    html += '</div>';
-    resultEl.innerHTML = html;
-    toast('Synced ' + result.created + ' new + ' + result.updated + ' updated users', 'success');
-  } catch(e) {
-    resultEl.innerHTML = '<div style="padding:12px;background:var(--red-l, #fee2e2);border-radius:var(--radius-sm);font-size:13px;color:var(--red)">Sync failed: ' + esc(e.message) + '</div>';
-  }
+  var result = await API.syncEntra({ tenant_id: t, client_id: c, client_secret: s, domain: 'walgett.nsw.gov.au' });
+  document.getElementById('entra-sync-result').innerHTML = '<div class="settings-success">Created: ' + result.created + ' · Updated: ' + result.updated + '</div>';
+  toast('Synced ' + result.created + ' users', 'success');
 }
 window.syncEntraUsers = syncEntraUsers;
+
+// Export
+function exportAssetCSV() {
+  window.open('/api/export/csv', '_blank');
+}
+window.exportAssetCSV = exportAssetCSV;
