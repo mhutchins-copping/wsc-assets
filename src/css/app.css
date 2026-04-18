@@ -1048,6 +1048,39 @@ tbody td.mono {
 
 .detail-field-value.empty { color: var(--text3); font-style: italic; }
 
+/* ─── Asset detail layout ─────────────────────── */
+.asset-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: start;
+}
+.asset-detail-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.asset-photo-body {
+  padding: 0;
+  background: var(--surface2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  max-height: 360px;
+  overflow: hidden;
+}
+.asset-photo {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
 /* ─── KPI Pop Animation ─────────────────────── */
 @keyframes kpiPop {
   0%   { transform: scale(1); }
@@ -1203,6 +1236,7 @@ tbody td.mono {
   .detail-header { flex-direction: column; }
   .detail-header-actions { width: 100%; flex-wrap: wrap; }
   .detail-grid { grid-template-columns: 1fr 1fr; }
+  .asset-detail-grid { grid-template-columns: 1fr; }
 
   .toolbar { flex-direction: column; align-items: stretch; }
   .toolbar-left, .toolbar-right { width: 100%; }

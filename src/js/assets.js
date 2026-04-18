@@ -217,9 +217,10 @@ async function renderAssetDetail(id) {
       + '<button class="btn danger sm" onclick="permanentDeleteAsset(\'' + esc(asset.id) + '\')">Delete</button>'
       + '</div></div>';
 
-    // Info grid: 3-column layout
-    html += '<div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px">'
-      // Left: Details card
+    // Info grid: 2-column layout (details/photo on left, assignment/qr on right)
+    html += '<div class="asset-detail-grid">'
+      // Left column
+      + '<div class="asset-detail-col">'
       + '<div class="card"><div class="card-header"><span class="card-title">Details</span></div>'
       + '<div class="card-body"><div class="detail-grid" style="grid-template-columns:1fr 1fr 1fr">'
       + detailField('Category', asset.category_name)
@@ -228,11 +229,21 @@ async function renderAssetDetail(id) {
       + detailField('Purchase Date', fmtDate(asset.purchase_date))
       + detailField('Purchase Cost', fmtCurrency(asset.purchase_cost))
       + detailField('Created', fmtDate(asset.created_at))
-      + '</div></div></div>'
+      + '</div></div></div>';
 
-      // Right: Assignment + QR
-      + '<div>'
-      + '<div class="card" style="margin-bottom:12px"><div class="card-header"><span class="card-title">Assignment</span></div><div class="card-body">';
+    // Photo card goes in the left column so it fills the space next to Assignment + QR
+    if (asset.image_url) {
+      html += '<div class="card"><div class="card-header"><span class="card-title">Photo</span>'
+        + '<button class="btn danger sm" onclick="deleteAssetImage(\'' + esc(asset.id) + '\')">Delete</button></div>'
+        + '<div class="card-body asset-photo-body">'
+        + '<img class="asset-photo" src="https://api.it-wsc.com' + esc(asset.image_url) + '" alt="Asset photo">'
+        + '</div></div>';
+    }
+
+    html += '</div>'
+      // Right column
+      + '<div class="asset-detail-col">'
+      + '<div class="card"><div class="card-header"><span class="card-title">Assignment</span></div><div class="card-body">';
     if (asset.assigned_to) {
       html += '<div style="font-size:14px;font-weight:600;margin-bottom:2px">' + esc(asset.assigned_to_name || '—') + '</div>'
         + '<div style="font-size:11px;color:var(--text3)">'
@@ -250,15 +261,6 @@ async function renderAssetDetail(id) {
       + '<div id="asset-qr-code"></div>'
       + '<div style="font-size:10px;font-family:var(--mono);color:var(--text3);margin-top:6px">' + esc(asset.asset_tag) + '</div>'
       + '</div></div>';
-
-    // Image card (if image exists)
-    if (asset.image_url) {
-      html += '<div class="card" style="margin-top:12px"><div class="card-header"><span class="card-title">Photo</span>'
-        + '<button class="btn danger sm" style="float:right;margin-top:-4px" onclick="deleteAssetImage(\'' + esc(asset.id) + '\')">Delete</button></div>'
-        + '<div class="card-body" style="text-align:center;padding:8px">'
-        + '<img src="https://api.it-wsc.com' + esc(asset.image_url) + '" style="max-width:100%;border-radius:4px">'
-        + '</div></div>';
-    }
 
     html += '</div></div>';
 
