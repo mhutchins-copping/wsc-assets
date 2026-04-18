@@ -1,0 +1,46 @@
+name: Weekly D1 Backup
+
+# Runs every Sunday at 02:00 UTC. Manual trigger also available via the
+# Actions tab. Exports the full database to a SQL file and uploads it as
+# a workflow artifact (retained 90 days).
+#
+# To restore:
+#   1. Download the .sql artifact from the Actions run you want to restore
+#   2. Run: wrangler d1 execute wsc-assets-db --remote --file=<downloaded>.sql
+#      (warning: this will fail on existing tables — see docs/OPERATIONS.md)
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'   # Sunday 02:00 UTC
+  workflow_dispatch:       # manual trigger button in GitHub UI
+
+jobs:
+  backup:
+    name: Export D1 and archive
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+        working-directory: worker
+      - name: Export database to SQL
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          STAMP=$(date -u +%Y-%m-%d)
+          mkdir -p ../backups
+          npx wrangler d1 export wsc-assets-db --remote --output=../backups/wsc-assets-db-${STAMP}.sql
+          echo "BACKUP_FILE=wsc-assets-db-${STAMP}.sql" >> $GITHUB_ENV
+          ls -la ../backups/
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: d1-backup-${{ github.run_number }}
+          path: backups/*.sql
+          retention-days: 90
