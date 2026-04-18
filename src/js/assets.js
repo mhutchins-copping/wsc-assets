@@ -553,7 +553,7 @@ async function renderAssetForm(editId) {
   // Image
   html += '<div class="form-group"><label class="form-label">Photo</label>'
     + '<input type="file" id="af-image" class="form-input" accept="image/*" style="padding:8px">'
-    + (asset && asset.image_url ? '<div style="margin-top:8px"><img src="' + esc(asset.image_url) + '" style="max-width:200px;border-radius:8px"></div>' : '')
+    + (asset && asset.image_url ? '<div style="margin-top:8px"><img src="https://api.it-wsc.com' + esc(asset.image_url) + '" style="max-width:200px;border-radius:8px"></div>' : '')
     + '</div>';
 
   // Buttons
