@@ -739,10 +739,17 @@ async function updateAsset(request, env, assetId) {
     assetId
   ).run();
 
+  // Helper to compare values across serialisation boundary (JSON ↔ SQLite types may differ)
+  function valuesEqual(a, b) {
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    return String(a) === String(b);
+  }
+
   // Build change summary
   const changes = [];
   for (const key of Object.keys(data)) {
-    if (data[key] !== existing[key] && key !== 'updated_at') {
+    if (!valuesEqual(data[key], existing[key]) && key !== 'updated_at') {
       changes.push(key);
     }
   }
