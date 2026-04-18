@@ -61,8 +61,9 @@ function renderSettings() {
     + '<div class="settings-section">'
     + '<div class="settings-section-title">Settings</div>'
 
-    // API Connection
-    + '<div class="settings-card">'
+    // API Connection (admin only — contains infra URL and API key)
+    + (Auth.isAdmin() ?
+    '<div class="settings-card">'
     + '<div class="settings-card-header">'
     + '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12h6"/></svg>'
     + 'API Connection'
@@ -89,6 +90,7 @@ function renderSettings() {
     + '<button class="btn sm" onclick="clearApiOverride()">Reset</button>'
     + '</div>'
     + '</details></div></div>'
+    : '')
 
     // Asset Defaults
     + '<div class="settings-card">'
