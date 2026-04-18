@@ -253,7 +253,8 @@ async function renderAssetDetail(id) {
 
     // Image card (if image exists)
     if (asset.image_url) {
-      html += '<div class="card" style="margin-top:12px"><div class="card-header"><span class="card-title">Photo</span></div>'
+      html += '<div class="card" style="margin-top:12px"><div class="card-header"><span class="card-title">Photo</span>'
+        + '<button class="btn danger sm" style="float:right;margin-top:-4px" onclick="deleteAssetImage(\'' + esc(asset.id) + '\')">Delete</button></div>'
         + '<div class="card-body" style="text-align:center;padding:8px">'
         + '<img src="https://api.it-wsc.com' + esc(asset.image_url) + '" style="max-width:100%;border-radius:4px">'
         + '</div></div>';
@@ -411,6 +412,17 @@ async function permanentDeleteAsset(assetId) {
   } catch(e) { /* toasted */ }
 }
 window.permanentDeleteAsset = permanentDeleteAsset;
+
+async function deleteAssetImage(assetId) {
+  var ok = await confirmDialog('Delete this photo?', 'Delete Photo');
+  if (!ok) return;
+  try {
+    await API.updateAsset(assetId, { image_url: null });
+    toast('Photo deleted', 'success');
+    renderAssetDetail(assetId);
+  } catch(e) { /* toasted */ }
+}
+window.deleteAssetImage = deleteAssetImage;
 
 function printAssetLabel(assetId) {
   // Open a print-friendly window with QR + info
