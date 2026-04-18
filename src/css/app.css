@@ -1224,3 +1224,58 @@ tbody td.mono {
   .filter-bar { gap: 4px; }
   .filter-pill { padding: 3px 8px; font-size: 11px; }
 }
+
+/* ─── Dashboard v2 ───────────────────────────── */
+.dash-kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
+.dash-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }
+.dash-kpi-label { font-size: 12px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text3); margin-bottom: 4px; }
+.dash-kpi-value { font-size: 28px; font-weight: 600; color: var(--text); font-feature-settings: "tnum"; }
+.dash-kpi-delta { font-size: 12px; color: var(--text2); margin-top: 4px; }
+.dash-kpi-delta-warn { color: var(--amber); }
+.dash-grid { display: grid; grid-template-columns: 60% 40%; gap: 16px; margin-bottom: 16px; }
+.dash-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; }
+.dash-section-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
+.dash-bar-track { display: flex; height: 10px; border-radius: 3px; overflow: hidden; background: var(--surface3); }
+.dash-bar-fill { height: 100%; }
+.dash-bar-fill:first-child { border-radius: 3px 0 0 3px; }
+.dash-legend { display: flex; flex-wrap: wrap; gap: 12px 16px; margin-top: 12px; }
+.dash-legend-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.dash-legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+.dash-legend-label { color: var(--text); }
+.dash-legend-value { font-family: var(--mono); color: var(--text2); }
+.dash-activity-list { display: flex; flex-direction: column; }
+.dash-activity-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.dash-activity-row:last-child { border-bottom: none; }
+.dash-activity-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--text3); }
+.dash-activity-content { flex: 1; font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-activity-time { font-size: 12px; font-family: var(--mono); color: var(--text3); white-space: nowrap; }
+.dash-activity-more { margin-top: 12px; font-size: 13px; }
+.dash-activity-more a { color: var(--accent); text-decoration: none; }
+.dash-activity-more a:hover { text-decoration: underline; }
+.dash-minibar-area { display: flex; flex-direction: column; gap: 10px; }
+.dash-minibar-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.dash-minibar-label { width: 14ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.dash-minibar-track { flex: 1; height: 8px; background: var(--surface3); border-radius: 4px; overflow: hidden; }
+.dash-minibar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+.dash-minibar-value { font-family: var(--mono); font-size: 12px; color: var(--text2); min-width: 30px; text-align: right; }
+.dash-minibar-more { font-size: 12px; margin-top: 4px; }
+.dash-minibar-more a { color: var(--accent); text-decoration: none; }
+.dash-empty { font-size: 14px; color: var(--text2); padding: 20px 0; }
+.dash-empty button { margin-left: 8px; }
+.dash-empty-subtle { font-size: 13px; color: var(--text3); padding: 16px 0; font-style: italic; }
+.dash-skeleton-block { background: var(--surface3); border-radius: 4px; animation: dashShim 1.5s ease-in-out infinite; }
+.dash-skeleton { background: var(--surface3); border-radius: 4px; }
+@keyframes dashShim { 0%, 100% { opacity: 0.6; } 50% { opacity: 0.3; } }
+
+/* Responsive */
+@media (max-width: 1100px) {
+  .dash-kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .dash-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  .dash-kpi-row { grid-template-columns: 1fr; }
+  .dash-kpi-value { font-size: 22px; }
+  .dash-legend { flex-direction: column; gap: 8px; }
+}
+
+/* ─── End Dashboard v2 ──────────────────────── */
