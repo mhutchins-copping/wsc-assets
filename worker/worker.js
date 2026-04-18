@@ -938,8 +938,17 @@ async function generateTag(env, categoryId) {
   }
 
   const fullPrefix = `${prefix}-${catPrefix}-`;
+  return nextTagNumber(env, fullPrefix);
+}
 
-  // Find the highest existing tag number for this prefix
+async function nextTag(env, prefix) {
+  const prefixStr = env.ASSET_TAG_PREFIX || 'WSC';
+  const fullPrefix = `${prefixStr}-${prefix}-`;
+  const tag = nextTagNumber(env, fullPrefix);
+  return json({ tag });
+}
+
+async function nextTagNumber(env, fullPrefix) {
   const result = await env.DB.prepare(
     `SELECT asset_tag FROM assets WHERE asset_tag LIKE ? ORDER BY asset_tag DESC LIMIT 1`
   ).bind(fullPrefix + '%').first();
@@ -951,23 +960,6 @@ async function generateTag(env, categoryId) {
   }
 
   return fullPrefix + String(nextNum).padStart(4, '0');
-}
-
-async function nextTag(env, prefix) {
-  const tag = await generateTag(env, null);
-  // Use the provided prefix directly
-  const fullPrefix = `${env.ASSET_TAG_PREFIX || 'WSC'}-${prefix}-`;
-  const result = await env.DB.prepare(
-    `SELECT asset_tag FROM assets WHERE asset_tag LIKE ? ORDER BY asset_tag DESC LIMIT 1`
-  ).bind(fullPrefix + '%').first();
-
-  let nextNum = 1;
-  if (result) {
-    const match = result.asset_tag.match(/-(\d+)$/);
-    if (match) nextNum = parseInt(match[1]) + 1;
-  }
-
-  return json({ tag: fullPrefix + String(nextNum).padStart(4, '0') });
 }
 
 // ─── People ────────────────────────────────────────────
