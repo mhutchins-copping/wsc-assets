@@ -498,7 +498,7 @@ async function body(request) {
 async function logActivity(env, { asset_id, action, details, performed_by, person_id, location_id, ip_address }) {
   await env.DB.prepare(
     `INSERT INTO activity_log (id, ip_address, asset_id, action, details, performed_by, person_id, location_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(id(), ip_address || null, asset_id || null, action, details || null, performed_by || null, person_id || null, location_id || null, now()).run();
 }
 
