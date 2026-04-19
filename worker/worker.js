@@ -528,7 +528,7 @@ async function deleteUser(request, env, userId, currentUser) {
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Api-Key',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Api-Key, Authorization',
   'Access-Control-Max-Age': '86400',
 };
 
