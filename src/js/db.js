@@ -25,11 +25,19 @@ var API = {
     if (typeof window !== 'undefined' && window.location && window.location.origin) {
       this.baseUrl = window.location.origin;
     }
-    // Optional override for operators who want to point the UI at an
-    // alternate worker URL (e.g. a preview deployment).
-    var savedUrl = localStorage.getItem('wsc_api_url');
-    if (savedUrl && savedUrl.trim()) {
-      this.baseUrl = savedUrl.trim();
+    // Per-tab override for the master-key session — set in sessionStorage
+    // by Auth.loginWithMasterKey so master-key users bypass CF Access on
+    // api.it-wsc.com even after a page refresh.
+    var sessionUrl = sessionStorage.getItem('wsc_api_url');
+    if (sessionUrl && sessionUrl.trim()) {
+      this.baseUrl = sessionUrl.trim();
+    } else {
+      // Optional persistent override for operators pointing the UI at a
+      // preview deployment. Rarely used — only if explicitly set.
+      var savedUrl = localStorage.getItem('wsc_api_url');
+      if (savedUrl && savedUrl.trim()) {
+        this.baseUrl = savedUrl.trim();
+      }
     }
     // Legacy: clear any pre-existing API key or master-key remnants from
     // earlier builds that persisted them in localStorage.

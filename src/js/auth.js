@@ -124,6 +124,9 @@ var Auth = {
     this._sessionToken = '';
     sessionStorage.removeItem('wsc_user');
     sessionStorage.removeItem('wsc_session_token');
+    // Clear the master-key baseUrl override so the next login uses the
+    // default same-origin routing (CF Access path).
+    sessionStorage.removeItem('wsc_api_url');
 
     if (hadToken) {
       location.reload();
@@ -191,6 +194,13 @@ var Auth = {
         this._sessionToken = '';
         API.apiKey = key;  // in-memory only; not persisted
       }
+      // Master-key sessions have no CF Access cookie. Route all subsequent
+      // API calls to api.it-wsc.com directly — that hostname isn't behind
+      // Access, so the bearer token alone authenticates the worker. The
+      // same-origin path (assets.it-wsc.com) would get 302'd to an SSO
+      // challenge the master-key user can't complete.
+      API.baseUrl = API.directApiUrl;
+      sessionStorage.setItem('wsc_api_url', API.directApiUrl);
       // Always wipe the input so the raw key doesn't linger in the DOM.
       document.getElementById('master-key-input').value = '';
       key = '';
