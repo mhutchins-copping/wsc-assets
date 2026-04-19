@@ -160,7 +160,11 @@ var Auth = {
     }
 
     try {
-      var res = await fetch(API.baseUrl + '/api/auth/master-key', {
+      // Hit api.it-wsc.com directly — assets.it-wsc.com is behind CF Access
+      // and would block a user who can't complete SSO (which is exactly when
+      // someone needs the master-key path). The direct API hostname isn't
+      // behind Access, so it's reachable.
+      var res = await fetch(API.directApiUrl + '/api/auth/master-key', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: key })

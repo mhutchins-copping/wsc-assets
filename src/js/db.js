@@ -10,7 +10,14 @@
 //      bearer-token flow. No UI path writes this any more.
 
 var API = {
-  baseUrl: 'https://api.it-wsc.com',
+  // Same-origin by default ('' resolves against window.location.origin).
+  // Browser → assets.it-wsc.com/api/* is same-origin, so the Cloudflare
+  // Access cookie rides along on every request and the edge injects the
+  // identity header before hitting the worker. No CORS to negotiate.
+  baseUrl: '',
+  // Break-glass endpoint lives on api.it-wsc.com which is NOT behind CF
+  // Access, so the master-key path still works even when SSO is broken.
+  directApiUrl: 'https://api.it-wsc.com',
   apiKey: '',   // set at runtime only (e.g. by automation tests); not persisted
 
   init: function() {

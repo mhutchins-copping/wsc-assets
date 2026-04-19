@@ -2,6 +2,17 @@ name = "wsc-assets-api"
 main = "worker.js"
 compatibility_date = "2024-12-01"
 
+# Route the worker onto the same origin as the frontend for all /api/*
+# and /images/* paths. This way browser requests are same-origin and carry
+# the Cloudflare Access cookie automatically — the edge validates it and
+# injects Cf-Access-Authenticated-User-Email before hitting the worker.
+# The existing api.it-wsc.com custom domain stays active for script callers
+# that authenticate with X-Api-Key.
+routes = [
+  { pattern = "assets.it-wsc.com/api/*", zone_name = "it-wsc.com" },
+  { pattern = "assets.it-wsc.com/images/*", zone_name = "it-wsc.com" }
+]
+
 # D1 Database
 [[d1_databases]]
 binding = "DB"
