@@ -94,6 +94,25 @@ function toggleSidebar() {
 }
 window.toggleSidebar = toggleSidebar;
 
+// Short route scanned from a printed QR sticker. Encoded as `#/a/<tag>` to
+// keep the QR payload small. Resolves tag → asset id and forwards to the
+// standard asset-detail route so we don't maintain a parallel render path.
+Router.register('/a', async function(tag) {
+  if (!tag) { navigate('#/assets'); return; }
+  try {
+    var asset = await API.getAssetByTag(tag);
+    if (asset && asset.id) {
+      navigate('#/assets/' + asset.id);
+    } else {
+      toast('Asset not found: ' + tag, 'error');
+      navigate('#/assets');
+    }
+  } catch (e) {
+    // API.fetch already toasted a message; just bounce back to the list.
+    navigate('#/assets');
+  }
+});
+
 // Listen for hash changes
 window.addEventListener('hashchange', function() { Router.handleRoute(); });
 window.addEventListener('DOMContentLoaded', function() {

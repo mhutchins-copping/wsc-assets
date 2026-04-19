@@ -45,6 +45,7 @@ function renderAssetList() {
     + '<input type="text" placeholder="Search assets..." value="' + esc(assetState.search) + '" oninput="assetSearchDebounced(this.value)"></div>'
     + '</div>'
     + '<div class="toolbar-right">'
+    + '<button class="btn sm" onclick="printFilteredLabels()">Print labels</button>'
     + '<button class="btn sm" onclick="exportAssetCSV()">Export CSV</button>'
     + '<button class="btn primary sm" onclick="navigate(\'#/assets/new\')">+ New Asset</button>'
     + '</div></div>'
@@ -355,8 +356,9 @@ async function renderAssetDetail(id, preloaded) {
 
     el.innerHTML = html;
 
-    // Generate QR code
-    generateQRToElement('asset-qr-code', 'https://assets.it-wsc.com/asset/' + asset.asset_tag, 160);
+    // Generate QR code — use the same short scan URL the printed labels use
+    // so a scan from the sticker and a scan from the screen behave identically.
+    generateQRToElement('asset-qr-code', qrUrlForTag(asset.asset_tag), 160);
 
   } catch(e) {
     console.error('Asset detail error:', e);
@@ -446,25 +448,120 @@ async function deleteAssetImage(assetId) {
 }
 window.deleteAssetImage = deleteAssetImage;
 
-function printAssetLabel(assetId) {
-  // Open a print-friendly window with QR + info
-  var el = document.getElementById('asset-qr-code');
-  var tag = document.querySelector('.detail-header-tag');
-  var name = document.querySelector('.detail-header-name');
-  var w = window.open('', '_blank', 'width=400,height=300');
-  w.document.write('<!DOCTYPE html><html><head><title>Asset Label</title>'
-    + '<style>body{font-family:sans-serif;padding:20px;text-align:center}'
-    + '.tag{font-size:18px;font-weight:700;font-family:monospace;margin:8px 0}'
-    + '.name{font-size:12px;color:#666}.org{font-size:10px;color:#999;margin-top:4px}</style></head><body>'
-    + (el ? el.innerHTML : '')
-    + '<div class="tag">' + (tag ? tag.textContent : '') + '</div>'
-    + '<div class="name">' + (name ? name.textContent.replace(/available|deployed|maintenance|retired|lost/gi, '').trim() : '') + '</div>'
-    + '<div class="org">Walgett Shire Council IT</div>'
-    + '<script>setTimeout(function(){window.print()},300)<\/script>'
-    + '</body></html>');
+// ─── Label Printing ───────────────────────────
+// Defaults target Avery L7160 (21 labels per A4, 63.5×38.1mm each) so the
+// same layout works when the user swaps plain paper for real sticker stock.
+// Adjust when switching sheet types.
+var LABEL_SHEET = {
+  pageMarginTopMm: 15.15,
+  pageMarginLeftMm: 7.21,
+  cols: 3,
+  rows: 7,
+  cellWidthMm: 63.5,
+  cellHeightMm: 38.1,
+  colGapMm: 2.54,
+  rowGapMm: 0
+};
+
+// Opens a print-ready A4 sheet populated with QR labels for the given assets.
+// QR data URLs are generated in the parent window (where the qrcode module is
+// already loaded) and inlined into the popup so the popup needs no JS deps.
+async function renderLabelSheet(assets) {
+  if (!assets || !assets.length) { toast('No assets to print', 'error'); return; }
+  var s = LABEL_SHEET;
+
+  var qrs;
+  try {
+    qrs = await Promise.all(assets.map(function(a) {
+      return generateQRDataURL(qrUrlForTag(a.asset_tag), 280);
+    }));
+  } catch (e) {
+    toast('Failed to generate QR codes', 'error');
+    return;
+  }
+
+  var cells = assets.map(function(a, i) {
+    var name = (a.name || '').replace(/\s+/g, ' ').trim();
+    return '<div class="lbl">'
+      + '<img class="lbl-qr" src="' + qrs[i] + '" alt="">'
+      + '<div class="lbl-text">'
+      +   '<div class="lbl-tag">' + esc(a.asset_tag || '') + '</div>'
+      +   '<div class="lbl-name">' + esc(name) + '</div>'
+      +   '<div class="lbl-org">WSC IT</div>'
+      + '</div></div>';
+  }).join('');
+
+  var w = window.open('', '_blank');
+  if (!w) { toast('Popup blocked — allow popups for this site', 'error'); return; }
+
+  var css = ''
+    + '@page { size: A4 portrait; margin: 0; }'
+    + 'html,body{margin:0;padding:0;background:#fff;color:#111;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}'
+    + '.toolbar{position:sticky;top:0;z-index:10;background:#fafafa;border-bottom:1px solid #eee;padding:10px 16px;display:flex;gap:10px;align-items:center;font-size:13px}'
+    + '.toolbar button{padding:6px 12px;border:1px solid #ccc;background:#fff;border-radius:4px;cursor:pointer;font-size:13px}'
+    + '.toolbar .count{color:#555}'
+    + '.sheet{padding:' + s.pageMarginTopMm + 'mm ' + s.pageMarginLeftMm + 'mm;display:grid;'
+    +   'grid-template-columns:repeat(' + s.cols + ',' + s.cellWidthMm + 'mm);'
+    +   'grid-auto-rows:' + s.cellHeightMm + 'mm;'
+    +   'column-gap:' + s.colGapMm + 'mm;row-gap:' + s.rowGapMm + 'mm}'
+    + '.lbl{display:flex;align-items:center;gap:3mm;padding:2mm;box-sizing:border-box;overflow:hidden;border:1px dashed #ddd;break-inside:avoid}'
+    + '.lbl-qr{width:28mm;height:28mm;flex-shrink:0;display:block}'
+    + '.lbl-text{flex:1;min-width:0;line-height:1.15}'
+    + '.lbl-tag{font-family:"JetBrains Mono",Menlo,Consolas,monospace;font-weight:700;font-size:10pt}'
+    + '.lbl-name{font-size:7.5pt;color:#333;margin-top:1mm;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}'
+    + '.lbl-org{font-size:6.5pt;color:#888;margin-top:1.5mm;font-family:"JetBrains Mono",Menlo,Consolas,monospace;letter-spacing:.5px}'
+    + '@media print { .toolbar{display:none} .lbl{border:none} .sheet{padding:' + s.pageMarginTopMm + 'mm ' + s.pageMarginLeftMm + 'mm} }';
+
+  var perSheet = s.cols * s.rows;
+  var pageCount = Math.ceil(assets.length / perSheet);
+  var html = '<!DOCTYPE html><html><head><title>WSC Asset Labels</title><meta charset="utf-8"><style>' + css + '</style></head><body>'
+    + '<div class="toolbar">'
+    +   '<div class="count">' + assets.length + ' label' + (assets.length === 1 ? '' : 's')
+    +     ' &middot; ' + s.cols + '&times;' + s.rows + ' per A4'
+    +     ' &middot; ' + pageCount + ' page' + (pageCount === 1 ? '' : 's') + '</div>'
+    +   '<button onclick="window.print()">Print</button>'
+    +   '<button onclick="window.close()">Close</button>'
+    + '</div>'
+    + '<div class="sheet">' + cells + '</div>'
+    + '<scr' + 'ipt>setTimeout(function(){window.print()},400)</scr' + 'ipt>'
+    + '</body></html>';
+
+  w.document.open();
+  w.document.write(html);
   w.document.close();
 }
+
+async function printAssetLabel(assetId) {
+  try {
+    var asset = await API.getAsset(assetId);
+    await renderLabelSheet([asset]);
+  } catch (e) { /* already toasted */ }
+}
 window.printAssetLabel = printAssetLabel;
+
+// Prints labels for every asset matching the current filter/search state,
+// walking the paginated list server-side so the output matches what the
+// user sees in the filter bar (not just the current visible page).
+async function printFilteredLabels() {
+  if (!API.baseUrl) { toast('Configure API first', 'error'); return; }
+  try {
+    var all = [];
+    var page = 1;
+    while (page <= 20) {
+      var params = { page: page, limit: 100, sort: assetState.sort, dir: assetState.dir };
+      if (assetState.search) params.search = assetState.search;
+      if (assetState.status) params.status = assetState.status;
+      if (assetState.category) params.category = assetState.category;
+      var res = await API.getAssets(params);
+      all = all.concat(res.data || []);
+      if (!res.data || res.data.length < 100 || all.length >= (res.total || 0)) break;
+      page++;
+    }
+    if (!all.length) { toast('No assets match the current filter', 'error'); return; }
+    await renderLabelSheet(all);
+  } catch (e) { /* already toasted */ }
+}
+window.printFilteredLabels = printFilteredLabels;
 
 // ─── Step 4: Asset Create/Edit Form ────────────
 
