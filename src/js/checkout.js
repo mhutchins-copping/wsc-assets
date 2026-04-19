@@ -1,92 +1,215 @@
-// ─── Step 6: Check Out / Check In ──────────────
+// ─── Check Out / Check In ───────────────────────────
+
+var _checkoutPeople = [];
+var _checkoutAssetId = null;
+var _checkoutSelected = null;
 
 async function openCheckout(assetId) {
-  var people = [];
+  _checkoutAssetId = assetId;
+  _checkoutSelected = null;
+
   try {
     var pRes = await API.getPeople();
-    people = (pRes.data || []).filter(function(p) { return p.active !== 0; });
-  } catch(e) { /* proceed empty */ }
+    _checkoutPeople = (pRes.data || []).filter(function(p) { return p.active !== 0; });
+  } catch(e) {
+    _checkoutPeople = [];
+  }
 
-  var html = '<div class="form-group"><label class="form-label">Assign To</label>'
-    + '<input type="text" id="co-person-search" class="form-input" placeholder="Search people..." oninput="filterCheckoutPeople()" autocomplete="off" style="margin-bottom:4px">'
-    + '<select id="co-person" class="form-select" size="6" style="height:auto">';
-  people.forEach(function(p) {
-    html += '<option value="' + esc(p.id) + '">' + esc(p.name) + (p.department ? ' — ' + esc(p.department) : '') + (p.position ? ' (' + esc(p.position) + ')' : '') + '</option>';
-  });
-  html += '</select></div>';
-
-  html += '<div class="form-group"><label class="form-label">Notes</label>'
-    + '<textarea id="co-notes" class="form-textarea" placeholder="Optional notes"></textarea></div>';
-
-  html += '<div class="form-group" style="margin-bottom:20px">'
-    + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">'
-    + '<input type="checkbox" id="co-ack" style="width:16px;height:16px">'
-    + ' User acknowledges receipt of this asset</label></div>';
-
-  html += '<button class="btn primary full" onclick="doCheckout(\'' + esc(assetId) + '\')">Check Out</button>';
+  var html = '<div class="co-wrap">'
+    + '<div class="co-search-wrap">'
+    + '<svg class="co-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>'
+    + '<input type="text" id="co-search" class="co-search-input" placeholder="Search by name, department, or position…" autocomplete="off" oninput="renderCheckoutList()" onkeydown="handleCheckoutKey(event)">'
+    + '</div>'
+    + '<div class="co-list" id="co-list" role="listbox" tabindex="-1"></div>'
+    + '<div class="co-selected-wrap" id="co-selected-wrap" style="display:none">'
+    + '<span class="co-selected-label">Assigning to:</span>'
+    + '<span class="co-selected-name" id="co-selected-name"></span>'
+    + '<button type="button" class="co-selected-clear" onclick="clearCheckoutSelection()">Change</button>'
+    + '</div>'
+    + '<div class="form-group" style="margin-top:16px"><label class="form-label">Notes</label>'
+    + '<textarea id="co-notes" class="form-textarea" placeholder="Optional — handover context, expected return date, etc."></textarea></div>'
+    + '<div class="form-group co-ack">'
+    + '<label class="co-ack-label">'
+    + '<input type="checkbox" id="co-ack" class="co-ack-box">'
+    + '<span>User acknowledges receipt of this asset</span></label></div>'
+    + '<button class="btn primary full co-submit" id="co-submit" onclick="doCheckout()" disabled>Check Out</button>'
+    + '</div>';
 
   openModal('Check Out Asset', html);
+  renderCheckoutList();
 
   setTimeout(function() {
-    var s = document.getElementById('co-person-search');
+    var s = document.getElementById('co-search');
     if (s) s.focus();
-  }, 50);
+  }, 80);
 }
 window.openCheckout = openCheckout;
 
-function filterCheckoutPeople() {
-  var query = (document.getElementById('co-person-search').value || '').toLowerCase();
-  var sel = document.getElementById('co-person');
-  if (!sel) return;
-  for (var i = 0; i < sel.options.length; i++) {
-    var opt = sel.options[i];
-    opt.style.display = opt.text.toLowerCase().indexOf(query) !== -1 ? '' : 'none';
+function renderCheckoutList() {
+  var el = document.getElementById('co-list');
+  if (!el) return;
+  var query = (document.getElementById('co-search').value || '').trim().toLowerCase();
+  var filtered = !query ? _checkoutPeople : _checkoutPeople.filter(function(p) {
+    return (p.name || '').toLowerCase().indexOf(query) !== -1
+      || (p.email || '').toLowerCase().indexOf(query) !== -1
+      || (p.department || '').toLowerCase().indexOf(query) !== -1
+      || (p.position || '').toLowerCase().indexOf(query) !== -1;
+  });
+
+  if (!filtered.length) {
+    el.innerHTML = '<div class="co-empty">'
+      + (_checkoutPeople.length ? 'No people match "' + esc(query) + '"' : 'No active people yet. Add people first.')
+      + '</div>';
+    return;
+  }
+
+  el.innerHTML = filtered.slice(0, 50).map(function(p) {
+    var selected = _checkoutSelected === p.id;
+    var initials = initialsOf(p.name);
+    return '<div class="co-row' + (selected ? ' is-selected' : '') + '" role="option" aria-selected="' + selected + '" data-id="' + esc(p.id) + '" onclick="selectCheckoutPerson(\'' + esc(p.id) + '\')">'
+      + '<div class="co-avatar">' + esc(initials) + '</div>'
+      + '<div class="co-person">'
+      + '<div class="co-name">' + esc(p.name) + '</div>'
+      + '<div class="co-meta">'
+      + (p.department ? esc(p.department) : '')
+      + (p.department && p.position ? ' · ' : '')
+      + (p.position ? esc(p.position) : '')
+      + (!p.department && !p.position ? (p.email ? esc(p.email) : '—') : '')
+      + '</div>'
+      + '</div>'
+      + (selected ? '<svg class="co-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '')
+      + '</div>';
+  }).join('');
+
+  if (filtered.length > 50) {
+    el.innerHTML += '<div class="co-more">+ ' + (filtered.length - 50) + ' more — refine your search</div>';
   }
 }
-window.filterCheckoutPeople = filterCheckoutPeople;
+window.renderCheckoutList = renderCheckoutList;
 
-async function doCheckout(assetId) {
-  var personId = document.getElementById('co-person').value;
-  if (!personId) { toast('Select a person', 'error'); return; }
+function initialsOf(name) {
+  if (!name) return '?';
+  var parts = String(name).trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function selectCheckoutPerson(id) {
+  _checkoutSelected = id;
+  var p = _checkoutPeople.find(function(x) { return x.id === id; });
+  var wrap = document.getElementById('co-selected-wrap');
+  var nameEl = document.getElementById('co-selected-name');
+  var submit = document.getElementById('co-submit');
+  if (p && wrap && nameEl) {
+    nameEl.textContent = p.name + (p.department ? ' · ' + p.department : '');
+    wrap.style.display = 'flex';
+  }
+  if (submit) submit.disabled = false;
+  renderCheckoutList();
+}
+window.selectCheckoutPerson = selectCheckoutPerson;
+
+function clearCheckoutSelection() {
+  _checkoutSelected = null;
+  var wrap = document.getElementById('co-selected-wrap');
+  var submit = document.getElementById('co-submit');
+  if (wrap) wrap.style.display = 'none';
+  if (submit) submit.disabled = true;
+  renderCheckoutList();
+  var s = document.getElementById('co-search');
+  if (s) { s.value = ''; s.focus(); }
+}
+window.clearCheckoutSelection = clearCheckoutSelection;
+
+function handleCheckoutKey(e) {
+  var rows = document.querySelectorAll('#co-list .co-row');
+  if (!rows.length) return;
+
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (rows.length === 1) selectCheckoutPerson(rows[0].dataset.id);
+    else if (_checkoutSelected) { /* submit allowed */ }
+    return;
+  }
+  // Arrow nav — highlight without selecting. Enter confirms.
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    var current = document.querySelector('#co-list .co-row.is-hover');
+    var idx = current ? Array.prototype.indexOf.call(rows, current) : -1;
+    idx = e.key === 'ArrowDown' ? (idx + 1) % rows.length : (idx - 1 + rows.length) % rows.length;
+    rows.forEach(function(r) { r.classList.remove('is-hover'); });
+    rows[idx].classList.add('is-hover');
+    rows[idx].scrollIntoView({ block: 'nearest' });
+  }
+}
+window.handleCheckoutKey = handleCheckoutKey;
+
+async function doCheckout() {
+  if (!_checkoutSelected) { toast('Select a person first', 'error'); return; }
+  var submit = document.getElementById('co-submit');
+  if (submit) { submit.disabled = true; submit.textContent = 'Checking out…'; }
 
   try {
-    await API.checkoutAsset(assetId, {
-      person_id: personId,
-      notes: document.getElementById('co-notes').value.trim() || undefined
+    var result = await API.checkoutAsset(_checkoutAssetId, {
+      person_id: _checkoutSelected,
+      notes: (document.getElementById('co-notes').value || '').trim() || undefined
     });
     closeModal();
     toast('Asset checked out', 'success');
-    renderAssetDetail(assetId);
-  } catch(e) { /* toasted */ }
+
+    // Use the asset returned from the checkout response rather than re-fetching,
+    // to avoid a stale-read race against D1 replicas.
+    if (result && result.asset) {
+      renderAssetDetail(_checkoutAssetId, result.asset);
+    } else {
+      renderAssetDetail(_checkoutAssetId);
+    }
+  } catch(e) {
+    if (submit) { submit.disabled = false; submit.textContent = 'Check Out'; }
+  }
 }
 window.doCheckout = doCheckout;
 
 async function openCheckin(assetId) {
-  var html = '<div class="form-group"><label class="form-label">Condition</label>'
-    + '<select id="ci-condition" class="form-select">'
-    + '<option value="good">Good — ready for reuse</option>'
-    + '<option value="damaged">Damaged — needs repair</option>'
-    + '</select>'
-    + '<div class="form-hint">If damaged, asset will be set to Maintenance status</div></div>';
-
-  html += '<div class="form-group"><label class="form-label">Notes</label>'
-    + '<textarea id="ci-notes" class="form-textarea" placeholder="Optional notes about condition"></textarea></div>';
-
-  html += '<button class="btn primary full" onclick="doCheckin(\'' + esc(assetId) + '\')">Check In</button>';
+  var html = '<div class="ci-wrap">'
+    + '<div class="form-group"><label class="form-label">Condition</label>'
+    + '<div class="ci-condition-group">'
+    + '<label class="ci-radio"><input type="radio" name="ci-cond" value="good" checked>'
+    + '<div class="ci-radio-body"><div class="ci-radio-title">Good</div>'
+    + '<div class="ci-radio-sub">Ready for reassignment</div></div></label>'
+    + '<label class="ci-radio"><input type="radio" name="ci-cond" value="damaged">'
+    + '<div class="ci-radio-body"><div class="ci-radio-title">Damaged</div>'
+    + '<div class="ci-radio-sub">Will be set to Maintenance</div></div></label>'
+    + '</div></div>'
+    + '<div class="form-group"><label class="form-label">Notes</label>'
+    + '<textarea id="ci-notes" class="form-textarea" placeholder="Condition notes, return context, etc."></textarea></div>'
+    + '<button class="btn primary full" id="ci-submit" onclick="doCheckin(\'' + esc(assetId) + '\')">Check In</button>'
+    + '</div>';
 
   openModal('Check In Asset', html);
 }
 window.openCheckin = openCheckin;
 
 async function doCheckin(assetId) {
+  var submit = document.getElementById('ci-submit');
+  if (submit) { submit.disabled = true; submit.textContent = 'Checking in…'; }
+
   try {
+    var cond = document.querySelector('input[name="ci-cond"]:checked');
     var result = await API.checkinAsset(assetId, {
-      condition: document.getElementById('ci-condition').value,
-      notes: document.getElementById('ci-notes').value.trim() || undefined
+      condition: cond ? cond.value : 'good',
+      notes: (document.getElementById('ci-notes').value || '').trim() || undefined
     });
     closeModal();
     toast('Asset checked in' + (result.status === 'maintenance' ? ' — set to maintenance' : ''), 'success');
-    renderAssetDetail(assetId);
-  } catch(e) { /* toasted */ }
+
+    if (result && result.asset) {
+      renderAssetDetail(assetId, result.asset);
+    } else {
+      renderAssetDetail(assetId);
+    }
+  } catch(e) {
+    if (submit) { submit.disabled = false; submit.textContent = 'Check In'; }
+  }
 }
 window.doCheckin = doCheckin;

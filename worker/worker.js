@@ -406,7 +406,7 @@ async function route(request, env, url) {
     return updatePerson(request, env, path.match(/^\/api\/people\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/people\/([^/]+)$/) && method === 'DELETE') {
-    return deletePerson(env, path.match(/^\/api\/people\/([^/]+)$/)[1]);
+    return deletePerson(request, env, path.match(/^\/api\/people\/([^/]+)$/)[1]);
   }
 
   // Locations
@@ -419,7 +419,7 @@ async function route(request, env, url) {
     return updateLocation(request, env, path.match(/^\/api\/locations\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/locations\/([^/]+)$/) && method === 'DELETE') {
-    return deleteLocation(env, path.match(/^\/api\/locations\/([^/]+)$/)[1]);
+    return deleteLocation(request, env, path.match(/^\/api\/locations\/([^/]+)$/)[1]);
   }
 
   // Categories
@@ -429,7 +429,7 @@ async function route(request, env, url) {
     return updateCategory(request, env, path.match(/^\/api\/categories\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/categories\/([^/]+)$/) && method === 'DELETE') {
-    return deleteCategory(env, path.match(/^\/api\/categories\/([^/]+)$/)[1]);
+    return deleteCategory(request, env, path.match(/^\/api\/categories\/([^/]+)$/)[1]);
   }
 
   // Activity log
@@ -739,6 +739,13 @@ async function updateAsset(request, env, assetId) {
     assetId
   ).run();
 
+  // If the image has been replaced or cleared, remove the old R2 blob so we
+  // don't accumulate orphaned files. Only fires when data.image_url was
+  // explicitly sent in the update (undefined = no change intended).
+  if (data.image_url !== undefined && data.image_url !== existing.image_url && existing.image_url) {
+    await deleteImageByUrl(env, existing.image_url);
+  }
+
   // Helper to compare values across serialisation boundary (JSON ↔ SQLite types may differ)
   function valuesEqual(a, b) {
     if (a == null && b == null) return true;
@@ -805,6 +812,10 @@ async function purgeAsset(request, env, assetId) {
     env.DB.prepare('DELETE FROM assets WHERE id = ?').bind(assetId)
   ]);
 
+  // Best-effort cleanup of the associated photo blob. Done after the DB
+  // batch so a failed purge doesn't leave a zombie asset with no image.
+  await deleteImageByUrl(env, existing.image_url);
+
   // Send notification
   try {
     await notify(env, 'asset_purged', {
@@ -856,7 +867,20 @@ async function checkoutAsset(request, env, assetId) {
     });
   } catch (e) { console.error('notify error:', e); }
 
-  return json({ ok: true });
+  // Return the updated asset so the frontend can render immediately without
+  // a follow-up GET that might hit a stale D1 replica.
+  const updated = await env.DB.prepare(`
+    SELECT a.*, p.name as assigned_to_name, p.email as assigned_to_email,
+           p.department as assigned_to_department,
+           l.name as location_name, c.name as category_name, c.prefix as category_prefix
+    FROM assets a
+    LEFT JOIN people p ON a.assigned_to = p.id
+    LEFT JOIN locations l ON a.location_id = l.id
+    LEFT JOIN categories c ON a.category_id = c.id
+    WHERE a.id = ?
+  `).bind(assetId).first();
+
+  return json({ ok: true, asset: updated });
 }
 
 async function checkinAsset(request, env, assetId) {
@@ -901,7 +925,20 @@ async function checkinAsset(request, env, assetId) {
     });
   } catch (e) { console.error('notify error:', e); }
 
-  return json({ ok: true, status: newStatus });
+  // Return the updated asset so the frontend can render immediately without
+  // a follow-up GET that might hit a stale D1 replica.
+  const updated = await env.DB.prepare(`
+    SELECT a.*, p.name as assigned_to_name, p.email as assigned_to_email,
+           p.department as assigned_to_department,
+           l.name as location_name, c.name as category_name, c.prefix as category_prefix
+    FROM assets a
+    LEFT JOIN people p ON a.assigned_to = p.id
+    LEFT JOIN locations l ON a.location_id = l.id
+    LEFT JOIN categories c ON a.category_id = c.id
+    WHERE a.id = ?
+  `).bind(assetId).first();
+
+  return json({ ok: true, status: newStatus, asset: updated });
 }
 
 // ─── Maintenance ───────────────────────────────────────
@@ -1074,12 +1111,23 @@ async function updatePerson(request, env, personId) {
   return json({ ok: true });
 }
 
-async function deletePerson(env, personId) {
+async function deletePerson(request, env, personId) {
   const existing = await env.DB.prepare('SELECT * FROM people WHERE id = ?').bind(personId).first();
   if (!existing) return json({ error: 'Person not found' }, 404);
 
+  const user = request._user;
+  const performed_by = user ? (user.display_name || user.email) : null;
+
   // Soft delete
   await env.DB.prepare('UPDATE people SET active = 0 WHERE id = ?').bind(personId).run();
+
+  await logActivity(env, {
+    action: 'deactivate_person',
+    details: `Deactivated ${existing.name}${existing.email ? ' (' + existing.email + ')' : ''}`,
+    performed_by,
+    person_id: personId
+  });
+
   return json({ ok: true });
 }
 
@@ -1143,14 +1191,27 @@ async function updateLocation(request, env, locationId) {
   return json({ ok: true });
 }
 
-async function deleteLocation(env, locationId) {
+async function deleteLocation(request, env, locationId) {
+  const existing = await env.DB.prepare('SELECT * FROM locations WHERE id = ?').bind(locationId).first();
+  if (!existing) return json({ error: 'Location not found' }, 404);
+
   const count = await env.DB.prepare(
     "SELECT COUNT(*) as c FROM assets WHERE location_id = ? AND status != 'disposed'"
   ).bind(locationId).first();
 
   if (count.c > 0) return json({ error: 'Cannot delete location with assigned assets' }, 400);
 
+  const user = request._user;
+  const performed_by = user ? (user.display_name || user.email) : null;
+
   await env.DB.prepare('DELETE FROM locations WHERE id = ?').bind(locationId).run();
+
+  await logActivity(env, {
+    action: 'delete_location',
+    details: `Deleted location: ${existing.name}`,
+    performed_by
+  });
+
   return json({ ok: true });
 }
 
@@ -1209,7 +1270,10 @@ async function updateCategory(request, env, categoryId) {
   return json({ ok: true });
 }
 
-async function deleteCategory(env, categoryId) {
+async function deleteCategory(request, env, categoryId) {
+  const existing = await env.DB.prepare('SELECT * FROM categories WHERE id = ?').bind(categoryId).first();
+  if (!existing) return json({ error: 'Category not found' }, 404);
+
   const count = await env.DB.prepare(
     "SELECT COUNT(*) as c FROM assets WHERE category_id = ? AND status != 'disposed'"
   ).bind(categoryId).first();
@@ -1220,7 +1284,17 @@ async function deleteCategory(env, categoryId) {
   const children = await env.DB.prepare('SELECT COUNT(*) as c FROM categories WHERE parent_id = ?').bind(categoryId).first();
   if (children.c > 0) return json({ error: 'Cannot delete category with subcategories' }, 400);
 
+  const user = request._user;
+  const performed_by = user ? (user.display_name || user.email) : null;
+
   await env.DB.prepare('DELETE FROM categories WHERE id = ?').bind(categoryId).run();
+
+  await logActivity(env, {
+    action: 'delete_category',
+    details: `Deleted category: ${existing.name} (${existing.prefix})`,
+    performed_by
+  });
+
   return json({ ok: true });
 }
 
@@ -1748,6 +1822,24 @@ const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'i
 // Only allow safe R2 keys: two path segments (assetId/filename), ASCII letters/
 // digits/dots/dashes/underscores. Blocks path traversal, absolute paths, and
 // overwrites of arbitrary keys.
+// Delete an R2 image blob given an /images/<assetId>/<file> URL (as stored in
+// assets.image_url). Silently no-ops if the binding isn't configured or the
+// URL is empty/invalid. Errors during the R2 delete are swallowed — orphaned
+// blobs are a storage-hygiene issue, not one that should block the asset
+// mutation that triggered the cleanup.
+async function deleteImageByUrl(env, imageUrl) {
+  if (!env.IMAGES || !imageUrl) return;
+  const prefix = '/images/';
+  if (!imageUrl.startsWith(prefix)) return;
+  const key = safeImageKey(imageUrl.slice(prefix.length));
+  if (!key) return;
+  try {
+    await env.IMAGES.delete(key);
+  } catch (err) {
+    console.error('deleteImageByUrl failed:', err && err.message);
+  }
+}
+
 function safeImageKey(key) {
   if (!key || key.length > 200) return null;
   if (!/^[A-Za-z0-9_\-]+\/[A-Za-z0-9_\-.]+$/.test(key)) return null;

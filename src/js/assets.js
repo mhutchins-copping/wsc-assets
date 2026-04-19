@@ -148,7 +148,8 @@ async function loadAssets() {
       sortDir: assetState.dir,
       onSort: 'assetSort',
       onRowClick: 'viewAsset',
-      emptyMsg: 'No assets found'
+      emptyMsg: 'No assets found',
+      wrapClass: 'asset-table'
     });
 
     document.getElementById('asset-pagination').innerHTML = renderPagination({
@@ -183,9 +184,13 @@ window.exportAssetCSV = exportAssetCSV;
 
 // ─── Step 5: Asset Detail ──────────────────────
 
-async function renderAssetDetail(id) {
+async function renderAssetDetail(id, preloaded) {
   var el = document.getElementById('view-asset-detail');
-  el.innerHTML = skeleton(10);
+
+  // If caller supplied a fresh asset (e.g. from checkout/checkin response),
+  // skip the skeleton flicker and the re-fetch entirely. This avoids a
+  // read-after-write race against D1 replicas.
+  if (!preloaded) el.innerHTML = skeleton(10);
 
   if (!API.baseUrl) {
     el.innerHTML = '<div class="view-placeholder"><div class="view-placeholder-sub">Configure API in Settings</div></div>';
@@ -193,7 +198,24 @@ async function renderAssetDetail(id) {
   }
 
   try {
-    var asset = await API.getAsset(id);
+    var asset;
+    if (preloaded && preloaded.id === id) {
+      // The checkout/checkin endpoints return the updated row but without
+      // history / maintenance. Merge those in from a follow-up fetch so the
+      // tabs still work, but the header + details + assignment render
+      // immediately from the fresh data.
+      asset = preloaded;
+      try {
+        var full = await API.getAsset(id);
+        asset.history = full.history || [];
+        asset.maintenance = full.maintenance || [];
+      } catch (e) {
+        asset.history = asset.history || [];
+        asset.maintenance = asset.maintenance || [];
+      }
+    } else {
+      asset = await API.getAsset(id);
+    }
 
     var html = '<div style="margin-bottom:12px"><button class="btn sm" onclick="navigate(\'#/assets\')">&larr; Back</button></div>';
 

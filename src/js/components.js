@@ -9,8 +9,9 @@ function renderTable(opts) {
   var sortDir = opts.sortDir || 'asc';
   var onRowClick = opts.onRowClick; // function(row)
   var emptyMsg = opts.emptyMsg || 'No data';
+  var wrapClass = opts.wrapClass ? ' ' + opts.wrapClass : '';
 
-  var html = '<div class="table-wrap"><table><thead><tr>';
+  var html = '<div class="table-wrap' + wrapClass + '"><table><thead><tr>';
 
   columns.forEach(function(col) {
     var sorted = sortKey === col.key;
