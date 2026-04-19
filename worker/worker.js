@@ -101,22 +101,121 @@ function applyCors(response, request, env) {
 }
 
 // ─── Auth ──────────────────────────────────────────────
-// Three auth paths (checked in order):
-// 1. SSO email — injected by Cloudflare Access at the edge, unspoofable.
-// 2. Session bearer token — issued in exchange for the master key, short-lived.
-// 3. Raw API key / master key — scripts / external access / break-glass.
+// Four auth paths (checked in order):
+// 1. SSO email — injected by Cloudflare Access header (hostname behind Access).
+// 2. CF_Authorization cookie JWT — verified against the team's JWKS. Same
+//    security as (1) but works when the worker's hostname isn't behind Access
+//    directly. Relies on the cookie riding along via credentials:'include'.
+// 3. Session bearer token — issued in exchange for the master key.
+// 4. Raw API key / master key — scripts / external access / break-glass.
 
 const SESSION_TTL_HOURS = 8;
 
+// In-memory JWKS cache. Keys rotate rarely; an hour's cache is plenty.
+let _jwksCache = null;
+let _jwksExpires = 0;
+
+async function getCfAccessJwks(env) {
+  const team = env.CF_ACCESS_TEAM_DOMAIN || 'itwsc';
+  if (_jwksCache && Date.now() < _jwksExpires) return _jwksCache;
+  const res = await fetch(`https://${team}.cloudflareaccess.com/cdn-cgi/access/certs`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  _jwksCache = data.keys || [];
+  _jwksExpires = Date.now() + 60 * 60 * 1000;
+  return _jwksCache;
+}
+
+function b64urlDecodeJSON(segment) {
+  const padded = segment.replace(/-/g, '+').replace(/_/g, '/');
+  try { return JSON.parse(atob(padded)); } catch (e) { return null; }
+}
+
+function b64urlToUint8(segment) {
+  const padded = segment.replace(/-/g, '+').replace(/_/g, '/');
+  const str = atob(padded);
+  const arr = new Uint8Array(str.length);
+  for (let i = 0; i < str.length; i++) arr[i] = str.charCodeAt(i);
+  return arr;
+}
+
+// Verify a Cloudflare Access CF_Authorization cookie JWT. Returns the email
+// claim on success, null on any validation failure.
+async function verifyCfAccessJwt(jwt, env) {
+  if (!jwt || typeof jwt !== 'string') return null;
+  const parts = jwt.split('.');
+  if (parts.length !== 3) return null;
+
+  const [headerB64, payloadB64, sigB64] = parts;
+  const header = b64urlDecodeJSON(headerB64);
+  const payload = b64urlDecodeJSON(payloadB64);
+  if (!header || !payload || !header.kid) return null;
+
+  // Expiry check (seconds since epoch)
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (!payload.exp || payload.exp < nowSec) return null;
+  if (!payload.email) return null;
+
+  // Issuer sanity check: must be our CF Access team. Prevents a valid JWT
+  // from someone else's tenant from being accepted.
+  const team = env.CF_ACCESS_TEAM_DOMAIN || 'itwsc';
+  const expectedIssuer = `https://${team}.cloudflareaccess.com`;
+  if (payload.iss !== expectedIssuer) return null;
+
+  // Fetch/cache JWKS and find the matching key
+  const keys = await getCfAccessJwks(env);
+  if (!keys) return null;
+  const key = keys.find(k => k.kid === header.kid);
+  if (!key) return null;
+
+  try {
+    const cryptoKey = await crypto.subtle.importKey(
+      'jwk',
+      key,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+    const signature = b64urlToUint8(sigB64);
+    const signedData = new TextEncoder().encode(headerB64 + '.' + payloadB64);
+    const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, signature, signedData);
+    if (!valid) return null;
+  } catch (e) {
+    console.error('verifyCfAccessJwt:', e && e.message);
+    return null;
+  }
+
+  return String(payload.email).toLowerCase().trim();
+}
+
+// Pulls the SSO email out of a request using whatever identity signal is
+// available. Returns null if nothing valid is found.
+async function resolveSsoEmail(request, env) {
+  // Preferred: header injected by Cloudflare Access when the worker's own
+  // hostname is behind Access. Fastest — no crypto required.
+  const header = request.headers.get('Cf-Access-Authenticated-User-Email');
+  if (header) return header.toLowerCase().trim();
+
+  // Fallback: verify the CF_Authorization cookie ourselves. Works for the
+  // case where the worker hostname isn't fronted by Access but the browser
+  // still carries the cookie from the protected frontend domain.
+  const cookie = request.headers.get('Cookie') || '';
+  const m = cookie.match(/(?:^|;\s*)CF_Authorization=([^;]+)/);
+  if (m) {
+    const email = await verifyCfAccessJwt(m[1], env);
+    if (email) return email;
+  }
+  return null;
+}
+
 async function authenticate(request, env) {
-  // 1. Cloudflare Access signed header. Set at the edge and stripped from any
-  // client-sent copy — cannot be spoofed.
-  const ssoEmail = request.headers.get('Cf-Access-Authenticated-User-Email');
+  // 1 + 2. SSO identity from either the CF Access header or the CF cookie JWT.
+  const ssoEmail = await resolveSsoEmail(request, env);
   if (ssoEmail) {
     try {
       const user = await env.DB.prepare(
         'SELECT id, email, display_name, role FROM users WHERE email = ? AND active = 1'
-      ).bind(ssoEmail.toLowerCase()).first();
+      ).bind(ssoEmail).first();
       if (user) return user;
     } catch (e) { /* users table may not exist yet */ }
   }
@@ -164,12 +263,13 @@ async function authenticate(request, env) {
   return null;
 }
 
-// ─── Auth Identity (SSO edge header → internal user lookup) ──
-// Trusts only the Cloudflare Access signed header. Any body-provided email is
-// ignored — historically the frontend sent one, but letting the client tell
-// the server who they are is exactly the kind of trust boundary we don't need.
+// ─── Auth Identity (SSO → internal user lookup) ──
+// Uses whichever of the two trusted signals is present (CF Access header or
+// CF_Authorization cookie JWT). Any body-provided email is ignored — letting
+// the client tell the server who they are is exactly the kind of trust
+// boundary we don't need.
 async function authIdentify(request, env) {
-  const ssoEmail = (request.headers.get('Cf-Access-Authenticated-User-Email') || '').toLowerCase().trim();
+  const ssoEmail = await resolveSsoEmail(request, env);
 
   if (!ssoEmail) {
     return json({

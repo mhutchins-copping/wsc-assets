@@ -18,4 +18,8 @@ bucket_name = "wsc-assets-images"
 ASSET_TAG_PREFIX = "WSC"
 CORS_ORIGIN = "https://assets.it-wsc.com"
 NOTIFICATIONS_ENABLED = "true"
+# Cloudflare Access team subdomain — used to fetch the JWKS the worker needs
+# to verify the CF_Authorization cookie's signature. The team lives at
+# <value>.cloudflareaccess.com.
+CF_ACCESS_TEAM_DOMAIN = "itwsc"
 # NOTIFICATION_SENDER = "notifications@walgett.nsw.gov.au"  # Set via: wrangler secret put NOTIFICATION_SENDER
