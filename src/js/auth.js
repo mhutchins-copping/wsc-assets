@@ -212,6 +212,19 @@ var Auth = {
     }
   },
 
+  // Escape hatch for a stale CF Access cookie: wipes local identity state
+  // and punts the browser through CF Access logout so the next load starts
+  // from a clean slate. The CF_Authorization cookie is HttpOnly, so hitting
+  // /cdn-cgi/access/logout is the only way to clear it client-side.
+  clearSession: function() {
+    try {
+      sessionStorage.clear();
+      localStorage.removeItem('wsc_api_url');
+      localStorage.removeItem('wsc_api_key');
+    } catch(e) { /* best effort */ }
+    window.location.href = '/cdn-cgi/access/logout';
+  },
+
   isAdmin: function() {
     return this.user && this.user.role === 'admin';
   },

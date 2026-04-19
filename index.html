@@ -34,7 +34,7 @@
           <p id="login-denied-msg" style="color:var(--text2);font-size:14px;line-height:1.6;margin-bottom:20px">
             You do not have access to this application.
           </p>
-          <button class="btn" onclick="sessionStorage.clear();location.reload()">Try Again</button>
+          <button class="btn" onclick="Auth.clearSession()">Clear session &amp; sign in fresh</button>
           <div style="margin-top:12px">
             <a href="#" onclick="Auth.showMasterKey();return false" style="color:var(--text3);font-size:12px;text-decoration:underline">Use master key instead</a>
           </div>
@@ -46,6 +46,9 @@
         <p class="login-hint" style="text-align:center">Authenticating via SSO...</p>
         <div style="margin-top:20px;text-align:center">
           <a href="#" onclick="Auth.showMasterKey();return false" style="color:var(--text3);font-size:12px;text-decoration:underline">Use master key instead</a>
+        </div>
+        <div style="margin-top:8px;text-align:center">
+          <a href="#" onclick="Auth.clearSession();return false" style="color:var(--text3);font-size:12px;text-decoration:underline">Stuck? Clear session</a>
         </div>
       </div>
 
