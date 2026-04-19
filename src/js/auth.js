@@ -14,7 +14,10 @@ var Auth = {
     // login, so the raw key is no longer needed. Clear any leftover.
     sessionStorage.removeItem('wsc_master_key');
 
-    // Restore cached session first — fast path for already-authenticated users.
+    // Show cached user immediately for snappy UI, but ALWAYS validate
+    // against the worker in the background. Without revalidation, an
+    // expired Cloudflare Access cookie would leave the UI looking signed
+    // in while every API call fails with 401.
     var cached = sessionStorage.getItem('wsc_user');
     if (cached) {
       try {
@@ -22,13 +25,20 @@ var Auth = {
         this._sessionToken = sessionStorage.getItem('wsc_session_token') || '';
         this.isLoggedIn = true;
         showApp();
+        // Fire-and-check: if the cached identity no longer matches the
+        // server, clear and push the user back through sign-in.
+        this._validateCachedSession();
         return;
       } catch(e) { sessionStorage.removeItem('wsc_user'); }
     }
 
-    // No cached session — ask the worker to resolve our identity from the
-    // Cloudflare Access header. The frontend intentionally does NOT supply
-    // an email; trusting client input would defeat the purpose of CF Access.
+    await this._identifyAndApply();
+  },
+
+  _identifyAndApply: async function() {
+    // Ask the worker to resolve our identity from the Cloudflare Access
+    // signed header. The frontend intentionally does NOT supply an email —
+    // trusting client input would defeat the purpose of CF Access.
     try {
       var res = await fetch(API.baseUrl + '/api/auth/identify', {
         method: 'POST',
@@ -55,6 +65,48 @@ var Auth = {
 
     } catch(e) {
       this.showDenied('Cannot connect to API: ' + e.message);
+    }
+  },
+
+  // Background validation that runs after the UI is shown from cache.
+  // If the cached identity no longer authenticates (expired CF cookie,
+  // user removed, role changed), wipe the cache and re-run SSO. If we
+  // already have a valid bearer token that's a separate path; skip
+  // the CF Access round-trip because the token alone is enough.
+  _validateCachedSession: async function() {
+    if (this._sessionToken) return;  // master-key session; worker gates the token directly
+    try {
+      var res = await fetch(API.baseUrl + '/api/auth/identify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+        credentials: 'include'
+      });
+      if (res.ok) {
+        var data = await res.json();
+        if (data && data.authorized && data.user) {
+          // Refresh cache — role/display name may have changed server-side.
+          this.user = data.user;
+          sessionStorage.setItem('wsc_user', JSON.stringify(data.user));
+          var nameEl = document.getElementById('sidebar-user-name');
+          var roleEl = document.getElementById('sidebar-user-role');
+          if (nameEl) nameEl.textContent = data.user.display_name || data.user.email;
+          if (roleEl) roleEl.textContent = data.user.role;
+        }
+        return;
+      }
+      // Non-2xx — cache is stale. Clear and force a fresh sign-in flow.
+      sessionStorage.removeItem('wsc_user');
+      sessionStorage.removeItem('wsc_session_token');
+      this.isLoggedIn = false;
+      this.user = null;
+      this._sessionToken = '';
+      this.showDenied('Your sign-in has expired. Refreshing…');
+      // Short delay so the user sees the message, then reload into fresh auth.
+      setTimeout(function() { location.reload(); }, 1500);
+    } catch (e) {
+      // Network-level failure: leave the cached UI alone, user can retry
+      // actions. Don't nuke the session on transient errors.
     }
   },
 
