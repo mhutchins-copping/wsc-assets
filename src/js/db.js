@@ -10,18 +10,23 @@
 //      bearer-token flow. No UI path writes this any more.
 
 var API = {
-  // Same-origin by default ('' resolves against window.location.origin).
-  // Browser → assets.it-wsc.com/api/* is same-origin, so the Cloudflare
-  // Access cookie rides along on every request and the edge injects the
-  // identity header before hitting the worker. No CORS to negotiate.
-  baseUrl: '',
+  // Default: same-origin (assets.it-wsc.com) so the Cloudflare Access cookie
+  // rides along on every request and the edge injects the identity header
+  // before the worker runs. Resolved at init() to the real origin so that
+  // truthiness checks (e.g. !API.baseUrl) still make sense.
+  baseUrl: 'https://assets.it-wsc.com',
   // Break-glass endpoint lives on api.it-wsc.com which is NOT behind CF
   // Access, so the master-key path still works even when SSO is broken.
   directApiUrl: 'https://api.it-wsc.com',
   apiKey: '',   // set at runtime only (e.g. by automation tests); not persisted
 
   init: function() {
-    // Optional dev override for the API URL. Production always uses the default.
+    // Resolve same-origin dynamically so local dev (localhost) also works.
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+      this.baseUrl = window.location.origin;
+    }
+    // Optional override for operators who want to point the UI at an
+    // alternate worker URL (e.g. a preview deployment).
     var savedUrl = localStorage.getItem('wsc_api_url');
     if (savedUrl && savedUrl.trim()) {
       this.baseUrl = savedUrl.trim();
