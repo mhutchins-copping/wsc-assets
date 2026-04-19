@@ -28,8 +28,19 @@ CREATE TABLE IF NOT EXISTS people (
   phone TEXT,
   location_id TEXT REFERENCES locations(id),
   active INTEGER DEFAULT 1,
+  source_system TEXT,                 -- 'entra' when sourced from the Graph sync, NULL if manually added
+  source_updated_at TEXT,             -- last time the sync touched this row
   notes TEXT,
   created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  ip_address TEXT,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS assets (
@@ -139,3 +150,6 @@ CREATE INDEX IF NOT EXISTS idx_maintenance_asset ON maintenance_log(asset_id);
 CREATE INDEX IF NOT EXISTS idx_audit_items_audit ON audit_items(audit_id);
 CREATE INDEX IF NOT EXISTS idx_audit_items_asset ON audit_items(asset_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_people_source ON people(source_system);
+CREATE INDEX IF NOT EXISTS idx_people_email ON people(LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);

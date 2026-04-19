@@ -1349,6 +1349,12 @@ tbody td.mono {
 .settings-success { color: var(--green); font-size: 12px; padding: 8px; background: var(--surface3); border-radius: var(--radius-sm); }
 .settings-warn { color: var(--amber); font-size: 12px; padding: 8px; background: var(--surface3); border-radius: var(--radius-sm); }
 .settings-syncing { color: var(--accent); font-size: 12px; padding: 8px; background: var(--surface3); border-radius: var(--radius-sm); }
+
+.entra-status { font-size: 12.5px; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface2); line-height: 1.5; }
+.entra-status.ok   { border-color: rgba(22,163,74,0.35); background: var(--green-bg); color: var(--text); }
+.entra-status.warn { border-color: rgba(217,119,6,0.35); background: var(--amber-bg); color: var(--text); }
+.entra-status.pending { color: var(--text2); }
+.entra-status code { font-family: var(--mono); font-size: 11.5px; padding: 1px 5px; background: var(--surface); border-radius: 3px; border: 1px solid var(--border); }
 .settings-csv-info { font-size: 12px; padding: 8px 12px; background: var(--surface3); border-radius: var(--radius-sm); }
 .settings-csv-info span { color: var(--text3); }
 .settings-importing { font-size: 12px; padding: 8px; color: var(--accent); }

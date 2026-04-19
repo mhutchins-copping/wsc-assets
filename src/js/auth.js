@@ -6,33 +6,35 @@
 var Auth = {
   isLoggedIn: false,
   user: null, // { id, email, display_name, role }
+  _sessionToken: '',  // bearer token for master-key sessions; SSO sessions rely on the CF cookie instead
 
   init: async function() {
-    // Check for cached user
+    // One-time cleanup: earlier builds stored the raw master key in
+    // sessionStorage. The new flow exchanges it for a bearer token on
+    // login, so the raw key is no longer needed. Clear any leftover.
+    sessionStorage.removeItem('wsc_master_key');
+
+    // Restore cached session first — fast path for already-authenticated users.
     var cached = sessionStorage.getItem('wsc_user');
     if (cached) {
       try {
         this.user = JSON.parse(cached);
-        this._masterKey = sessionStorage.getItem('wsc_master_key') || '';
+        this._sessionToken = sessionStorage.getItem('wsc_session_token') || '';
         this.isLoggedIn = true;
         showApp();
         return;
       } catch(e) { sessionStorage.removeItem('wsc_user'); }
     }
 
-    // Get SSO email from Cloudflare Access
-    var email = await this.getSSOEmail();
-    if (!email) {
-      this.showDenied('SSO identity not found. Make sure you are accessing this site through Cloudflare Access.');
-      return;
-    }
-
-    // Look up internal user by SSO email
+    // No cached session — ask the worker to resolve our identity from the
+    // Cloudflare Access header. The frontend intentionally does NOT supply
+    // an email; trusting client input would defeat the purpose of CF Access.
     try {
       var res = await fetch(API.baseUrl + '/api/auth/identify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email })
+        body: '{}',
+        credentials: 'include'
       });
       var data = await res.json();
 
@@ -46,7 +48,6 @@ var Auth = {
         return;
       }
 
-      // Authorised — log in
       this.user = data.user;
       this.isLoggedIn = true;
       sessionStorage.setItem('wsc_user', JSON.stringify(data.user));
@@ -57,29 +58,22 @@ var Auth = {
     }
   },
 
-  getSSOEmail: async function() {
-    // Cloudflare Access sets user identity in a JWT cookie (CF_Authorization)
-    // We can get the email from the /cdn-cgi/access/get-identity endpoint
-    try {
-      var res = await fetch('/cdn-cgi/access/get-identity');
-      if (res.ok) {
-        var identity = await res.json();
-        return identity.email || null;
-      }
-    } catch(e) { /* not behind Access */ }
+  logout: async function() {
+    var hadToken = !!this._sessionToken;
 
-    // Fallback: check if email was passed via header (for development)
-    return null;
-  },
+    // Best-effort server-side revocation so the token can't be reused if
+    // someone extracts it from an open tab later.
+    if (hadToken) {
+      try { await API.signOut(); } catch(e) { /* continue regardless */ }
+    }
 
-  logout: function() {
-    var wasMasterKey = !!this._masterKey;
     this.isLoggedIn = false;
     this.user = null;
-    this._masterKey = '';
+    this._sessionToken = '';
     sessionStorage.removeItem('wsc_user');
-    sessionStorage.removeItem('wsc_master_key');
-    if (wasMasterKey) {
+    sessionStorage.removeItem('wsc_session_token');
+
+    if (hadToken) {
       location.reload();
     } else {
       window.location.href = '/cdn-cgi/access/logout';
@@ -127,11 +121,24 @@ var Auth = {
         return;
       }
 
+      // Swap the raw master key for the short-lived token and immediately
+      // drop the key from memory. If the worker didn't return a token
+      // (older build), fall back to the key so the session still works —
+      // that path will disappear once the new worker is deployed.
       this.user = data.user;
       this.isLoggedIn = true;
-      this._masterKey = key;
+      if (data.token) {
+        this._sessionToken = data.token;
+        sessionStorage.setItem('wsc_session_token', data.token);
+      } else {
+        // Transitional: old worker without session support.
+        this._sessionToken = '';
+        API.apiKey = key;  // in-memory only; not persisted
+      }
+      // Always wipe the input so the raw key doesn't linger in the DOM.
+      document.getElementById('master-key-input').value = '';
+      key = '';
       sessionStorage.setItem('wsc_user', JSON.stringify(data.user));
-      sessionStorage.setItem('wsc_master_key', key);
       showApp();
     } catch(e) {
       errEl.textContent = 'Connection failed: ' + e.message;

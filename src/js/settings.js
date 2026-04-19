@@ -7,7 +7,10 @@ Router.register('/settings', function() {
 
   try {
     el.innerHTML = renderSettings();
-    if (isAdmin) loadUserList();
+    if (isAdmin) {
+      loadUserList();
+      checkEntraStatus();
+    }
   } catch(err) {
     console.error('[settings] render failed:', err);
     el.innerHTML = '<div class="settings-error" style="padding:16px">Settings failed to render: '
@@ -92,22 +95,10 @@ function renderSettings() {
     + '<div class="settings-card">'
     + '<div class="settings-card-header">Entra ID Sync</div>'
     + '<div class="settings-card-body">'
-    + '<div class="form-hint" style="margin-bottom:12px">Sync users from Microsoft Entra ID. Requires User.Read.All permission.</div>'
-    + '<div class="form-group">'
-    + '<label class="form-label">Tenant ID</label>'
-    + '<input type="text" id="entra-tenant-id" class="form-input" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value="' + esc(localStorage.getItem('wsc_entra_tenant') || '') + '">'
-    + '</div>'
-    + '<div class="form-group">'
-    + '<label class="form-label">Client ID</label>'
-    + '<input type="text" id="entra-client-id" class="form-input" placeholder="App registration client ID" value="' + esc(localStorage.getItem('wsc_entra_client') || '') + '">'
-    + '</div>'
-    + '<div class="form-group">'
-    + '<label class="form-label">Client Secret</label>'
-    + '<input type="password" id="entra-client-secret" class="form-input" placeholder="••••••••">'
-    + '</div>'
-    + '<div style="display:flex;gap:8px">'
-    + '<button class="btn sm" onclick="saveEntraConfig()">Save Config</button>'
-    + '<button class="btn primary sm" onclick="syncEntraUsers()">Sync Users</button>'
+    + '<div class="form-hint" style="margin-bottom:12px">Pulls active council staff from Microsoft Entra into the People directory. Credentials live on the server as Wrangler secrets — set with <code>wrangler secret put ENTRA_TENANT_ID</code>, <code>ENTRA_CLIENT_ID</code>, and <code>ENTRA_CLIENT_SECRET</code>. The app only triggers the sync; it never holds the client secret in the browser.</div>'
+    + '<div id="entra-status" class="entra-status pending">Checking configuration…</div>'
+    + '<div style="display:flex;gap:8px;margin-top:12px">'
+    + '<button id="entra-sync-btn" class="btn primary sm" onclick="syncEntraUsers()" disabled>Sync Users</button>'
     + '</div>'
     + '<div id="entra-sync-result" style="margin-top:12px"></div>'
     + '</div></div>'
@@ -420,28 +411,63 @@ async function enrollFromClipboard() {
 window.enrollFromClipboard = enrollFromClipboard;
 
 // === Entra Sync ===
-function saveEntraConfig() {
-  var t = document.getElementById('entra-tenant-id').value.trim();
-  var c = document.getElementById('entra-client-id').value.trim();
-  var s = document.getElementById('entra-client-secret').value.trim();
-  if (t) localStorage.setItem('wsc_entra_tenant', t);
-  if (c) localStorage.setItem('wsc_entra_client', c);
-  if (s) localStorage.setItem('wsc_entra_secret', s);
-  toast('Config saved', 'success');
+// All credentials live on the worker as Wrangler secrets. The page only
+// shows whether they're configured and triggers the sync.
+
+async function checkEntraStatus() {
+  // Best-effort cleanup of legacy storage from earlier builds that kept
+  // tenant/client/secret in localStorage. Runs once per load.
+  ['wsc_entra_tenant', 'wsc_entra_client', 'wsc_entra_secret'].forEach(function(k) {
+    localStorage.removeItem(k);
+  });
+
+  var statusEl = document.getElementById('entra-status');
+  var btnEl = document.getElementById('entra-sync-btn');
+  if (!statusEl) return;
+
+  try {
+    var res = await API.entraStatus();
+    if (res && res.configured) {
+      statusEl.className = 'entra-status ok';
+      statusEl.innerHTML = '<strong>Configured.</strong> Click <em>Sync Users</em> to import active council staff from Entra.';
+      if (btnEl) btnEl.disabled = false;
+    } else {
+      statusEl.className = 'entra-status warn';
+      statusEl.innerHTML = '<strong>Not configured.</strong> Set all three secrets on the worker before running a sync: <code>ENTRA_TENANT_ID</code>, <code>ENTRA_CLIENT_ID</code>, <code>ENTRA_CLIENT_SECRET</code>.';
+      if (btnEl) btnEl.disabled = true;
+    }
+  } catch (e) {
+    statusEl.className = 'entra-status warn';
+    statusEl.textContent = 'Status check failed: ' + (e && e.message ? e.message : 'unknown');
+    if (btnEl) btnEl.disabled = true;
+  }
 }
-window.saveEntraConfig = saveEntraConfig;
+window.checkEntraStatus = checkEntraStatus;
 
 async function syncEntraUsers() {
-  var t = document.getElementById('entra-tenant-id').value.trim() || localStorage.getItem('wsc_entra_tenant');
-  var c = document.getElementById('entra-client-id').value.trim() || localStorage.getItem('wsc_entra_client');
-  var s = document.getElementById('entra-client-secret').value.trim() || localStorage.getItem('wsc_entra_secret');
-  if (!t || !c || !s) { toast('Fill in all fields', 'error'); return; }
+  var btnEl = document.getElementById('entra-sync-btn');
+  var resultEl = document.getElementById('entra-sync-result');
 
-  document.getElementById('entra-sync-result').innerHTML = '<div class="settings-syncing">Syncing...</div>';
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Syncing…'; }
+  if (resultEl) resultEl.innerHTML = '<div class="settings-syncing">Contacting Microsoft Graph…</div>';
 
-  var result = await API.syncEntra({ tenant_id: t, client_id: c, client_secret: s, domain: 'walgett.nsw.gov.au' });
-  document.getElementById('entra-sync-result').innerHTML = '<div class="settings-success">Created: ' + result.created + ' · Updated: ' + result.updated + '</div>';
-  toast('Synced ' + result.created + ' users', 'success');
+  try {
+    var result = await API.syncEntra({ domain: 'walgett.nsw.gov.au' });
+    var summary = 'Created: ' + (result.created || 0)
+      + ' · Updated: ' + (result.updated || 0)
+      + ' · Skipped: ' + (result.skipped || 0)
+      + (result.deactivated ? ' · Deactivated: ' + result.deactivated : '');
+    if (resultEl) {
+      resultEl.innerHTML = '<div class="settings-success">' + esc(summary) + '</div>';
+    }
+    toast('Sync complete — ' + summary, 'success');
+  } catch (e) {
+    if (resultEl) {
+      resultEl.innerHTML = '<div class="settings-error">Sync failed: ' + esc(e.message || 'unknown') + '</div>';
+    }
+  } finally {
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Sync Users'; }
+  }
 }
 window.syncEntraUsers = syncEntraUsers;
 

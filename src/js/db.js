@@ -1,17 +1,27 @@
 // ─── API Client ────────────────────────────────
-// Wraps all fetch calls to the Cloudflare Worker API
+// Wraps all fetch calls to the Cloudflare Worker API.
+//
+// Auth order, most-preferred first:
+//   1. Cloudflare Access cookie (CF_Authorization) — rides along automatically
+//      via credentials:'include'; worker reads Cf-Access-Authenticated-User-Email.
+//   2. Session bearer token — short-lived, issued in exchange for the master
+//      key. Held in sessionStorage only.
+//   3. Legacy X-Api-Key — kept only for scripted callers that predate the
+//      bearer-token flow. No UI path writes this any more.
 
 var API = {
-  baseUrl: 'https://api.it-wsc.com',  // Hardcoded default
-  apiKey: '',
+  baseUrl: 'https://api.it-wsc.com',
+  apiKey: '',   // set at runtime only (e.g. by automation tests); not persisted
 
   init: function() {
-    // Default to hardcoded, localStorage override only if explicitly set
+    // Optional dev override for the API URL. Production always uses the default.
     var savedUrl = localStorage.getItem('wsc_api_url');
     if (savedUrl && savedUrl.trim()) {
       this.baseUrl = savedUrl.trim();
     }
-    this.apiKey = localStorage.getItem('wsc_api_key') || '';
+    // Legacy: clear any pre-existing API key or master-key remnants from
+    // earlier builds that persisted them in localStorage.
+    localStorage.removeItem('wsc_api_key');
   },
 
   setUrl: function(url) {
@@ -19,23 +29,16 @@ var API = {
     localStorage.setItem('wsc_api_url', this.baseUrl);
   },
 
-  setKey: function(key) {
-    this.apiKey = key;
-    localStorage.setItem('wsc_api_key', key);
-  },
-
   fetch: async function(path, opts) {
     opts = opts || {};
     var url = this.baseUrl + path;
     var headers = {};
-    // Auth paths:
-    //  - Cloudflare Access cookie (CF_Authorization) rides along automatically via credentials:'include'
-    //    and the worker reads Cf-Access-Authenticated-User-Email at the edge.
-    //  - Master key (break-glass): sent as X-Api-Key.
-    //  - Stored API key (scripts/external): sent as X-Api-Key.
-    var masterKey = Auth && Auth._masterKey ? Auth._masterKey : '';
-    if (masterKey) {
-      headers['X-Api-Key'] = masterKey;
+
+    // Prefer the session bearer token over the raw master key. Auth.init()
+    // upgrades any stored master key into a token on first successful call.
+    var token = Auth && Auth._sessionToken ? Auth._sessionToken : '';
+    if (token) {
+      headers['Authorization'] = 'Bearer ' + token;
     } else if (this.apiKey) {
       headers['X-Api-Key'] = this.apiKey;
     }
@@ -118,28 +121,35 @@ var API = {
   exportCSV: function(params) { return this.fetch('/api/export/csv?' + new URLSearchParams(params || {})); },
 
   // ─── Entra ID Sync
-  syncEntra: function(config) { return this.fetch('/api/people/sync-entra', { method: 'POST', body: config }); },
+  // The worker reads Entra credentials from its own secrets; the frontend
+  // only tells it which domain to scope the import to.
+  syncEntra: function(opts) {
+    return this.fetch('/api/people/sync-entra', {
+      method: 'POST',
+      body: opts || {}
+    });
+  },
+  entraStatus: function() { return this.fetch('/api/settings/entra-status'); },
+
+  // ─── Auth (session management)
+  signOut: function() { return this.fetch('/api/auth/sign-out', { method: 'POST' }); },
 
   // ─── Images (R2)
   uploadImage: async function(assetId, file) {
-    console.log('uploadImage called:', assetId, file.name, file.size, file.type);
     // Sanitise both halves of the key so it passes the worker's strict regex
     // (letters/digits/_/- in the prefix, plus . in the filename).
     var safeAsset = String(assetId || '').replace(/[^A-Za-z0-9_-]/g, '');
     var extMatch = /\.([A-Za-z0-9]{1,8})$/.exec(file.name || '');
     var ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
     var key = safeAsset + '/' + Date.now() + '.' + ext;
-    console.log('Uploading to:', '/images/' + key, 'Content-Type:', file.type || 'image/jpeg');
     try {
-      var res = await this.fetch('/images/' + key, {
+      await this.fetch('/images/' + key, {
         method: 'PUT',
         body: file,
         headers: { 'Content-Type': file.type || 'image/jpeg' }
       });
-      console.log('Upload response status:', res.status || res.ok, 'url:', res.url || res);
       return '/images/' + key;
     } catch(e) {
-      console.error('Upload error:', e.message, e.response ? await e.response.text() : '');
       throw e;
     }
   },

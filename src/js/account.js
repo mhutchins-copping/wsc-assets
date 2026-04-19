@@ -38,7 +38,7 @@ function renderAccount() {
     + '<div class="acct-row"><span class="acct-label">Email</span><span class="acct-value mono">' + esc(u.email || '—') + '</span></div>'
     + '<div class="acct-row"><span class="acct-label">Role</span><span class="acct-value">' + esc(u.role || 'user') + (isAdmin ? ' — full access' : '') + '</span></div>'
     + '<div class="acct-row"><span class="acct-label">Last sign-in</span><span class="acct-value mono">' + esc(lastLogin) + '</span></div>'
-    + '<div class="acct-row"><span class="acct-label">Sign-in method</span><span class="acct-value">' + (Auth && Auth._masterKey ? 'Master key (break-glass)' : 'Microsoft SSO') + '</span></div>'
+    + '<div class="acct-row"><span class="acct-label">Sign-in method</span><span class="acct-value">' + (Auth && Auth._sessionToken ? 'Master key session (break-glass)' : 'Microsoft SSO') + '</span></div>'
     + '</div>'
     + '</div>'
 
@@ -58,8 +58,8 @@ function renderAccount() {
 window.renderAccount = renderAccount;
 
 function accountSignOut() {
-  if (typeof Auth !== 'undefined' && Auth.signOut) {
-    Auth.signOut();
+  if (typeof Auth !== 'undefined' && Auth.logout) {
+    Auth.logout();
   } else {
     window.location.href = '/cdn-cgi/access/logout';
   }

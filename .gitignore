@@ -10,3 +10,7 @@ credentials.json
 # Local safety exports written by scripts/restore-db.sh. Backups live in
 # GitHub Actions artifacts, not in the repo.
 backups/
+# Wrangler local state (account ID cache, D1 preview shards, tmp dirs).
+# Regenerated on `wrangler deploy` / `wrangler dev`.
+.wrangler/
+worker/.wrangler/

@@ -28,6 +28,12 @@ async function dispatch(request, env) {
     catch (err) { return json({ error: err.message }, 500); }
   }
 
+  // Sign-out — revokes a bearer token (safe to call without one)
+  if (url.pathname === '/api/auth/sign-out' && request.method === 'POST') {
+    try { return await authSignOut(request, env); }
+    catch (err) { return json({ error: err.message }, 500); }
+  }
+
   // User management routes (admin only, checked inside each handler)
   if (url.pathname.startsWith('/api/auth/users')) {
     try {
@@ -95,13 +101,16 @@ function applyCors(response, request, env) {
 }
 
 // ─── Auth ──────────────────────────────────────────────
-// Two auth paths:
-// 1. SSO email → internal user lookup (browser via Cloudflare Access)
-// 2. API key (scripts/external access)
+// Three auth paths (checked in order):
+// 1. SSO email — injected by Cloudflare Access at the edge, unspoofable.
+// 2. Session bearer token — issued in exchange for the master key, short-lived.
+// 3. Raw API key / master key — scripts / external access / break-glass.
+
+const SESSION_TTL_HOURS = 8;
 
 async function authenticate(request, env) {
-  // Cloudflare Access injects this header at the edge and strips any client-sent
-  // copy, so it cannot be spoofed. Never accept a user-controlled fallback here.
+  // 1. Cloudflare Access signed header. Set at the edge and stripped from any
+  // client-sent copy — cannot be spoofed.
   const ssoEmail = request.headers.get('Cf-Access-Authenticated-User-Email');
   if (ssoEmail) {
     try {
@@ -112,12 +121,35 @@ async function authenticate(request, env) {
     } catch (e) { /* users table may not exist yet */ }
   }
 
-  // 2. API key or master key auth
+  // 2. Session bearer token (preferred over raw master key). Cheap lookup and
+  // expiry is enforced server-side, so XSS harvesting a token from browser
+  // storage only yields short-lived admin access, not the durable master key.
+  const auth = request.headers.get('Authorization') || '';
+  if (auth.startsWith('Bearer ')) {
+    const token = auth.slice(7).trim();
+    if (token) {
+      try {
+        const session = await env.DB.prepare(
+          `SELECT s.user_id, u.id, u.email, u.display_name, u.role
+             FROM sessions s
+             JOIN users u ON u.id = s.user_id AND u.active = 1
+            WHERE s.token = ? AND s.expires_at > ?`
+        ).bind(token, now()).first();
+        if (session) {
+          return { id: session.id, email: session.email, display_name: session.display_name, role: session.role };
+        }
+      } catch (e) { /* sessions table may not exist yet */ }
+    }
+  }
+
+  // 3. Raw API key or master key on X-Api-Key. Retained for:
+  //    - scripted / external callers using the long-lived API_KEY
+  //    - transitional break-glass until a session token is obtained
   const key = request.headers.get('X-Api-Key');
   if (key) {
-    // Check API key (for scripts)
-    if (env.API_KEY && key === env.API_KEY) return { email: 'api', display_name: 'API', role: 'admin' };
-    // Check master key (for non-SSO browser access)
+    if (env.API_KEY && key === env.API_KEY) {
+      return { email: 'api', display_name: 'API', role: 'admin' };
+    }
     if (env.MASTER_KEY && key === env.MASTER_KEY) {
       try {
         const admin = await env.DB.prepare(
@@ -132,24 +164,29 @@ async function authenticate(request, env) {
   return null;
 }
 
-// ─── Auth Identity (SSO email → internal user lookup) ──
-
+// ─── Auth Identity (SSO edge header → internal user lookup) ──
+// Trusts only the Cloudflare Access signed header. Any body-provided email is
+// ignored — historically the frontend sent one, but letting the client tell
+// the server who they are is exactly the kind of trust boundary we don't need.
 async function authIdentify(request, env) {
-  const data = await body(request);
-  const email = (data.email || '').toLowerCase().trim();
+  const ssoEmail = (request.headers.get('Cf-Access-Authenticated-User-Email') || '').toLowerCase().trim();
 
-  if (!email) return json({ error: 'Email required' }, 400);
+  if (!ssoEmail) {
+    return json({
+      authorized: false,
+      error: 'No SSO identity on this request. Access the site through Cloudflare Access.'
+    }, 401);
+  }
 
   try {
     const user = await env.DB.prepare(
       'SELECT id, email, display_name, role FROM users WHERE email = ? AND active = 1'
-    ).bind(email).first();
+    ).bind(ssoEmail).first();
 
     if (!user) {
       return json({ authorized: false, error: 'No access. Contact your IT administrator.' }, 403);
     }
 
-    // Update last login
     await env.DB.prepare('UPDATE users SET last_login = ? WHERE id = ?').bind(now(), user.id).run();
 
     return json({
@@ -157,9 +194,42 @@ async function authIdentify(request, env) {
       user: { id: user.id, email: user.email, display_name: user.display_name, role: user.role }
     });
   } catch (e) {
-    // Users table doesn't exist yet
     return json({ authorized: false, error: 'Database needs migration. Run the users migration in D1 Console.', needs_migration: true }, 500);
   }
+}
+
+// Issues a short-lived bearer token for a user. Caller is responsible for
+// having already verified the user's identity (e.g. via master-key check).
+async function issueSessionToken(env, userId, source, ip) {
+  // 32-byte random token → base64url (~43 chars). Cryptographically strong.
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  let b64 = btoa(String.fromCharCode.apply(null, bytes));
+  const token = b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  const expiresMs = Date.now() + SESSION_TTL_HOURS * 60 * 60 * 1000;
+  const expiresAt = new Date(expiresMs)
+    .toLocaleString('sv-SE', { timeZone: 'Australia/Sydney' })
+    .replace('T', ' ')
+    .slice(0, 19);
+
+  await env.DB.prepare(
+    'INSERT INTO sessions (token, user_id, source, ip_address, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(token, userId, source, ip || null, expiresAt, now()).run();
+
+  // Opportunistic cleanup of expired rows. Not critical; cheap in a small DB.
+  try {
+    await env.DB.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(now()).run();
+  } catch (e) { /* best effort */ }
+
+  return { token, expires_at: expiresAt };
+}
+
+async function revokeSessionToken(env, token) {
+  if (!token) return;
+  try {
+    await env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(token).run();
+  } catch (e) { /* best effort */ }
 }
 
 // ─── Master Key Auth (fallback for non-SSO access) ────
@@ -241,13 +311,36 @@ async function authMasterKey(request, env) {
       });
     } catch (e) { console.error('notify error:', e); }
 
+    // Issue a short-lived bearer token so the client never has to hold the
+    // raw master key past this single exchange.
+    let session = null;
+    try {
+      session = await issueSessionToken(env, admin.id, 'master_key', ip);
+    } catch (e) {
+      // Session table may not exist yet — fall back to the pre-token response
+      // so the caller can still authenticate with the raw key header.
+      console.error('issueSessionToken failed:', e && e.message);
+    }
+
     return json({
       authorized: true,
-      user: { id: admin.id, email: admin.email, display_name: admin.display_name, role: admin.role }
+      user: { id: admin.id, email: admin.email, display_name: admin.display_name, role: admin.role },
+      token: session ? session.token : null,
+      token_expires_at: session ? session.expires_at : null
     });
   } catch (e) {
     return json({ authorized: false, error: 'Database error: ' + e.message }, 500);
   }
+}
+
+// Sign-out endpoint — revokes a bearer token. Safe to call without a token
+// (returns ok); best-effort cleanup.
+async function authSignOut(request, env) {
+  const auth = request.headers.get('Authorization') || '';
+  if (auth.startsWith('Bearer ')) {
+    await revokeSessionToken(env, auth.slice(7).trim());
+  }
+  return json({ ok: true });
 }
 
 // ─── User Management (admin only) ─────────────────────
@@ -356,106 +449,124 @@ async function route(request, env, url) {
   const method = request.method;
   const path = url.pathname;
 
-  // Assets
-  if (path === '/api/assets' && method === 'GET') return listAssets(request, env, url);
-  if (path === '/api/assets' && method === 'POST') return createAsset(request, env);
+  // Shorthand: every route decides what permission it needs, returns the 403
+  // from requirePerm when denied, otherwise dispatches to the handler.
+  const deny = (perm) => requirePerm(request, perm);
+
+  // ── Assets ──
+  if (path === '/api/assets' && method === 'GET') return deny('assets.read') || listAssets(request, env, url);
+  if (path === '/api/assets' && method === 'POST') return deny('assets.write') || createAsset(request, env);
+
   if (path.match(/^\/api\/assets\/next-tag\/(.+)$/) && method === 'GET') {
-    return nextTag(env, path.match(/^\/api\/assets\/next-tag\/(.+)$/)[1]);
+    return deny('assets.read') || nextTag(env, path.match(/^\/api\/assets\/next-tag\/(.+)$/)[1]);
   }
   if (path.match(/^\/api\/assets\/tag\/(.+)$/) && method === 'GET') {
-    return getAssetByTag(env, decodeURIComponent(path.match(/^\/api\/assets\/tag\/(.+)$/)[1]));
+    return deny('assets.read') || getAssetByTag(env, decodeURIComponent(path.match(/^\/api\/assets\/tag\/(.+)$/)[1]));
   }
   if (path.match(/^\/api\/assets\/serial\/(.+)$/) && method === 'GET') {
-    return getAssetBySerial(env, decodeURIComponent(path.match(/^\/api\/assets\/serial\/(.+)$/)[1]));
+    return deny('assets.read') || getAssetBySerial(env, decodeURIComponent(path.match(/^\/api\/assets\/serial\/(.+)$/)[1]));
   }
   if (path.match(/^\/api\/assets\/([^/]+)\/checkout$/) && method === 'POST') {
-    return checkoutAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/checkout$/)[1]);
+    return deny('assets.write') || checkoutAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/checkout$/)[1]);
   }
   if (path.match(/^\/api\/assets\/([^/]+)\/checkin$/) && method === 'POST') {
-    return checkinAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/checkin$/)[1]);
+    return deny('assets.write') || checkinAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/checkin$/)[1]);
   }
   if (path.match(/^\/api\/assets\/([^/]+)\/maintenance$/) && method === 'POST') {
-    return addMaintenance(request, env, path.match(/^\/api\/assets\/([^/]+)\/maintenance$/)[1]);
+    return deny('assets.maintenance') || addMaintenance(request, env, path.match(/^\/api\/assets\/([^/]+)\/maintenance$/)[1]);
   }
   if (path.match(/^\/api\/assets\/([^/]+)$/) && method === 'GET') {
-    return getAsset(env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
+    return deny('assets.read') || getAsset(env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/assets\/([^/]+)$/) && method === 'PUT') {
-    return updateAsset(request, env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
+    return deny('assets.write') || updateAsset(request, env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/assets\/([^/]+)$/) && method === 'DELETE') {
-    return deleteAsset(request, env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
+    // Soft-delete (mark disposed) is part of normal lifecycle — user role allowed.
+    return deny('assets.write') || deleteAsset(request, env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/assets\/([^/]+)\/purge$/) && method === 'DELETE') {
+    // Hard delete with cascading removals — admin only.
     if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
     return purgeAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/purge$/)[1]);
   }
 
-  // AI-powered label extraction from photo
+  // AI-powered label extraction — admin/user; viewers don't get to enrol.
   if (path === '/api/assets/extract-from-image' && method === 'POST') {
-    return extractFromImage(request, env);
+    return deny('enrol.device') || extractFromImage(request, env);
   }
 
-  // People
-  if (path === '/api/people' && method === 'GET') return listPeople(request, env, url);
-  if (path === '/api/people' && method === 'POST') return createPerson(request, env);
+  // ── People ──
+  if (path === '/api/people' && method === 'GET') return deny('people.read') || listPeople(request, env, url);
+  if (path === '/api/people' && method === 'POST') return deny('people.write') || createPerson(request, env);
   if (path.match(/^\/api\/people\/([^/]+)$/) && method === 'GET') {
-    return getPerson(env, path.match(/^\/api\/people\/([^/]+)$/)[1]);
+    return deny('people.read') || getPerson(env, path.match(/^\/api\/people\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/people\/([^/]+)$/) && method === 'PUT') {
-    return updatePerson(request, env, path.match(/^\/api\/people\/([^/]+)$/)[1]);
+    return deny('people.write') || updatePerson(request, env, path.match(/^\/api\/people\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/people\/([^/]+)$/) && method === 'DELETE') {
-    return deletePerson(request, env, path.match(/^\/api\/people\/([^/]+)$/)[1]);
+    return deny('people.write') || deletePerson(request, env, path.match(/^\/api\/people\/([^/]+)$/)[1]);
   }
 
-  // Locations
-  if (path === '/api/locations' && method === 'GET') return listLocations(env);
-  if (path === '/api/locations' && method === 'POST') return createLocation(request, env);
+  // ── Locations (reference data — admin writes only) ──
+  if (path === '/api/locations' && method === 'GET') return deny('locations.read') || listLocations(env);
+  if (path === '/api/locations' && method === 'POST') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
+    return createLocation(request, env);
+  }
   if (path.match(/^\/api\/locations\/([^/]+)$/) && method === 'GET') {
-    return getLocation(env, path.match(/^\/api\/locations\/([^/]+)$/)[1]);
+    return deny('locations.read') || getLocation(env, path.match(/^\/api\/locations\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/locations\/([^/]+)$/) && method === 'PUT') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
     return updateLocation(request, env, path.match(/^\/api\/locations\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/locations\/([^/]+)$/) && method === 'DELETE') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
     return deleteLocation(request, env, path.match(/^\/api\/locations\/([^/]+)$/)[1]);
   }
 
-  // Categories
-  if (path === '/api/categories' && method === 'GET') return listCategories(env);
-  if (path === '/api/categories' && method === 'POST') return createCategory(request, env);
+  // ── Categories (reference data — admin writes only) ──
+  if (path === '/api/categories' && method === 'GET') return deny('categories.read') || listCategories(env);
+  if (path === '/api/categories' && method === 'POST') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
+    return createCategory(request, env);
+  }
   if (path.match(/^\/api\/categories\/([^/]+)$/) && method === 'PUT') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
     return updateCategory(request, env, path.match(/^\/api\/categories\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/categories\/([^/]+)$/) && method === 'DELETE') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
     return deleteCategory(request, env, path.match(/^\/api\/categories\/([^/]+)$/)[1]);
   }
 
-  // Activity log
-  if (path === '/api/activity' && method === 'GET') return listActivity(env, url);
+  // ── Activity log ──
+  if (path === '/api/activity' && method === 'GET') return deny('reports.view') || listActivity(env, url);
 
-  // Audits
-  if (path === '/api/audits' && method === 'GET') return listAudits(env);
-  if (path === '/api/audits' && method === 'POST') return startAudit(request, env);
+  // ── Audits ──
+  if (path === '/api/audits' && method === 'GET') return deny('audits.read') || listAudits(env);
+  if (path === '/api/audits' && method === 'POST') return deny('audits.write') || startAudit(request, env);
   if (path.match(/^\/api\/audits\/([^/]+)\/scan$/) && method === 'POST') {
-    return scanAuditItem(request, env, path.match(/^\/api\/audits\/([^/]+)\/scan$/)[1]);
+    return deny('audits.write') || scanAuditItem(request, env, path.match(/^\/api\/audits\/([^/]+)\/scan$/)[1]);
   }
   if (path.match(/^\/api\/audits\/([^/]+)\/complete$/) && method === 'POST') {
-    return completeAudit(env, path.match(/^\/api\/audits\/([^/]+)\/complete$/)[1]);
+    return deny('audits.write') || completeAudit(env, path.match(/^\/api\/audits\/([^/]+)\/complete$/)[1]);
   }
   if (path.match(/^\/api\/audits\/([^/]+)$/) && method === 'GET') {
-    return getAudit(env, path.match(/^\/api\/audits\/([^/]+)$/)[1]);
+    return deny('audits.read') || getAudit(env, path.match(/^\/api\/audits\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/audits\/([^/]+)$/) && method === 'DELETE') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
     return deleteAudit(env, path.match(/^\/api\/audits\/([^/]+)$/)[1]);
   }
 
-  // Stats & Reports
-  if (path === '/api/stats' && method === 'GET') return getStats(env);
-  if (path === '/api/reports' && method === 'GET') return getReports(env);
+  // ── Stats & Reports ──
+  if (path === '/api/stats' && method === 'GET') return deny('reports.view') || getStats(env);
+  if (path === '/api/reports' && method === 'GET') return deny('reports.view') || getReports(env);
 
-  // Import / Export — mutate or reveal bulk data; admin only.
+  // ── Import / Export / Sync — admin only ──
   if (path === '/api/import/csv' && method === 'POST') {
     if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
     return importCSV(request, env);
@@ -464,20 +575,74 @@ async function route(request, env, url) {
     if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
     return exportCSV(env, url);
   }
-
-  // Entra ID user sync — hits Microsoft Graph with tenant creds; admin only.
   if (path === '/api/people/sync-entra' && method === 'POST') {
     if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
     return syncEntraUsers(request, env);
+  }
+  if (path === '/api/settings/entra-status' && method === 'GET') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
+    return json({
+      configured: !!(env.ENTRA_TENANT_ID && env.ENTRA_CLIENT_ID && env.ENTRA_CLIENT_SECRET)
+    });
   }
 
   return null;
 }
 
-// ─── Helpers ───────────────────────────────────────────
+// ─── Permissions ───────────────────────────────────────
+// Central authorization table. Every mutating route checks hasPermission()
+// rather than ad-hoc isAdmin() checks, so the full picture of who-can-do-what
+// lives in one place.
+//
+// Roles:
+//   viewer — read-only across the app
+//   user   — day-to-day operators; can create/edit assets, manage people,
+//            run audits, log maintenance. Cannot manage reference data
+//            (categories/locations), cannot run bulk/destructive ops,
+//            cannot manage users.
+//   admin  — full access. Wildcard '*' short-circuits the check.
+//
+// Docs mirror: see docs/OPERATIONS.md § Roles for the customer-facing view.
 
+const VIEWER_PERMS = [
+  'assets.read', 'people.read', 'categories.read', 'locations.read',
+  'audits.read', 'reports.view', 'settings.read', 'users.read_self'
+];
+
+const USER_PERMS = VIEWER_PERMS.concat([
+  'assets.write',       // create + update + checkout + checkin
+  'assets.maintenance', // log maintenance entries
+  'people.write',       // create + update + deactivate (soft)
+  'audits.write',       // start + scan + complete
+  'enrol.device'        // clipboard/API enrolment of new hardware
+]);
+
+const ROLE_PERMISSIONS = {
+  viewer: new Set(VIEWER_PERMS),
+  user:   new Set(USER_PERMS),
+  admin:  new Set(['*'])
+};
+
+function hasPermission(user, perm) {
+  if (!user) return false;
+  const perms = ROLE_PERMISSIONS[user.role];
+  if (!perms) return false;
+  return perms.has('*') || perms.has(perm);
+}
+
+// Back-compat shim — a handful of routes still use isAdmin() and it's a
+// reasonable shortcut for the admin-only tier.
 function isAdmin(request) {
   return !!(request._user && request._user.role === 'admin');
+}
+
+// Permission guard used at the top of each mutating handler. Returns a 403
+// JSON response if denied, or null if allowed. Caller pattern:
+//     const denied = requirePerm(request, 'assets.write');
+//     if (denied) return denied;
+function requirePerm(request, perm) {
+  if (hasPermission(request && request._user, perm)) return null;
+  return json({ error: 'Forbidden', required: perm }, 403);
 }
 
 function id() {
@@ -1879,27 +2044,21 @@ async function handleImages(request, env, url) {
     }
 
     const contentType = (request.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
-    console.log('Image upload - key:', key, 'contentType:', contentType);
     if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
-      console.log('Image upload - rejected: unsupported type');
       return json({ error: 'Unsupported image type' }, 415);
     }
 
     const declaredLen = parseInt(request.headers.get('Content-Length') || '0', 10);
     if (declaredLen && declaredLen > MAX_IMAGE_BYTES) {
-      console.log('Image upload - rejected: too large', declaredLen);
       return json({ error: 'Image too large' }, 413);
     }
 
     const imageData = await request.arrayBuffer();
-    console.log('Image upload - received bytes:', imageData.byteLength);
     if (imageData.byteLength > MAX_IMAGE_BYTES) {
       return json({ error: 'Image too large' }, 413);
     }
 
-    console.log('Image upload - saving to R2...');
     await env.IMAGES.put(key, imageData, { httpMetadata: { contentType } });
-    console.log('Image upload - saved to R2:', key);
     return json({ url: `/images/${key}` }, 201);
   }
 
@@ -1909,14 +2068,22 @@ async function handleImages(request, env, url) {
 // ─── Entra ID User Sync ──────────────────────────────
 
 async function syncEntraUsers(request, env) {
-  const data = await body(request);
-  const tenantId = data.tenant_id || env.ENTRA_TENANT_ID;
-  const clientId = data.client_id || env.ENTRA_CLIENT_ID;
-  const clientSecret = data.client_secret || env.ENTRA_CLIENT_SECRET;
+  // All three Entra credentials are Worker secrets only — never accepted from
+  // the request body. Previously the frontend let admins paste tenant/client/
+  // secret into localStorage and post them here, which meant the secret lived
+  // in the browser. Now the UI just triggers the sync and displays the
+  // outcome; credentials stay on the server.
+  const tenantId = env.ENTRA_TENANT_ID;
+  const clientId = env.ENTRA_CLIENT_ID;
+  const clientSecret = env.ENTRA_CLIENT_SECRET;
 
   if (!tenantId || !clientId || !clientSecret) {
-    return json({ error: 'Missing Entra config (tenant_id, client_id, client_secret)' }, 400);
+    return json({
+      error: 'Entra not configured. Set ENTRA_TENANT_ID, ENTRA_CLIENT_ID, and ENTRA_CLIENT_SECRET via `wrangler secret put` before running this sync.'
+    }, 400);
   }
+
+  const data = await body(request).catch(() => ({}));
 
   // Get access token via client credentials flow
   const tokenRes = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
@@ -1984,11 +2151,13 @@ async function syncEntraUsers(request, env) {
     try {
       // Check if person already exists by email
       const existing = await env.DB.prepare('SELECT id, name FROM people WHERE email = ?').bind(email).first();
+      const ts = now();
 
       if (existing) {
-        // Update existing person
         await env.DB.prepare(`
-          UPDATE people SET name = ?, department = ?, position = ?, phone = ?, active = ?
+          UPDATE people SET
+            name = ?, department = ?, position = ?, phone = ?, active = ?,
+            source_system = 'entra', source_updated_at = ?
           WHERE id = ?
         `).bind(
           user.displayName,
@@ -1996,15 +2165,17 @@ async function syncEntraUsers(request, env) {
           user.jobTitle || null,
           user.mobilePhone || null,
           user.accountEnabled ? 1 : 0,
+          ts,
           existing.id
         ).run();
         updated++;
       } else {
-        // Create new person
         const personId = id();
         await env.DB.prepare(`
-          INSERT INTO people (id, name, email, department, position, phone, active, notes, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO people
+            (id, name, email, department, position, phone, active,
+             source_system, source_updated_at, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'entra', ?, ?)
         `).bind(
           personId,
           user.displayName,
@@ -2013,8 +2184,8 @@ async function syncEntraUsers(request, env) {
           user.jobTitle || null,
           user.mobilePhone || null,
           user.accountEnabled ? 1 : 0,
-          'Imported from Entra ID',
-          now()
+          ts,
+          ts
         ).run();
         created++;
       }
@@ -2023,14 +2194,19 @@ async function syncEntraUsers(request, env) {
     }
   }
 
-  // Delete people imported from Entra that don't match the domain filter
-  let deleted = 0;
+  // Deactivate Entra-sourced people whose email no longer matches the domain
+  // filter. Soft delete (active=0) preserves their activity_log references
+  // and lets a typo'd domain be reversed by running the sync again. The
+  // `active = 1` guard makes the operation idempotent across runs.
+  let deactivated = 0;
   try {
     const result = await env.DB.prepare(`
-      DELETE FROM people WHERE notes = 'Imported from Entra ID'
+      UPDATE people SET active = 0
+      WHERE source_system = 'entra'
+      AND active = 1
       AND (email NOT LIKE ? OR email IS NULL)
     `).bind('%@' + domain.toLowerCase()).run();
-    deleted = result.meta?.changes || 0;
+    deactivated = result.meta?.changes || 0;
   } catch (err) {
     errors.push('Cleanup: ' + err.message);
   }
@@ -2040,7 +2216,7 @@ async function syncEntraUsers(request, env) {
     created,
     updated,
     skipped,
-    deleted,
+    deactivated,
     errors: errors.slice(0, 20),
   });
 }
