@@ -48,7 +48,8 @@ var Router = {
       '/categories': 'categories',
       '/audits': param ? 'audit-detail' : 'audits',
       '/reports': 'reports',
-      '/settings': 'settings'
+      '/settings': 'settings',
+      '/account': 'account'
     };
     return map[route] || 'dashboard';
   },

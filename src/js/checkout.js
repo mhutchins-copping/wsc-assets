@@ -157,11 +157,13 @@ async function doCheckout() {
     closeModal();
     toast('Asset checked out', 'success');
 
-    // Use the asset returned from the checkout response rather than re-fetching,
-    // to avoid a stale-read race against D1 replicas.
+    // Prefer the fresh asset returned by the worker (no race). If an older
+    // worker is still running and didn't return it, fall back to a re-fetch
+    // after a short pause so D1 replicas have time to see the write.
     if (result && result.asset) {
       renderAssetDetail(_checkoutAssetId, result.asset);
     } else {
+      await new Promise(function(r){ setTimeout(r, 600); });
       renderAssetDetail(_checkoutAssetId);
     }
   } catch(e) {
@@ -206,6 +208,7 @@ async function doCheckin(assetId) {
     if (result && result.asset) {
       renderAssetDetail(assetId, result.asset);
     } else {
+      await new Promise(function(r){ setTimeout(r, 600); });
       renderAssetDetail(assetId);
     }
   } catch(e) {

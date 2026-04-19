@@ -42,14 +42,15 @@
   --text2:    #4b5058;   /* still muted but reliable contrast (~7:1) */
   --text3:    #767c85;   /* secondary; only for true tertiary info (>=4.5:1) */
 
-  /* Typography */
-  --font:     'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --mono:     'DM Mono', 'Menlo', 'Consolas', monospace;
+  /* Typography — Inter is the UI workhorse: crisp at small sizes, excellent
+     tabular numbers, and widely recognised in enterprise software. */
+  --font:     'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --mono:     'JetBrains Mono', 'SF Mono', 'Menlo', 'Consolas', 'Liberation Mono', monospace;
 
-  /* Base weights — DM Sans 400 is too wispy at small sizes; default to 450 */
-  --w-body:   450;
-  --w-med:    550;
-  --w-bold:   650;
+  /* Base weights — Inter has real weight distinctions; 500 is our body */
+  --w-body:   500;
+  --w-med:    600;
+  --w-bold:   700;
 
   /* Radius */
   --radius:   8px;
@@ -77,12 +78,13 @@
 
 body {
   font-family: var(--font);
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: var(--w-body);
   color: var(--text);
   background: var(--bg);
-  line-height: 1.55;
-  letter-spacing: -0.005em;
+  line-height: 1.5;
+  letter-spacing: -0.011em;                /* Inter reads best with a small negative track */
+  font-feature-settings: 'cv11', 'ss01';   /* Inter stylistic sets: open 4, single-storey a */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
