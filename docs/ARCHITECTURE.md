@@ -1,10 +1,10 @@
 # Architecture
 
 > **Document:** System Architecture
-> **Version:** 1.1
-> **Last updated:** 2026-04-18
+> **Version:** 1.2
+> **Last updated:** 2026-04-19
 > **Owner (role):** IT Officer, Walgett Shire Council
-> **Review cycle:** Annual — next review due 2027-04-18
+> **Review cycle:** Annual — next review due 2027-04-19
 
 This document covers what WSC Assets is, how it's built, and the
 reasoning behind the technical choices. Intended audience: someone who
@@ -216,19 +216,24 @@ If at step 7 the user's email isn't in the `users` table, they get a
 wsc-assets/
 ├── index.html                 # Single-page shell
 ├── src/
-│   ├── css/app.css            # All styles
+│   ├── main.js                # Module entry — imports every js file
+│   ├── css/app.css            # All styles (tokens, layout, components)
 │   └── js/
-│       ├── auth.js            # Identity load + denied screen
+│       ├── auth.js            # SSO identity load + denied / master-key flows
 │       ├── db.js              # API client wrapper
 │       ├── router.js          # Hash-based router
-│       ├── components.js      # Shared UI helpers
-│       ├── dashboard.js
-│       ├── assets.js          # List, detail, create/edit
+│       ├── components.js      # Shared UI helpers (renderTable etc.)
+│       ├── utils.js           # esc, toast, modals, keyboard shortcuts
+│       ├── qr.js              # QR code rendering for asset tags
+│       ├── dashboard.js       # KPIs, status breakdown, recent activity
+│       ├── assets.js          # List, detail, create / edit forms
+│       ├── checkout.js        # Check-out / check-in modals + picker
 │       ├── people.js
 │       ├── categories.js
 │       ├── audits.js
 │       ├── reports.js
-│       └── settings.js
+│       ├── settings.js
+│       └── account.js         # 'Your account' page (signed-in user)
 ├── worker/
 │   ├── worker.js              # The whole API, one file
 │   ├── wrangler.toml          # Worker config (bindings, vars)
@@ -239,11 +244,12 @@ wsc-assets/
 │       ├── 0002_add_users.sql
 │       └── ...
 ├── scripts/
-│   ├── smoke-test.sh          # Post-deploy health check
-│   └── restore-db.sh          # Automated D1 restore
+│   ├── smoke-test.sh          # Post-deploy health check (run by CI)
+│   ├── restore-db.sh          # Automated D1 restore with safety export
+│   └── audit-bugs.cjs         # Ad-hoc scan for common bug classes
 ├── .github/workflows/
-│   ├── deploy.yml             # On push to main: build, migrate, deploy
-│   └── backup.yml             # Weekly D1 export
+│   ├── deploy.yml             # On push to main: build, migrate, deploy, smoke
+│   └── backup.yml             # Weekly D1 export to GHA artifact
 └── docs/
     ├── ARCHITECTURE.md        # This document
     ├── OPERATIONS.md          # Runbook
