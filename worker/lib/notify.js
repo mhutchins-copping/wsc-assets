@@ -118,6 +118,18 @@ function buildEmail(event, data) {
       details.push({ label: 'Role', value: data.user.role || 'user' });
       break;
 
+    case 'asset_issue_signed':
+      subject = `[WSC Assets] Receipt Signed — ${data.asset.asset_tag}`;
+      actionColor = '#10b981';
+      actionLabel = 'Receipt Acknowledged';
+      details.push({ label: 'Asset', value: `${data.asset.asset_tag} — ${data.asset.name}` });
+      if (data.asset.serial_number) details.push({ label: 'Serial', value: data.asset.serial_number });
+      details.push({ label: 'Signed by', value: data.person.name });
+      if (data.signature_name) details.push({ label: 'Typed name', value: data.signature_name });
+      if (data.signature_ip) details.push({ label: 'From IP', value: data.signature_ip });
+      assetUrl = baseUrl + data.asset.id;
+      break;
+
     default:
       throw new Error('Unknown event type: ' + event);
   }
@@ -279,5 +291,66 @@ async function logNotifyFailure(env, event, errorMsg) {
     ).run();
   } catch (e) {
     console.error('notify: failed to log notify failure:', e);
+  }
+}
+
+// Lower-level email sender for flows that aren't admin-broadcast (e.g.
+// the asset-issue signing link, which goes to the recipient). Shares the
+// Graph token path but skips the admin lookup + shared template.
+export async function sendMail(env, to, subject, html, text) {
+  const notifEnabled = env.NOTIFICATIONS_ENABLED;
+  if (notifEnabled === 'false') return { ok: false, skipped: 'disabled' };
+  if (notifEnabled === 'log') {
+    console.log('sendMail (log-only):', subject, 'to:', to);
+    return { ok: true, logged: true };
+  }
+
+  const sender = env.NOTIFICATION_SENDER;
+  if (!sender) {
+    console.error('sendMail: NOTIFICATION_SENDER not configured');
+    return { ok: false, error: 'NOTIFICATION_SENDER not configured' };
+  }
+
+  let token;
+  try {
+    token = await getGraphToken(env);
+  } catch (err) {
+    console.error('sendMail: failed to get Graph token:', err.message);
+    return { ok: false, error: err.message };
+  }
+
+  const recipients = (Array.isArray(to) ? to : [to])
+    .filter(Boolean)
+    .map(addr => ({ emailAddress: { address: addr } }));
+
+  if (recipients.length === 0) return { ok: false, error: 'no recipients' };
+
+  const graphBody = {
+    message: {
+      subject,
+      body: { contentType: 'HTML', content: html },
+      toRecipients: recipients,
+    },
+    saveToSentItems: 'true',
+  };
+
+  try {
+    const res = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}/sendMail`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(graphBody),
+    });
+    if (!res.ok) {
+      const errBody = await res.text();
+      console.error('sendMail: Graph sendMail failed:', res.status, errBody);
+      return { ok: false, error: `Graph ${res.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    console.error('sendMail: Graph fetch failed:', err);
+    return { ok: false, error: err.message };
   }
 }

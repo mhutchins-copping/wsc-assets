@@ -1,7 +1,7 @@
 // WSC IT Asset Management System — Cloudflare Worker API
 // Auth: SSO email identity (Cloudflare Access) mapped to internal users, or API key
 
-import { notify } from './lib/notify.js';
+import { notify, sendMail } from './lib/notify.js';
 
 export default {
   async fetch(request, env) {
@@ -32,6 +32,21 @@ async function dispatch(request, env) {
   if (url.pathname === '/api/auth/sign-out' && request.method === 'POST') {
     try { return await authSignOut(request, env); }
     catch (err) { return json({ error: err.message }, 500); }
+  }
+
+  // Public asset-issue signing page. Token-gated (no CF Access, no session
+  // auth) so the recipient can sign from any browser on any network.
+  if (url.pathname.startsWith('/sign/')) {
+    const token = url.pathname.slice('/sign/'.length);
+    if (request.method === 'GET') {
+      try { return await renderSigningPage(env, token); }
+      catch (err) { return new Response('Server error', { status: 500 }); }
+    }
+    if (request.method === 'POST') {
+      try { return await submitSignature(request, env, token); }
+      catch (err) { return json({ error: err.message }, 500); }
+    }
+    return new Response('Method not allowed', { status: 405 });
   }
 
   // User management routes (admin only, checked inside each handler)
@@ -583,6 +598,9 @@ async function route(request, env, url) {
   if (path.match(/^\/api\/assets\/([^/]+)\/maintenance$/) && method === 'POST') {
     return deny('assets.maintenance') || addMaintenance(request, env, path.match(/^\/api\/assets\/([^/]+)\/maintenance$/)[1]);
   }
+  if (path.match(/^\/api\/assets\/([^/]+)\/issue$/) && method === 'POST') {
+    return deny('assets.write') || issueAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/issue$/)[1]);
+  }
   if (path.match(/^\/api\/assets\/([^/]+)$/) && method === 'GET') {
     return deny('assets.read') || getAsset(env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
   }
@@ -602,6 +620,18 @@ async function route(request, env, url) {
   // AI-powered label extraction — admin/user; viewers don't get to enrol.
   if (path === '/api/assets/extract-from-image' && method === 'POST') {
     return deny('enrol.device') || extractFromImage(request, env);
+  }
+
+  // ── Asset Issues (signing receipts) ──
+  if (path === '/api/issues' && method === 'GET') return deny('assets.read') || listIssues(request, env, url);
+  if (path.match(/^\/api\/issues\/([^/]+)$/) && method === 'GET') {
+    return deny('assets.read') || getIssue(env, path.match(/^\/api\/issues\/([^/]+)$/)[1]);
+  }
+  if (path.match(/^\/api\/issues\/([^/]+)\/resend$/) && method === 'POST') {
+    return deny('assets.write') || resendIssue(request, env, path.match(/^\/api\/issues\/([^/]+)\/resend$/)[1]);
+  }
+  if (path.match(/^\/api\/issues\/([^/]+)\/cancel$/) && method === 'POST') {
+    return deny('assets.write') || cancelIssue(request, env, path.match(/^\/api\/issues\/([^/]+)\/cancel$/)[1]);
   }
 
   // ── People ──
@@ -1047,6 +1077,464 @@ async function enrolDevice(request, env) {
     asset_tag: tag,
     created: true
   }, 201);
+}
+
+// ─── Asset Issues ──────────────────────────────
+// Flow:
+//   1. Admin POSTs /api/assets/:id/issue → a pending issue row is created
+//      and an email with a signing link is sent to the recipient.
+//   2. Recipient GETs /sign/:token → gets a public signing page (not behind
+//      CF Access; token is the sole authorization).
+//   3. Recipient POSTs the signature to the same URL → row is marked signed
+//      and an admin notification fires.
+
+const ISSUE_EXPIRY_DAYS = 30;
+
+// Default terms shown to the recipient on the signing page. Snapshotted
+// onto each issue row at creation time so editing this template later
+// doesn't retroactively change what a past signer agreed to.
+const DEFAULT_ISSUE_TERMS =
+  'I acknowledge receipt of the asset described above. I agree to take ' +
+  'reasonable care of this device, use it for work purposes in line with ' +
+  'Walgett Shire Council policy, and return it to the IT team when I ' +
+  'leave the role or when requested. I will report any loss, theft, or ' +
+  'damage to the IT team as soon as practicable.';
+
+function generateIssueToken() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const b64 = btoa(String.fromCharCode.apply(null, bytes));
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function issueSigningUrl(token) {
+  return `https://api.it-wsc.com/sign/${token}`;
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+async function issueAsset(request, env, assetId) {
+  const data = await body(request);
+  const asset = await env.DB.prepare('SELECT * FROM assets WHERE id = ?').bind(assetId).first();
+  if (!asset) return json({ error: 'Asset not found' }, 404);
+
+  const personId = (data.person_id || '').trim();
+  if (!personId) return json({ error: 'person_id is required' }, 400);
+  const person = await env.DB.prepare('SELECT * FROM people WHERE id = ?').bind(personId).first();
+  if (!person) return json({ error: 'Person not found' }, 404);
+  if (!person.email) return json({ error: 'Person has no email address; add one before issuing.' }, 400);
+
+  const token = generateIssueToken();
+  const issueId = id();
+  const ts = now();
+  const expiresMs = Date.now() + ISSUE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+  const expiresAt = new Date(expiresMs).toISOString().slice(0, 19).replace('T', ' ');
+  const termsText = typeof data.terms_text === 'string' && data.terms_text.trim()
+    ? data.terms_text.trim()
+    : DEFAULT_ISSUE_TERMS;
+
+  const user = request._user;
+  const issuedByEmail = user ? user.email : null;
+
+  await env.DB.prepare(`
+    INSERT INTO asset_issues (
+      id, asset_id, person_id, token, issued_by_email, issued_at,
+      status, expires_at, terms_text, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+  `).bind(issueId, assetId, personId, token, issuedByEmail, ts, expiresAt, termsText, ts).run();
+
+  // Send the signing email. Tolerate failure here — the issue row still
+  // exists; admin can hit the resend endpoint.
+  const emailResult = await sendIssueEmail(env, {
+    asset, person, token, termsText, issuedBy: user
+  });
+
+  if (emailResult.ok) {
+    await env.DB.prepare('UPDATE asset_issues SET email_sent_at = ? WHERE id = ?').bind(ts, issueId).run();
+  }
+
+  await logActivity(env, {
+    asset_id: assetId,
+    action: 'issue_created',
+    details: `Signing link sent to ${person.name} <${person.email}>`,
+    performed_by: user ? (user.display_name || user.email) : null
+  });
+
+  return json({
+    id: issueId,
+    token,
+    status: 'pending',
+    email_sent: !!emailResult.ok,
+    email_error: emailResult.ok ? null : (emailResult.error || 'Email failed'),
+    signing_url: issueSigningUrl(token)
+  }, 201);
+}
+
+async function sendIssueEmail(env, { asset, person, token, termsText, issuedBy }) {
+  const signingUrl = issueSigningUrl(token);
+  const subject = `[WSC IT] Please acknowledge receipt of ${asset.asset_tag}`;
+  const actor = issuedBy ? (issuedBy.display_name || issuedBy.email) : 'WSC IT';
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">
+  <div style="max-width:600px;margin:0 auto;padding:20px">
+    <div style="background:linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);padding:24px;border-radius:12px 12px 0 0">
+      <h1 style="margin:0;color:#fff;font-size:20px;font-weight:600">WSC IT Asset Management</h1>
+      <p style="margin:4px 0 0;color:#bfdbfe;font-size:13px">Walgett Shire Council</p>
+    </div>
+    <div style="background:#fff;padding:28px 24px;border-radius:0 0 12px 12px;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+      <p style="margin:0 0 14px;font-size:15px;color:#111827">Hi ${escapeHtml(person.name)},</p>
+      <p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.55">
+        ${escapeHtml(actor)} has assigned you the following asset. Please review and sign the acknowledgement of receipt so we have a record of handover.
+      </p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0 20px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px">
+        <tr><td style="padding:10px 14px;color:#6b7280;font-size:13px;width:35%;border-bottom:1px solid #e5e7eb">Asset tag</td><td style="padding:10px 14px;color:#111827;font-size:14px;font-weight:600;border-bottom:1px solid #e5e7eb;font-family:monospace">${escapeHtml(asset.asset_tag)}</td></tr>
+        <tr><td style="padding:10px 14px;color:#6b7280;font-size:13px;border-bottom:1px solid #e5e7eb">Name</td><td style="padding:10px 14px;color:#111827;font-size:14px;border-bottom:1px solid #e5e7eb">${escapeHtml(asset.name)}</td></tr>
+        ${asset.serial_number ? `<tr><td style="padding:10px 14px;color:#6b7280;font-size:13px;border-bottom:1px solid #e5e7eb">Serial</td><td style="padding:10px 14px;color:#111827;font-size:14px;border-bottom:1px solid #e5e7eb;font-family:monospace">${escapeHtml(asset.serial_number)}</td></tr>` : ''}
+        ${asset.manufacturer || asset.model ? `<tr><td style="padding:10px 14px;color:#6b7280;font-size:13px">Make / model</td><td style="padding:10px 14px;color:#111827;font-size:14px">${escapeHtml(((asset.manufacturer || '') + ' ' + (asset.model || '')).trim())}</td></tr>` : ''}
+      </table>
+      <div style="text-align:center;margin:24px 0">
+        <a href="${signingUrl}" style="display:inline-block;background:#2563eb;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:600">Review and sign</a>
+      </div>
+      <p style="margin:20px 0 0;font-size:12px;color:#6b7280;line-height:1.5">
+        This link is unique to you and will expire in ${ISSUE_EXPIRY_DAYS} days. If you didn't expect this email, please let IT know.
+      </p>
+    </div>
+    <p style="text-align:center;color:#9ca3af;font-size:11px;margin:18px 0 0">WSC IT Asset Management — automated receipt request</p>
+  </div>
+</body></html>`;
+  const text = `Hi ${person.name},\n\n${actor} has assigned you ${asset.asset_tag} — ${asset.name}. Please acknowledge receipt by signing at:\n\n${signingUrl}\n\nThis link expires in ${ISSUE_EXPIRY_DAYS} days.`;
+  return await sendMail(env, person.email, subject, html, text);
+}
+
+async function listIssues(request, env, url) {
+  const params = url.searchParams;
+  const status = params.get('status') || '';
+  const limit = Math.min(200, Math.max(1, parseInt(params.get('limit')) || 100));
+
+  let whereClause = '';
+  const binds = [];
+  if (status) { whereClause = 'WHERE i.status = ?'; binds.push(status); }
+
+  const result = await env.DB.prepare(`
+    SELECT i.id, i.asset_id, i.person_id, i.token, i.issued_by_email,
+           i.issued_at, i.email_sent_at, i.signed_at, i.signature_name,
+           i.status, i.expires_at,
+           a.asset_tag, a.name AS asset_name, a.serial_number,
+           p.name AS person_name, p.email AS person_email, p.department
+    FROM asset_issues i
+    JOIN assets a ON a.id = i.asset_id
+    JOIN people p ON p.id = i.person_id
+    ${whereClause}
+    ORDER BY i.issued_at DESC
+    LIMIT ?
+  `).bind(...binds, limit).all();
+
+  return json({ data: result.results || [] });
+}
+
+async function getIssue(env, issueId) {
+  const row = await env.DB.prepare(`
+    SELECT i.*, a.asset_tag, a.name AS asset_name, a.serial_number,
+           p.name AS person_name, p.email AS person_email, p.department
+    FROM asset_issues i
+    JOIN assets a ON a.id = i.asset_id
+    JOIN people p ON p.id = i.person_id
+    WHERE i.id = ?
+  `).bind(issueId).first();
+  if (!row) return json({ error: 'Issue not found' }, 404);
+  return json(row);
+}
+
+async function resendIssue(request, env, issueId) {
+  const row = await env.DB.prepare(`
+    SELECT i.*, a.asset_tag, a.name AS asset_name, a.serial_number,
+           a.manufacturer, a.model,
+           p.name AS person_name, p.email AS person_email
+    FROM asset_issues i
+    JOIN assets a ON a.id = i.asset_id
+    JOIN people p ON p.id = i.person_id
+    WHERE i.id = ?
+  `).bind(issueId).first();
+  if (!row) return json({ error: 'Issue not found' }, 404);
+  if (row.status !== 'pending') return json({ error: 'Issue is not pending' }, 400);
+  if (!row.person_email) return json({ error: 'Recipient has no email' }, 400);
+
+  const asset = {
+    asset_tag: row.asset_tag, name: row.asset_name,
+    serial_number: row.serial_number, manufacturer: row.manufacturer, model: row.model
+  };
+  const person = { name: row.person_name, email: row.person_email };
+  const user = request._user;
+
+  const result = await sendIssueEmail(env, {
+    asset, person, token: row.token, termsText: row.terms_text, issuedBy: user
+  });
+
+  if (!result.ok) return json({ error: result.error || 'Email failed' }, 500);
+
+  await env.DB.prepare('UPDATE asset_issues SET email_sent_at = ?, updated_at = ? WHERE id = ?')
+    .bind(now(), now(), issueId).run();
+
+  await logActivity(env, {
+    asset_id: row.asset_id,
+    action: 'issue_resent',
+    details: `Resent signing link to ${person.name} <${person.email}>`,
+    performed_by: user ? (user.display_name || user.email) : null
+  });
+
+  return json({ ok: true });
+}
+
+async function cancelIssue(request, env, issueId) {
+  const row = await env.DB.prepare('SELECT * FROM asset_issues WHERE id = ?').bind(issueId).first();
+  if (!row) return json({ error: 'Issue not found' }, 404);
+  if (row.status === 'signed') return json({ error: 'Cannot cancel a signed issue' }, 400);
+
+  await env.DB.prepare("UPDATE asset_issues SET status = 'cancelled', updated_at = ? WHERE id = ?")
+    .bind(now(), issueId).run();
+
+  const user = request._user;
+  await logActivity(env, {
+    asset_id: row.asset_id,
+    action: 'issue_cancelled',
+    details: 'Signing link cancelled',
+    performed_by: user ? (user.display_name || user.email) : null
+  });
+
+  return json({ ok: true });
+}
+
+// ─── Public signing page (no auth; token is the authorization) ───
+
+async function loadIssueByToken(env, token) {
+  if (!token) return null;
+  return await env.DB.prepare(`
+    SELECT i.*, a.asset_tag, a.name AS asset_name, a.serial_number,
+           a.manufacturer, a.model,
+           p.name AS person_name, p.email AS person_email, p.department
+    FROM asset_issues i
+    JOIN assets a ON a.id = i.asset_id
+    JOIN people p ON p.id = i.person_id
+    WHERE i.token = ?
+  `).bind(token).first();
+}
+
+function signingHtmlResponse(body, status) {
+  return new Response(body, {
+    status: status || 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'no-referrer'
+    }
+  });
+}
+
+function signingStatusPage(title, message, tone) {
+  const color = tone === 'ok' ? '#10b981' : tone === 'warn' ? '#f59e0b' : '#ef4444';
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} — WSC Assets</title>
+<style>body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f3f4f6;color:#111827;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.card{max-width:480px;width:100%;background:#fff;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.08);padding:32px;text-align:center}
+.dot{width:56px;height:56px;border-radius:50%;background:${color}22;color:${color};display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 16px}
+h1{font-size:20px;margin:0 0 8px}p{margin:0;color:#4b5563;font-size:14px;line-height:1.55}</style>
+</head><body><div class="card"><div class="dot">${tone === 'ok' ? '✓' : '!'}</div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></div></body></html>`;
+}
+
+async function renderSigningPage(env, token) {
+  const row = await loadIssueByToken(env, token);
+  if (!row) return signingHtmlResponse(signingStatusPage('Link not found', 'This signing link is invalid or has been removed.', 'error'), 404);
+
+  if (row.status === 'cancelled') {
+    return signingHtmlResponse(signingStatusPage('Link cancelled', 'This signing link has been cancelled. Contact IT if this is unexpected.', 'warn'), 410);
+  }
+  if (row.status === 'signed') {
+    return signingHtmlResponse(signingStatusPage('Already signed', `Thanks — this receipt was signed on ${row.signed_at || 'a previous date'}. Nothing more to do.`, 'ok'), 200);
+  }
+  if (row.expires_at) {
+    const exp = new Date(row.expires_at.replace(' ', 'T') + 'Z').getTime();
+    if (!isNaN(exp) && Date.now() > exp) {
+      await env.DB.prepare("UPDATE asset_issues SET status = 'expired' WHERE id = ? AND status = 'pending'").bind(row.id).run();
+      return signingHtmlResponse(signingStatusPage('Link expired', 'This signing link has expired. Contact IT to have a new one sent.', 'warn'), 410);
+    }
+  }
+
+  const assetLine = `${row.asset_tag} — ${row.asset_name}`;
+  const makeModel = ((row.manufacturer || '') + ' ' + (row.model || '')).trim();
+
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Acknowledge receipt — WSC Assets</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f3f4f6;color:#111827;min-height:100vh;padding:16px}
+  .wrap{max-width:640px;margin:0 auto}
+  .header{background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff;padding:20px;border-radius:12px 12px 0 0}
+  .header h1{margin:0;font-size:18px;font-weight:600}
+  .header p{margin:2px 0 0;font-size:12px;color:#bfdbfe}
+  .card{background:#fff;padding:22px 20px;border-radius:0 0 12px 12px;box-shadow:0 2px 6px rgba(0,0,0,.06)}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #f3f4f6;font-size:14px}
+  .row:last-child{border-bottom:0}.k{color:#6b7280}.v{color:#111827;font-weight:500;text-align:right;max-width:60%;word-break:break-word}
+  .mono{font-family:'JetBrains Mono',Menlo,Consolas,monospace}
+  .terms{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin:18px 0 12px;font-size:13px;line-height:1.55;color:#374151;white-space:pre-wrap}
+  label{display:block;font-size:13px;color:#374151;margin:14px 0 6px;font-weight:500}
+  input[type=text]{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:15px;font-family:inherit}
+  input[type=text]:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px #2563eb22}
+  .pad-wrap{border:1px dashed #9ca3af;border-radius:8px;background:#fff;touch-action:none;position:relative}
+  canvas{display:block;width:100%;height:180px;border-radius:8px;cursor:crosshair;touch-action:none}
+  .pad-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#9ca3af;font-size:13px;pointer-events:none}
+  .pad-actions{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:8px}
+  .pad-actions button{background:transparent;border:0;color:#6b7280;font-size:13px;cursor:pointer;padding:6px;text-decoration:underline}
+  .submit{width:100%;margin-top:18px;padding:14px;background:#2563eb;color:#fff;border:0;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer}
+  .submit:disabled{background:#9ca3af;cursor:not-allowed}
+  .submit.loading{opacity:.7}
+  .err{color:#dc2626;font-size:13px;margin-top:8px;display:none}
+  .footer{margin:14px 0 0;text-align:center;color:#9ca3af;font-size:11px}
+  .ok{display:none;text-align:center;padding:40px 20px}.ok .tick{width:56px;height:56px;border-radius:50%;background:#10b98122;color:#10b981;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 12px}
+  .ok h2{margin:0 0 6px;font-size:18px}.ok p{margin:0;color:#4b5563;font-size:14px}
+  @media (max-width:380px){canvas{height:160px}}
+</style>
+</head><body>
+<div class="wrap">
+  <div class="header">
+    <h1>Acknowledge receipt</h1>
+    <p>Walgett Shire Council — IT Asset Register</p>
+  </div>
+  <div class="card" id="form-card">
+    <p style="margin:0 0 14px;font-size:14px;color:#4b5563">Hi <strong>${escapeHtml(row.person_name)}</strong>, please review the asset below and sign to confirm receipt.</p>
+    <div class="row"><span class="k">Asset tag</span><span class="v mono">${escapeHtml(row.asset_tag)}</span></div>
+    <div class="row"><span class="k">Name</span><span class="v">${escapeHtml(row.asset_name)}</span></div>
+    ${row.serial_number ? `<div class="row"><span class="k">Serial</span><span class="v mono">${escapeHtml(row.serial_number)}</span></div>` : ''}
+    ${makeModel ? `<div class="row"><span class="k">Make / model</span><span class="v">${escapeHtml(makeModel)}</span></div>` : ''}
+    <div class="terms">${escapeHtml(row.terms_text || DEFAULT_ISSUE_TERMS)}</div>
+    <form id="sign-form" onsubmit="return submitSig(event)">
+      <label for="typed-name">Full name</label>
+      <input id="typed-name" type="text" required autocomplete="name" placeholder="Type your name">
+      <label>Signature — draw below</label>
+      <div class="pad-wrap"><canvas id="pad" width="600" height="180"></canvas><span class="pad-hint" id="pad-hint">Draw with your finger or mouse</span></div>
+      <div class="pad-actions"><span style="font-size:12px;color:#6b7280">Your IP address is recorded with the signature.</span><button type="button" id="clear-btn" onclick="clearPad()">Clear</button></div>
+      <button type="submit" class="submit" id="submit-btn">I acknowledge — submit</button>
+      <div class="err" id="err"></div>
+    </form>
+  </div>
+  <div class="card ok" id="ok-card">
+    <div class="tick">✓</div>
+    <h2>Thank you</h2>
+    <p>Your receipt for <strong>${escapeHtml(assetLine)}</strong> has been recorded. You can close this page.</p>
+  </div>
+  <p class="footer">If you didn't expect this, contact IT straight away.</p>
+</div>
+<script>
+(function(){
+  var canvas = document.getElementById('pad');
+  var hint = document.getElementById('pad-hint');
+  var ctx = canvas.getContext('2d');
+  var drawing = false, dirty = false, lastX = 0, lastY = 0;
+  function resize(){
+    var rect = canvas.getBoundingClientRect();
+    var ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.round(rect.width * ratio);
+    canvas.height = Math.round(rect.height * ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111827';
+  }
+  resize(); window.addEventListener('resize', function(){ var data = canvas.toDataURL(); resize(); var img = new Image(); img.onload = function(){ ctx.drawImage(img, 0, 0, canvas.width / (window.devicePixelRatio||1), canvas.height / (window.devicePixelRatio||1)); }; img.src = data; });
+  function pos(e){
+    var rect = canvas.getBoundingClientRect();
+    var x, y;
+    if (e.touches && e.touches[0]) { x = e.touches[0].clientX - rect.left; y = e.touches[0].clientY - rect.top; }
+    else { x = e.clientX - rect.left; y = e.clientY - rect.top; }
+    return { x: x, y: y };
+  }
+  function start(e){ e.preventDefault(); drawing = true; var p = pos(e); lastX = p.x; lastY = p.y; if(hint){ hint.style.display = 'none'; } }
+  function move(e){ if(!drawing) return; e.preventDefault(); var p = pos(e); ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(p.x, p.y); ctx.stroke(); lastX = p.x; lastY = p.y; dirty = true; }
+  function end(e){ if(drawing){ e.preventDefault(); } drawing = false; }
+  canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move); canvas.addEventListener('mouseup', end); canvas.addEventListener('mouseleave', end);
+  canvas.addEventListener('touchstart', start, {passive:false}); canvas.addEventListener('touchmove', move, {passive:false}); canvas.addEventListener('touchend', end, {passive:false});
+  window.clearPad = function(){ resize(); dirty = false; if(hint){ hint.style.display = ''; } };
+  window.submitSig = function(ev){
+    ev.preventDefault();
+    var name = document.getElementById('typed-name').value.trim();
+    var err = document.getElementById('err');
+    err.style.display = 'none';
+    if (!name) { err.textContent = 'Please type your full name.'; err.style.display = 'block'; return false; }
+    if (!dirty) { err.textContent = 'Please draw your signature in the box.'; err.style.display = 'block'; return false; }
+    var btn = document.getElementById('submit-btn');
+    btn.disabled = true; btn.classList.add('loading'); btn.textContent = 'Submitting...';
+    var dataUrl = canvas.toDataURL('image/png');
+    fetch(window.location.href, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ signature_name: name, signature_data_url: dataUrl }) })
+      .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, data: j }; }); })
+      .then(function(res){
+        if (!res.ok) throw new Error((res.data && res.data.error) || 'Submission failed');
+        document.getElementById('form-card').style.display = 'none';
+        document.getElementById('ok-card').style.display = 'block';
+      })
+      .catch(function(e){ err.textContent = e.message || 'Something went wrong.'; err.style.display = 'block'; btn.disabled = false; btn.classList.remove('loading'); btn.textContent = 'I acknowledge — submit'; });
+    return false;
+  };
+})();
+</script>
+</body></html>`;
+
+  return signingHtmlResponse(html);
+}
+
+async function submitSignature(request, env, token) {
+  const row = await loadIssueByToken(env, token);
+  if (!row) return json({ error: 'Invalid token' }, 404);
+  if (row.status !== 'pending') {
+    return json({ error: row.status === 'signed' ? 'Already signed' : 'Link is no longer active' }, 409);
+  }
+  if (row.expires_at) {
+    const exp = new Date(row.expires_at.replace(' ', 'T') + 'Z').getTime();
+    if (!isNaN(exp) && Date.now() > exp) {
+      await env.DB.prepare("UPDATE asset_issues SET status = 'expired' WHERE id = ?").bind(row.id).run();
+      return json({ error: 'Link has expired' }, 410);
+    }
+  }
+
+  const data = await body(request);
+  const sigUrl = (data.signature_data_url || '').trim();
+  const sigName = (data.signature_name || '').trim();
+  if (!sigUrl || !sigUrl.startsWith('data:image/')) {
+    return json({ error: 'Invalid signature image' }, 400);
+  }
+  // Cap size — 200KB is plenty for a 600x180 canvas PNG.
+  if (sigUrl.length > 200 * 1024) return json({ error: 'Signature too large' }, 413);
+  if (!sigName) return json({ error: 'Typed name is required' }, 400);
+
+  const ip = request.headers.get('CF-Connecting-IP') || null;
+  const ts = now();
+
+  await env.DB.prepare(`
+    UPDATE asset_issues
+    SET status = 'signed', signed_at = ?, signature_data_url = ?,
+        signature_name = ?, signature_ip = ?, updated_at = ?
+    WHERE id = ?
+  `).bind(ts, sigUrl, sigName, ip, ts, row.id).run();
+
+  await logActivity(env, {
+    asset_id: row.asset_id,
+    action: 'issue_signed',
+    details: `Signed by ${row.person_name} (${sigName}) from ${ip || 'unknown IP'}`,
+    performed_by: row.person_name
+  });
+
+  try {
+    await notify(env, 'asset_issue_signed', {
+      asset: { id: row.asset_id, asset_tag: row.asset_tag, name: row.asset_name, serial_number: row.serial_number },
+      person: { name: row.person_name, email: row.person_email },
+      signature_name: sigName,
+      signature_ip: ip
+    });
+  } catch (e) { console.error('notify error (issue_signed):', e); }
+
+  return json({ ok: true });
 }
 
 async function updateAsset(request, env, assetId) {

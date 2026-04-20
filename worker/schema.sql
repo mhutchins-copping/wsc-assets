@@ -134,6 +134,28 @@ CREATE TABLE IF NOT EXISTS users (
   last_login TEXT
 );
 
+-- Asset receipt / acknowledgement records. Recipient signs via a public,
+-- token-gated page hosted on api.it-wsc.com so they don't need to complete
+-- SSO from their personal device.
+CREATE TABLE IF NOT EXISTS asset_issues (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  asset_id TEXT NOT NULL REFERENCES assets(id),
+  person_id TEXT NOT NULL REFERENCES people(id),
+  token TEXT UNIQUE NOT NULL,
+  issued_by_email TEXT,
+  issued_at TEXT NOT NULL DEFAULT (datetime('now')),
+  email_sent_at TEXT,
+  signed_at TEXT,
+  signature_data_url TEXT,
+  signature_name TEXT,
+  signature_ip TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  expires_at TEXT,
+  terms_text TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_assets_status ON assets(status);
 CREATE INDEX IF NOT EXISTS idx_assets_category ON assets(category_id);
@@ -153,3 +175,6 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_people_source ON people(source_system);
 CREATE INDEX IF NOT EXISTS idx_people_email ON people(LOWER(email));
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_asset_issues_asset ON asset_issues(asset_id);
+CREATE INDEX IF NOT EXISTS idx_asset_issues_person ON asset_issues(person_id);
+CREATE INDEX IF NOT EXISTS idx_asset_issues_status ON asset_issues(status);
