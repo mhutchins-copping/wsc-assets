@@ -18,7 +18,10 @@ function renderTable(opts) {
     var cls = sorted ? ' class="sorted"' : '';
     var arrow = sorted ? (sortDir === 'asc' ? ' <span class="sort-arrow">&#9650;</span>' : ' <span class="sort-arrow">&#9660;</span>') : '';
     var onclick = col.sortable && onSort ? ' onclick="' + onSort + '(\'' + col.key + '\')"' : '';
-    html += '<th' + cls + onclick + '>' + esc(col.label) + arrow + '</th>';
+    // labelHtml lets callers inject controls (e.g. a select-all checkbox)
+    // into the header cell. Falls back to the escaped label otherwise.
+    var labelMarkup = col.labelHtml != null ? col.labelHtml : esc(col.label);
+    html += '<th' + cls + onclick + '>' + labelMarkup + arrow + '</th>';
   });
 
   html += '</tr></thead><tbody>';

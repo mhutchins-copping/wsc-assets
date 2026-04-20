@@ -15,6 +15,14 @@ var _people = null;
 var _manufacturers = [];
 var _models = [];
 
+// Multi-select for batch label printing. Keyed by asset id; value keeps
+// just the fields the label-sheet renderer needs so switching pages or
+// tightening filters doesn't invalidate an in-progress selection.
+var assetSelection = new Map();
+// Minimal current-page snapshot (id/tag/name) so selecting a row doesn't
+// require another API round-trip.
+var _lastAssetPage = [];
+
 Router.register('/assets', function(param) {
   if (param === 'new') {
     renderAssetForm();
@@ -50,10 +58,12 @@ function renderAssetList() {
     + '<button class="btn primary sm" onclick="navigate(\'#/assets/new\')">+ New Asset</button>'
     + '</div></div>'
     + '<div id="asset-filters"></div>'
+    + '<div id="asset-selection-bar" style="display:none"></div>'
     + '<div id="asset-table">' + skeleton(8) + '</div>'
     + '<div id="asset-pagination"></div>';
 
   renderAssetFilters();
+  renderAssetSelectionBar();
   loadAssets();
 }
 
@@ -131,7 +141,18 @@ async function loadAssets() {
       if (a.model && !mdSet[a.model]) { _models.push(a.model); mdSet[a.model] = 1; }
     });
 
+    var pageAllSelected = (result.data || []).length > 0
+      && (result.data || []).every(function(r) { return assetSelection.has(r.id); });
     var columns = [
+      // Selection checkbox. stopPropagation keeps the row-click (navigate to
+      // detail) from firing when the user only wants to tick the box.
+      { key: '__sel', label: '',
+        labelHtml: '<input type="checkbox" ' + (pageAllSelected ? 'checked ' : '') + 'onclick="event.stopPropagation();toggleAssetPageSelection(this.checked)" title="Select all on this page">',
+        render: function(r) {
+          var checked = assetSelection.has(r.id) ? ' checked' : '';
+          return '<input type="checkbox" class="asset-select" data-id="' + esc(r.id) + '"' + checked + ' onclick="event.stopPropagation();toggleAssetSelection(\'' + esc(r.id) + '\')">';
+        }
+      },
       { key: 'asset_tag', label: 'Tag', sortable: true, mono: true },
       { key: 'name', label: 'Name', sortable: true },
       { key: 'serial_number', label: 'Serial', mono: true },
@@ -141,6 +162,11 @@ async function loadAssets() {
       { key: 'assigned_to_name', label: 'Assigned To', sortable: true },
       { key: 'updated_at', label: 'Updated', sortable: true, render: function(r) { return '<span style="font-family:var(--mono);font-size:11px;color:var(--text3)">' + fmtDate(r.updated_at) + '</span>'; } }
     ];
+    // Stash the current page so toggleAssetSelection can look up tag/name
+    // without a re-fetch. Only the fields the label sheet needs get kept.
+    _lastAssetPage = (result.data || []).map(function(r) {
+      return { id: r.id, asset_tag: r.asset_tag, name: r.name };
+    });
 
     tableEl.innerHTML = renderTable({
       columns: columns,
@@ -159,6 +185,8 @@ async function loadAssets() {
       total: result.total,
       onPage: 'assetPage'
     });
+
+    renderAssetSelectionBar();
   } catch(e) {
     tableEl.innerHTML = '<div class="table-empty">Failed to load assets</div>';
   }
@@ -166,6 +194,74 @@ async function loadAssets() {
 
 function viewAsset(id) { navigate('#/assets/' + id); }
 window.viewAsset = viewAsset;
+
+// ─── Multi-select helpers ─────────────────────
+
+function toggleAssetSelection(id) {
+  if (assetSelection.has(id)) {
+    assetSelection.delete(id);
+  } else {
+    var rec = _lastAssetPage.find(function(r) { return r.id === id; });
+    if (rec) assetSelection.set(id, rec);
+  }
+  renderAssetSelectionBar();
+  // Keep the select-all checkbox in the header in sync.
+  var headerBox = document.querySelector('#asset-table thead input[type="checkbox"]');
+  if (headerBox) {
+    var allSelected = _lastAssetPage.length > 0
+      && _lastAssetPage.every(function(r) { return assetSelection.has(r.id); });
+    headerBox.checked = allSelected;
+  }
+}
+window.toggleAssetSelection = toggleAssetSelection;
+
+function toggleAssetPageSelection(checked) {
+  _lastAssetPage.forEach(function(r) {
+    if (checked) assetSelection.set(r.id, r);
+    else assetSelection.delete(r.id);
+  });
+  document.querySelectorAll('#asset-table tbody input.asset-select').forEach(function(cb) {
+    cb.checked = checked;
+  });
+  renderAssetSelectionBar();
+}
+window.toggleAssetPageSelection = toggleAssetPageSelection;
+
+function clearAssetSelection() {
+  assetSelection.clear();
+  document.querySelectorAll('#asset-table input[type="checkbox"]').forEach(function(cb) {
+    cb.checked = false;
+  });
+  renderAssetSelectionBar();
+}
+window.clearAssetSelection = clearAssetSelection;
+
+function renderAssetSelectionBar() {
+  var bar = document.getElementById('asset-selection-bar');
+  if (!bar) return;
+  var n = assetSelection.size;
+  if (n === 0) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  bar.style.display = 'flex';
+  bar.style.alignItems = 'center';
+  bar.style.gap = '10px';
+  bar.style.padding = '8px 12px';
+  bar.style.background = 'var(--surface2, #f5f5f5)';
+  bar.style.border = '1px solid var(--border, #e5e5e5)';
+  bar.style.borderRadius = '6px';
+  bar.style.margin = '8px 0';
+  bar.innerHTML = '<span style="font-size:13px"><strong>' + n + '</strong> selected</span>'
+    + '<button class="btn primary sm" onclick="printSelectedLabels()">Print selected</button>'
+    + '<button class="btn sm" onclick="clearAssetSelection()">Clear</button>';
+}
+window.renderAssetSelectionBar = renderAssetSelectionBar;
+
+async function printSelectedLabels() {
+  if (assetSelection.size === 0) return;
+  // Values are already id/tag/name records — no extra fetch needed.
+  var assets = Array.from(assetSelection.values());
+  await renderLabelSheet(assets);
+}
+window.printSelectedLabels = printSelectedLabels;
 
 async function exportAssetCSV() {
   if (!API.baseUrl) { toast('Configure API first', 'error'); return; }
