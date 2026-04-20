@@ -65,7 +65,6 @@ being unavailable:
 | Microsoft Entra ID   | Identity provider (SSO + directory sync)   | High        |
 | Microsoft Graph API  | Staff directory sync, email notifications  | Medium      |
 | GitHub               | Source code, CI/CD, backup artifact host   | High        |
-| Anthropic API        | AI-assisted label scanning (optional)      | Low         |
 
 "High" = system is unusable if this is unavailable. "Medium" = system
 functional but a feature is degraded. "Low" = optional feature only.

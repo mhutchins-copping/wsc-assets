@@ -183,45 +183,6 @@ var API = {
     } catch(e) {
       throw e;
     }
-  },
-
-  // ─── AI Label Extraction
-  extractFromImage: async function(file) {
-    // For image upload, we need to use XMLHttpRequest to track progress and handle errors
-    return new Promise(function(resolve, reject) {
-      var xhr = new XMLHttpRequest();
-      var masterKey = window.Auth && window.Auth._masterKey ? window.Auth._masterKey : '';
-      var apiKey = masterKey || API.apiKey;
-
-      xhr.open('POST', API.baseUrl + '/api/assets/extract-from-image', true);
-      xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg');
-      if (apiKey) {
-        xhr.setRequestHeader('X-Api-Key', apiKey);
-      }
-
-      xhr.onload = function() {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            resolve(JSON.parse(xhr.responseText));
-          } catch(e) {
-            reject(new Error('Invalid response'));
-          }
-        } else {
-          try {
-            var err = JSON.parse(xhr.responseText);
-            reject(new Error(err.error || 'Request failed (' + xhr.status + ')'));
-          } catch(e) {
-            reject(new Error('Request failed (' + xhr.status + ')'));
-          }
-        }
-      };
-
-      xhr.onerror = function() {
-        reject(new Error('Network error'));
-      };
-
-      xhr.send(file);
-    });
   }
 };
 

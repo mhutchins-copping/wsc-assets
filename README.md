@@ -63,8 +63,6 @@ quick-reference.
 - **Floor-walk audits** — scan assets at a site, track found / missing /
   unexpected, produce a summary.
 - **CSV import / export** for bulk operations.
-- **AI-assisted label scanning** (optional) — photograph a device label
-  and the app prefills the form.
 - **PowerShell enrolment** for hardware specs. Two entry points:
   - **Password-gated web launcher** at `https://api.it-wsc.com/enrol` —
     visit the URL on the new PC, type the shared `ENROL_PASSWORD`, and
