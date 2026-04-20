@@ -504,21 +504,25 @@ async function renderLabelSheet(assets) {
     +   'grid-template-columns:repeat(' + s.cols + ',' + s.cellWidthMm + 'mm);'
     +   'grid-auto-rows:' + s.cellHeightMm + 'mm;'
     +   'column-gap:' + s.colGapMm + 'mm;row-gap:' + s.rowGapMm + 'mm}'
-    + '.lbl{display:flex;align-items:center;gap:3mm;padding:2mm;box-sizing:border-box;overflow:hidden;border:1px dashed #ddd;break-inside:avoid}'
+    // Cut guides: darkish dashed border that prints cleanly. Applied via the
+    // .guides body class so the toolbar toggle can flip it without rerender.
+    + '.lbl{display:flex;align-items:center;gap:3mm;padding:2mm;box-sizing:border-box;overflow:hidden;break-inside:avoid;border:1px dashed transparent}'
+    + 'body.guides .lbl{border-color:#666;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
     + '.lbl-qr{width:28mm;height:28mm;flex-shrink:0;display:block}'
     + '.lbl-text{flex:1;min-width:0;line-height:1.15}'
     + '.lbl-tag{font-family:"JetBrains Mono",Menlo,Consolas,monospace;font-weight:700;font-size:10pt}'
     + '.lbl-name{font-size:7.5pt;color:#333;margin-top:1mm;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}'
     + '.lbl-org{font-size:6.5pt;color:#888;margin-top:1.5mm;font-family:"JetBrains Mono",Menlo,Consolas,monospace;letter-spacing:.5px}'
-    + '@media print { .toolbar{display:none} .lbl{border:none} .sheet{padding:' + s.pageMarginTopMm + 'mm ' + s.pageMarginLeftMm + 'mm} }';
+    + '@media print { .toolbar{display:none} .sheet{padding:' + s.pageMarginTopMm + 'mm ' + s.pageMarginLeftMm + 'mm} }';
 
   var perSheet = s.cols * s.rows;
   var pageCount = Math.ceil(assets.length / perSheet);
-  var html = '<!DOCTYPE html><html><head><title>WSC Asset Labels</title><meta charset="utf-8"><style>' + css + '</style></head><body>'
+  var html = '<!DOCTYPE html><html><head><title>WSC Asset Labels</title><meta charset="utf-8"><style>' + css + '</style></head><body class="guides">'
     + '<div class="toolbar">'
     +   '<div class="count">' + assets.length + ' label' + (assets.length === 1 ? '' : 's')
     +     ' &middot; ' + s.cols + '&times;' + s.rows + ' per A4'
     +     ' &middot; ' + pageCount + ' page' + (pageCount === 1 ? '' : 's') + '</div>'
+    +   '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;user-select:none"><input type="checkbox" checked onchange="document.body.classList.toggle(\'guides\',this.checked)"> Cut guides</label>'
     +   '<button onclick="window.print()">Print</button>'
     +   '<button onclick="window.close()">Close</button>'
     + '</div>'
