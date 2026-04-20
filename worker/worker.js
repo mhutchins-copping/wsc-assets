@@ -557,6 +557,14 @@ async function route(request, env, url) {
   if (path === '/api/assets' && method === 'GET') return deny('assets.read') || listAssets(request, env, url);
   if (path === '/api/assets' && method === 'POST') return deny('assets.write') || createAsset(request, env);
 
+  // Idempotent hardware enrolment: looks up by serial, updates or creates.
+  // Called by the PowerShell enrolment script running on each endpoint; the
+  // shared API_KEY authenticates as role:admin, so the same permission gate
+  // as the manual AI-extract path applies.
+  if (path === '/api/assets/enrol' && method === 'POST') {
+    return deny('enrol.device') || enrolDevice(request, env);
+  }
+
   if (path.match(/^\/api\/assets\/next-tag\/(.+)$/) && method === 'GET') {
     return deny('assets.read') || nextTag(env, path.match(/^\/api\/assets\/next-tag\/(.+)$/)[1]);
   }
@@ -944,6 +952,101 @@ async function createAsset(request, env) {
   } catch (e) { console.error('notify error:', e); }
 
   return json({ id: assetId, asset_tag: tag }, 201);
+}
+
+// Idempotent device enrolment. Serial number is the natural dedup key — BIOS
+// serials are stable per physical machine, so re-running the PowerShell
+// script from the same laptop updates in place instead of minting duplicate
+// asset tags. Existing human-entered fields (name, assignment, purchase data)
+// are preserved; only the auto-collected hardware specs get overwritten.
+async function enrolDevice(request, env) {
+  const data = await body(request);
+  const serial = (data.serial_number || '').trim();
+  if (!serial) return json({ error: 'serial_number is required' }, 400);
+
+  const ramGb = data.ram_gb != null ? parseInt(data.ram_gb) : null;
+  const diskGb = data.disk_gb != null ? parseInt(data.disk_gb) : null;
+
+  const user = request._user;
+  const performed_by = user ? (user.display_name || user.email) : 'Enrolment Script';
+
+  const existing = await env.DB.prepare('SELECT * FROM assets WHERE serial_number = ?').bind(serial).first();
+
+  if (existing) {
+    const ts = now();
+    await env.DB.prepare(`
+      UPDATE assets SET
+        hostname = ?, os = ?, cpu = ?, ram_gb = ?, disk_gb = ?,
+        mac_address = ?, ip_address = ?, enrolled_user = ?,
+        manufacturer = COALESCE(?, manufacturer),
+        model = COALESCE(?, model),
+        updated_at = ?
+      WHERE id = ?
+    `).bind(
+      data.hostname || null, data.os || null, data.cpu || null, ramGb, diskGb,
+      data.mac_address || null, data.ip_address || null, data.enrolled_user || null,
+      data.manufacturer || null, data.model || null,
+      ts, existing.id
+    ).run();
+
+    await logActivity(env, {
+      asset_id: existing.id,
+      action: 'enrol',
+      details: `Refreshed specs via enrolment script${data.hostname ? ` (${data.hostname})` : ''}`,
+      performed_by
+    });
+
+    return json({
+      id: existing.id,
+      asset_tag: existing.asset_tag,
+      created: false
+    });
+  }
+
+  // New device. Default category = laptop unless the script says otherwise
+  // (it auto-detects from chassis type and sends a category_id when known).
+  const categoryId = data.category_id || 'cat_laptop';
+  const assetId = id();
+  const tag = await generateTag(env, categoryId);
+  const name = (data.name || data.hostname
+    || ((data.manufacturer || '') + ' ' + (data.model || '')).trim()
+    || 'Enrolled device').trim();
+  const ts = now();
+
+  await env.DB.prepare(`
+    INSERT INTO assets (
+      id, asset_tag, name, serial_number, category_id, manufacturer, model, status,
+      hostname, os, cpu, ram_gb, disk_gb, mac_address, ip_address, enrolled_user,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    assetId, tag, name, serial, categoryId,
+    data.manufacturer || null, data.model || null, 'available',
+    data.hostname || null, data.os || null, data.cpu || null, ramGb, diskGb,
+    data.mac_address || null, data.ip_address || null, data.enrolled_user || null,
+    ts, ts
+  ).run();
+
+  await logActivity(env, {
+    asset_id: assetId,
+    action: 'create',
+    details: `Enrolled ${tag}: ${name} (serial ${serial})`,
+    performed_by
+  });
+
+  try {
+    await notify(env, 'asset_created', {
+      asset: { id: assetId, asset_tag: tag, name },
+      actor: performed_by,
+      actorEmail: user?.email
+    });
+  } catch (e) { console.error('notify error:', e); }
+
+  return json({
+    id: assetId,
+    asset_tag: tag,
+    created: true
+  }, 201);
 }
 
 async function updateAsset(request, env, assetId) {
