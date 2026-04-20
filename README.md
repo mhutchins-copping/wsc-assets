@@ -65,13 +65,17 @@ quick-reference.
 - **CSV import / export** for bulk operations.
 - **AI-assisted label scanning** (optional) — photograph a device label
   and the app prefills the form.
-- **PowerShell enrolment script** for hardware specs. Served at
-  `GET https://api.it-wsc.com/enrol-script`, so each PC can be enrolled
-  without signing in to the site first — run
-  `$env:WSC_API_KEY='<key>'; irm https://api.it-wsc.com/enrol-script | iex`
-  in PowerShell. Idempotent by BIOS serial; re-running just refreshes
-  the specs. Suitable for a GPO logon script if you want fleet-wide
-  auto-enrolment.
+- **PowerShell enrolment** for hardware specs. Two entry points:
+  - **Password-gated web launcher** at `https://api.it-wsc.com/enrol` —
+    visit the URL on the new PC, type the shared `ENROL_PASSWORD`, and
+    the page shows a copy-to-clipboard PowerShell command pre-filled
+    with the API key. Rate-limited against brute-force. Best for
+    day-to-day use; no signing in to the main site on each machine.
+  - **Direct one-liner** for GPO / automation:
+    `$env:WSC_API_KEY='<key>'; irm https://api.it-wsc.com/enrol-script | iex`.
+  Both paths call the same script. Idempotent by BIOS serial — re-running
+  just refreshes the specs, so it's safe as a GPO logon script for
+  fleet-wide auto-enrolment.
 - **Microsoft Entra ID user sync** (domain-filtered) from the Settings
   page.
 - **Email notifications** for asset and security events via Microsoft

@@ -49,6 +49,20 @@ async function dispatch(request, env) {
     });
   }
 
+  // Password-gated enrolment launcher. Serves a public HTML page that
+  // gates the API-key-bearing one-liner behind a shared password. Staff
+  // receiving a new PC can visit the URL, type the password, and get a
+  // one-click copy of the PowerShell command without the admin having to
+  // hand out the raw API key (which is a much wider-scoped secret).
+  if (url.pathname === '/enrol' && request.method === 'GET') {
+    try { return renderEnrolPage(null); }
+    catch (err) { return new Response('Server error', { status: 500 }); }
+  }
+  if (url.pathname === '/enrol/unlock' && request.method === 'POST') {
+    try { return await handleEnrolUnlock(request, env); }
+    catch (err) { return renderEnrolPage('Something went wrong — try again.'); }
+  }
+
   // Public asset-issue signing page. Token-gated (no CF Access, no session
   // auth) so the recipient can sign from any browser on any network.
   if (url.pathname.startsWith('/sign/')) {
@@ -1550,6 +1564,176 @@ async function submitSignature(request, env, token) {
   } catch (e) { console.error('notify error (issue_signed):', e); }
 
   return json({ ok: true });
+}
+
+// ─── Enrolment launcher (/enrol) ───────────────
+// Public, password-gated page that hands out the pre-filled PowerShell
+// one-liner for enrolling a new device. The password gates distribution
+// of the API key -- it doesn't extend auth on the /api/assets/enrol
+// endpoint itself, which still uses the same X-Api-Key header. Intent is
+// to stop accidental key sharing (e.g. staff reading a one-liner over
+// someone's shoulder and rerunning it) rather than defending against a
+// key that's already leaked out.
+
+const ENROL_PASSWORD_MAX_ATTEMPTS = 8;
+const ENROL_PASSWORD_LOCKOUT_MINUTES = 15;
+
+function enrolPageHtml(body) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Enrol a device -- WSC Assets</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f3f4f6;color:#111827;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:20px}
+  .wrap{max-width:560px;width:100%;margin-top:40px}
+  .header{background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff;padding:22px;border-radius:12px 12px 0 0}
+  .header h1{margin:0;font-size:18px;font-weight:600}
+  .header p{margin:2px 0 0;font-size:12px;color:#bfdbfe}
+  .card{background:#fff;padding:24px;border-radius:0 0 12px 12px;box-shadow:0 2px 6px rgba(0,0,0,.06)}
+  label{display:block;font-size:13px;color:#374151;margin:0 0 6px;font-weight:500}
+  input[type=password]{width:100%;padding:11px 13px;border:1px solid #d1d5db;border-radius:8px;font-size:15px;font-family:inherit}
+  input[type=password]:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+  .btn{display:inline-block;background:#2563eb;color:#fff;border:0;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-top:12px}
+  .btn:hover{background:#1d4ed8}
+  .btn-secondary{background:#fff;color:#374151;border:1px solid #d1d5db}
+  .btn-secondary:hover{background:#f9fafb}
+  .err{margin-top:10px;padding:10px 12px;background:#fef2f2;color:#991b1b;border:1px solid #fecaca;border-radius:8px;font-size:13px}
+  .ok-badge{display:inline-flex;align-items:center;gap:6px;background:#d1fae5;color:#065f46;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:500;margin-bottom:10px}
+  .step{margin:18px 0 8px;font-size:13px;color:#374151}
+  .cmd{position:relative;background:#0f172a;color:#e2e8f0;padding:14px 60px 14px 14px;border-radius:8px;font-family:'JetBrains Mono',Menlo,Consolas,monospace;font-size:12px;line-height:1.5;word-break:break-all;white-space:pre-wrap}
+  .copy-btn{position:absolute;top:8px;right:8px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;padding:6px 10px;border-radius:6px;font-size:11px;cursor:pointer}
+  .copy-btn:hover{background:#334155}
+  .copy-btn.copied{background:#10b981;color:#fff;border-color:#10b981}
+  .muted{font-size:12px;color:#6b7280;line-height:1.5;margin-top:12px}
+  ol{margin:12px 0;padding-left:22px}ol li{margin:4px 0;font-size:13px;color:#374151}
+  code{background:#f3f4f6;padding:1px 6px;border-radius:4px;font-family:'JetBrains Mono',Menlo,Consolas,monospace;font-size:12px}
+</style></head><body><div class="wrap">
+  <div class="header">
+    <h1>Enrol a device</h1>
+    <p>Walgett Shire Council -- IT Asset Register</p>
+  </div>
+  <div class="card">${body}</div>
+</div></body></html>`;
+}
+
+function renderEnrolPage(errorMsg) {
+  const body = `
+    <p style="margin:0 0 14px;font-size:14px;color:#4b5563">Enter the enrolment password to get the PowerShell command for registering this device.</p>
+    <form method="POST" action="/enrol/unlock">
+      <label for="pwd">Password</label>
+      <input id="pwd" name="password" type="password" autocomplete="off" autofocus required>
+      <button class="btn" type="submit">Unlock</button>
+    </form>
+    ${errorMsg ? `<div class="err">${escapeHtml(errorMsg)}</div>` : ''}
+    <p class="muted">You will get a one-line PowerShell command to paste into an elevated or regular PowerShell window. It collects the machine's hardware specs and registers it in the asset register. Safe to re-run.</p>
+  `;
+  return new Response(enrolPageHtml(body), {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'no-referrer'
+    }
+  });
+}
+
+async function handleEnrolUnlock(request, env) {
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+
+  // Password may arrive as form-url-encoded (form submit) or JSON (fetch
+  // from a future client-side handler).
+  let password = '';
+  const ctype = request.headers.get('Content-Type') || '';
+  if (ctype.includes('application/json')) {
+    try { password = ((await request.json()).password || '').trim(); } catch (e) { password = ''; }
+  } else {
+    const text = await request.text();
+    const params = new URLSearchParams(text);
+    password = (params.get('password') || '').trim();
+  }
+
+  if (!env.ENROL_PASSWORD) {
+    return renderEnrolPage('Enrolment not configured. Ask an admin to set ENROL_PASSWORD.');
+  }
+
+  // Rate-limit attempts per-IP. Reuses the activity_log pattern from the
+  // master-key flow so there's one place to audit lockouts.
+  try {
+    const cutoffMs = Date.now() - ENROL_PASSWORD_LOCKOUT_MINUTES * 60 * 1000;
+    const cutoff = new Date(cutoffMs)
+      .toLocaleString('sv-SE', { timeZone: 'Australia/Sydney' })
+      .replace('T', ' ')
+      .slice(0, 19);
+    const recent = await env.DB.prepare(
+      `SELECT COUNT(*) as attempts FROM activity_log
+       WHERE action = 'enrol_password_failed' AND ip_address = ?
+       AND created_at > ?`
+    ).bind(ip, cutoff).first();
+
+    if (recent && recent.attempts >= ENROL_PASSWORD_MAX_ATTEMPTS) {
+      await logActivity(env, {
+        action: 'enrol_password_blocked',
+        details: `Rate limited: ${recent.attempts} failed attempts`,
+        ip_address: ip
+      });
+      return renderEnrolPage('Too many failed attempts. Try again in 15 minutes.');
+    }
+  } catch (e) { /* activity_log may be missing on a fresh install */ }
+
+  if (!password || password !== env.ENROL_PASSWORD) {
+    try {
+      await logActivity(env, {
+        action: 'enrol_password_failed',
+        details: 'Wrong enrolment password',
+        ip_address: ip
+      });
+    } catch (e) { /* best effort */ }
+    return renderEnrolPage('Wrong password.');
+  }
+
+  // Success. Hand back the one-liner with the API key pre-filled so the
+  // user can copy + paste straight into PowerShell.
+  const apiKey = env.API_KEY || '';
+  if (!apiKey) {
+    return renderEnrolPage('API_KEY not configured on the server. Ask IT.');
+  }
+
+  try {
+    await logActivity(env, {
+      action: 'enrol_password_success',
+      details: `Enrolment command issued to ${ip}`,
+      ip_address: ip
+    });
+  } catch (e) { /* best effort */ }
+
+  const command = `$env:WSC_API_KEY='${apiKey}'; irm https://api.it-wsc.com/enrol-script | iex`;
+  const body = `
+    <div class="ok-badge">✓ Unlocked</div>
+    <div class="step"><strong>1.</strong> Open PowerShell on this PC.</div>
+    <div class="step"><strong>2.</strong> Copy and paste the command below:</div>
+    <div class="cmd">${escapeHtml(command)}<button class="copy-btn" id="copy-btn" type="button" onclick="doCopy()">Copy</button></div>
+    <div class="step"><strong>3.</strong> Press Enter. You'll see the device's specs and a confirmation with the new asset tag.</div>
+    <p class="muted">Re-running on the same PC is safe -- the script dedupes by BIOS serial and just refreshes the specs. Close this page when done; don't leave the command on screen.</p>
+    <script>
+      function doCopy(){
+        var txt = ${JSON.stringify(command)};
+        var btn = document.getElementById('copy-btn');
+        (navigator.clipboard && navigator.clipboard.writeText(txt).then(ok, fallback)) || fallback();
+        function ok(){ btn.textContent = 'Copied'; btn.classList.add('copied'); setTimeout(function(){ btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000); }
+        function fallback(){
+          var ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); ok(); } catch(e) {}
+          document.body.removeChild(ta);
+        }
+      }
+    </script>
+  `;
+  return new Response(enrolPageHtml(body), {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'no-referrer'
+    }
+  });
 }
 
 async function updateAsset(request, env, assetId) {
