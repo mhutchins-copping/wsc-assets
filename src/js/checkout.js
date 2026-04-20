@@ -30,8 +30,9 @@ async function openCheckout(assetId) {
     + '<textarea id="co-notes" class="form-textarea" placeholder="Optional — handover context, expected return date, etc."></textarea></div>'
     + '<div class="form-group co-ack">'
     + '<label class="co-ack-label">'
-    + '<input type="checkbox" id="co-ack" class="co-ack-box">'
-    + '<span>User acknowledges receipt of this asset</span></label></div>'
+    + '<input type="checkbox" id="co-issue" class="co-ack-box" checked>'
+    + '<span>Email a signing link to the recipient for receipt acknowledgement</span></label>'
+    + '<div id="co-issue-hint" style="font-size:12px;color:var(--text3);margin-top:4px;padding-left:24px">Sent once a person is selected; the recipient signs on a secure page (link expires in 30 days).</div></div>'
     + '<button class="btn primary full co-submit" id="co-submit" onclick="doCheckout()" disabled>Check Out</button>'
     + '</div>';
 
@@ -149,6 +150,10 @@ async function doCheckout() {
   var submit = document.getElementById('co-submit');
   if (submit) { submit.disabled = true; submit.textContent = 'Checking out…'; }
 
+  var wantsIssue = !!(document.getElementById('co-issue') || {}).checked;
+  var person = _checkoutPeople.find(function(p) { return p.id === _checkoutSelected; });
+  var canIssue = wantsIssue && person && person.email;
+
   try {
     var result = await API.checkoutAsset(_checkoutAssetId, {
       person_id: _checkoutSelected,
@@ -156,6 +161,19 @@ async function doCheckout() {
     });
     closeModal();
     toast('Asset checked out', 'success');
+
+    // Best-effort: send the signing link after a successful checkout.
+    // Failure here shouldn't roll the checkout back — the checkout is the
+    // record of record, the email is convenience on top. Admin can hit
+    // "Resend" from the asset detail page.
+    if (canIssue) {
+      try {
+        await API.issueAsset(_checkoutAssetId, { person_id: _checkoutSelected });
+        toast('Signing link emailed to ' + person.name, 'success');
+      } catch (e) { /* db.js already toasted the error */ }
+    } else if (wantsIssue && person && !person.email) {
+      toast('Checkout done; no signing link sent — ' + person.name + ' has no email on file', 'error');
+    }
 
     // Prefer the fresh asset returned by the worker (no race). If an older
     // worker is still running and didn't return it, fall back to a re-fetch

@@ -154,6 +154,17 @@ var API = {
   // ─── Auth (session management)
   signOut: function() { return this.fetch('/api/auth/sign-out', { method: 'POST' }); },
 
+  // ─── Asset Issues (signing receipts)
+  issueAsset: function(assetId, data) {
+    return this.fetch('/api/assets/' + assetId + '/issue', { method: 'POST', body: data || {} });
+  },
+  getIssues: function(params) {
+    return this.fetch('/api/issues?' + new URLSearchParams(params || {}));
+  },
+  getIssue: function(id) { return this.fetch('/api/issues/' + id); },
+  resendIssue: function(id) { return this.fetch('/api/issues/' + id + '/resend', { method: 'POST', body: {} }); },
+  cancelIssue: function(id) { return this.fetch('/api/issues/' + id + '/cancel', { method: 'POST', body: {} }); },
+
   // ─── Images (R2)
   uploadImage: async function(assetId, file) {
     // Sanitise both halves of the key so it passes the worker's strict regex

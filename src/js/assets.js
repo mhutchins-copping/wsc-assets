@@ -403,10 +403,11 @@ async function renderAssetDetail(id, preloaded) {
         + '<div class="card-body"><div style="font-size:12px;white-space:pre-wrap;color:var(--text2)">' + esc(asset.notes) + '</div></div></div>';
     }
 
-    // Tabs: History + Maintenance
+    // Tabs: History + Maintenance + Receipts
     html += '<div class="tabs">'
       + '<button class="tab active" onclick="switchAssetTab(this,\'asset-tab-history\')">History</button>'
       + '<button class="tab" onclick="switchAssetTab(this,\'asset-tab-maintenance\')">Maintenance</button>'
+      + '<button class="tab" onclick="switchAssetTab(this,\'asset-tab-receipts\')">Receipts</button>'
       + '</div>';
 
     // History tab
@@ -450,7 +451,23 @@ async function renderAssetDetail(id, preloaded) {
     }
     html += '</div>';
 
+    // Receipts tab — populated async after initial render to avoid holding
+    // up the detail view on a secondary fetch. Send-link button is always
+    // visible so an admin can re-issue a receipt later (e.g. lost email).
+    html += '<div id="asset-tab-receipts" class="asset-tab-content" style="display:none">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
+      + '<div style="font-size:12px;color:var(--text3)">Signed receipts for this asset</div>';
+    if (asset.assigned_to) {
+      html += '<button class="btn primary sm" onclick="sendAssetIssue(\'' + esc(asset.id) + '\',\'' + esc(asset.assigned_to) + '\')">Email signing link to ' + esc(asset.assigned_to_name || 'recipient') + '</button>';
+    } else {
+      html += '<span style="font-size:11px;color:var(--text3)">Assign the asset to someone to email them a receipt link.</span>';
+    }
+    html += '</div><div id="asset-issues-list">' + skeleton(3) + '</div></div>';
+
     el.innerHTML = html;
+
+    // Fetch receipts in the background — don't block the main render.
+    loadAssetIssues(asset.id);
 
     // Generate QR code — use the same short scan URL the printed labels use
     // so a scan from the sticker and a scan from the screen behave identically.
@@ -638,6 +655,57 @@ async function printAssetLabel(assetId) {
   } catch (e) { /* already toasted */ }
 }
 window.printAssetLabel = printAssetLabel;
+
+// ─── Asset-scoped issues (receipts tab) ──────
+// Lists signed/pending issues for a single asset and lets admins re-issue
+// or chase outstanding signatures. Shares the resend/cancel/view helpers
+// defined in issues.js.
+
+async function loadAssetIssues(assetId) {
+  var el = document.getElementById('asset-issues-list');
+  if (!el) return;
+  try {
+    var res = await API.getIssues({});
+    var rows = (res.data || []).filter(function(r) { return r.asset_id === assetId; });
+    if (!rows.length) {
+      el.innerHTML = '<div class="table-empty">No receipts sent for this asset yet.</div>';
+      return;
+    }
+    var html = '<div class="table-wrap"><table><thead><tr>'
+      + '<th>Recipient</th><th>Status</th><th>Issued</th><th>Signed</th><th>Actions</th>'
+      + '</tr></thead><tbody>';
+    rows.forEach(function(r) {
+      html += '<tr>'
+        + '<td>' + esc(r.person_name || '') + (r.person_email ? '<div style="font-size:11px;color:var(--text3)">' + esc(r.person_email) + '</div>' : '') + '</td>'
+        + '<td>' + issueStatusBadge(r.status) + '</td>'
+        + '<td class="mono">' + fmtDate(r.issued_at) + '</td>'
+        + '<td class="mono">' + (r.signed_at ? fmtDate(r.signed_at) : '—') + '</td>'
+        + '<td>';
+      if (r.status === 'pending') {
+        html += '<button class="btn sm" onclick="resendIssue(\'' + esc(r.id) + '\').then(function(){ loadAssetIssues(\'' + esc(assetId) + '\'); })">Resend</button> '
+          + '<button class="btn sm" onclick="cancelIssueConfirm(\'' + esc(r.id) + '\').then(function(){ loadAssetIssues(\'' + esc(assetId) + '\'); })">Cancel</button>';
+      } else if (r.status === 'signed') {
+        html += '<button class="btn sm" onclick="viewIssueSignature(\'' + esc(r.id) + '\')">View</button>';
+      }
+      html += '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<div class="table-empty">Failed to load receipts</div>';
+  }
+}
+window.loadAssetIssues = loadAssetIssues;
+
+async function sendAssetIssue(assetId, personId) {
+  if (!confirm('Email a receipt-signing link to the assigned recipient?')) return;
+  try {
+    await API.issueAsset(assetId, { person_id: personId });
+    toast('Signing link sent', 'success');
+    loadAssetIssues(assetId);
+  } catch (e) { /* toasted */ }
+}
+window.sendAssetIssue = sendAssetIssue;
 
 // Prints labels for every asset matching the current filter/search state,
 // walking the paginated list server-side so the output matches what the

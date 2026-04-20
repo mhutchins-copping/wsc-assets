@@ -48,6 +48,7 @@ var Router = {
       '/categories': 'categories',
       '/audits': param ? 'audit-detail' : 'audits',
       '/reports': 'reports',
+      '/issues': 'issues',
       '/settings': 'settings',
       '/account': 'account'
     };

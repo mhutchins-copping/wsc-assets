@@ -14,5 +14,6 @@ import './js/people.js';
 import './js/categories.js';
 import './js/audits.js';
 import './js/reports.js';
+import './js/issues.js';
 import './js/settings.js';
 import './js/account.js';
