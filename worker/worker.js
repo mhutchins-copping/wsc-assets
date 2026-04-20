@@ -2,6 +2,7 @@
 // Auth: SSO email identity (Cloudflare Access) mapped to internal users, or API key
 
 import { notify, sendMail } from './lib/notify.js';
+import { ENROL_SCRIPT } from './lib/enrol-script.js';
 
 export default {
   async fetch(request, env) {
@@ -32,6 +33,20 @@ async function dispatch(request, env) {
   if (url.pathname === '/api/auth/sign-out' && request.method === 'POST') {
     try { return await authSignOut(request, env); }
     catch (err) { return json({ error: err.message }, 500); }
+  }
+
+  // Public PowerShell enrolment script. Served as text/plain so the
+  // IRM+IEX one-liner ("$env:WSC_API_KEY=...; irm .../enrol-script | iex")
+  // works from any PowerShell without needing the admin to sign in to the
+  // site on each machine. The script itself contains no secrets -- the
+  // API key is supplied at invocation time via env var or -ApiKey.
+  if (url.pathname === '/enrol-script' && request.method === 'GET') {
+    return new Response(ENROL_SCRIPT, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'public, max-age=300'
+      }
+    });
   }
 
   // Public asset-issue signing page. Token-gated (no CF Access, no session
@@ -1660,11 +1675,15 @@ async function purgeAsset(request, env, assetId) {
   const user = request._user;
   const performed_by = user ? (user.display_name || user.email) : null;
 
-  // Atomic delete: all succeed or none do
+  // Atomic delete: all succeed or none do. Every table with a foreign
+  // key back to assets has to come out first — D1 enforces FKs, so a
+  // dangling reference in asset_issues (for example) would reject the
+  // final DELETE FROM assets.
   await env.DB.batch([
     env.DB.prepare('DELETE FROM activity_log WHERE asset_id = ?').bind(assetId),
     env.DB.prepare('DELETE FROM maintenance_log WHERE asset_id = ?').bind(assetId),
     env.DB.prepare('DELETE FROM audit_items WHERE asset_id = ?').bind(assetId),
+    env.DB.prepare('DELETE FROM asset_issues WHERE asset_id = ?').bind(assetId),
     env.DB.prepare('DELETE FROM assets WHERE id = ?').bind(assetId)
   ]);
 
