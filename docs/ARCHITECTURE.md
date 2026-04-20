@@ -224,10 +224,11 @@ wsc-assets/
 │       ├── router.js          # Hash-based router
 │       ├── components.js      # Shared UI helpers (renderTable etc.)
 │       ├── utils.js           # esc, toast, modals, keyboard shortcuts
-│       ├── qr.js              # QR code rendering for asset tags
+│       ├── qr.js              # QR code rendering for asset tags + scan URLs
 │       ├── dashboard.js       # KPIs, status breakdown, recent activity
-│       ├── assets.js          # List, detail, create / edit forms
+│       ├── assets.js          # List, detail, create / edit forms, label printing
 │       ├── checkout.js        # Check-out / check-in modals + picker
+│       ├── issues.js          # Receipts admin view (resend / cancel / view signature)
 │       ├── people.js
 │       ├── categories.js
 │       ├── audits.js
@@ -239,10 +240,14 @@ wsc-assets/
 │   ├── wrangler.toml          # Worker config (bindings, vars)
 │   ├── schema.sql             # Fresh-install baseline
 │   ├── seed.sql               # Default categories
+│   ├── lib/
+│   │   ├── notify.js          # Graph-backed admin notifications + sendMail helper
+│   │   └── enrol-script.js    # PS enrolment script served at GET /enrol-script
 │   └── migrations/            # Incremental schema changes
 │       ├── 0001_add_hardware_specs.sql
 │       ├── 0002_add_users.sql
-│       └── ...
+│       ├── ...
+│       └── 0008_add_asset_issues.sql   # Signed receipt workflow
 ├── scripts/
 │   ├── smoke-test.sh          # Post-deploy health check (run by CI)
 │   ├── restore-db.sh          # Automated D1 restore with safety export

@@ -44,6 +44,16 @@ quick-reference.
   Auto-generated asset tags (`WSC-L-0042` style) with QR codes.
 - **Check out / check in** — keyboard-navigable person picker with live
   search and acknowledgement.
+- **Signed receipts** — on check-out, email the recipient a token-gated
+  signing link (no SSO needed on their end); they draw a signature on a
+  public page and the signed receipt is stored with the asset. Admins
+  can resend, cancel, or view past signatures from a dedicated Receipts
+  screen.
+- **QR label printing** — single-asset or batch. Multi-select rows on
+  the asset list, click "Print selected", get an A4 sheet laid out for
+  Avery L7160 (21 labels) with cut guides for plain paper. Scanning a
+  printed sticker opens the asset detail page via a short `#/a/<tag>`
+  route.
 - **Activity log** — every mutation recorded with the acting user,
   timestamp, and source IP.
 - **Dashboard** — KPIs (Total / Deployed / Available / Needs Attention),
@@ -55,9 +65,13 @@ quick-reference.
 - **CSV import / export** for bulk operations.
 - **AI-assisted label scanning** (optional) — photograph a device label
   and the app prefills the form.
-- **PowerShell enrolment script** for hardware specs, designed to work
-  in environments where endpoints can't reach the public internet
-  directly.
+- **PowerShell enrolment script** for hardware specs. Served at
+  `GET https://api.it-wsc.com/enrol-script`, so each PC can be enrolled
+  without signing in to the site first — run
+  `$env:WSC_API_KEY='<key>'; irm https://api.it-wsc.com/enrol-script | iex`
+  in PowerShell. Idempotent by BIOS serial; re-running just refreshes
+  the specs. Suitable for a GPO logon script if you want fleet-wide
+  auto-enrolment.
 - **Microsoft Entra ID user sync** (domain-filtered) from the Settings
   page.
 - **Email notifications** for asset and security events via Microsoft

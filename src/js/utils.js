@@ -36,18 +36,21 @@ function closeModal() {
 }
 window.closeModal = closeModal;
 
-// Confirm dialog
+// Confirm dialog. Uses the .open class (not inline display) so the later
+// .modal-overlay rule — which hides the overlay via opacity:0 and
+// pointer-events:none — actually unhides it. Setting style.display
+// leaves the element invisible and unclickable.
 var _confirmCb = null;
 function confirmDialog(msg, okText) {
   document.getElementById('confirm-body').innerHTML = msg;
   if (okText) document.getElementById('confirm-ok-btn').textContent = okText;
-  document.getElementById('confirm-overlay').style.display = 'flex';
+  document.getElementById('confirm-overlay').classList.add('open');
   return new Promise(function(resolve) { _confirmCb = resolve; });
 }
 window.confirmDialog = confirmDialog;
 
 function confirmResolve(val) {
-  document.getElementById('confirm-overlay').style.display = 'none';
+  document.getElementById('confirm-overlay').classList.remove('open');
   if (_confirmCb) { _confirmCb(val); _confirmCb = null; }
 }
 window.confirmResolve = confirmResolve;
@@ -127,7 +130,7 @@ document.addEventListener('keydown', function(e) {
       return;
     }
     closeModal();
-    document.getElementById('confirm-overlay').style.display = 'none';
+    document.getElementById('confirm-overlay').classList.remove('open');
   }
 });
 
