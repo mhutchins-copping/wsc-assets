@@ -1704,7 +1704,10 @@ async function handleEnrolUnlock(request, env) {
     });
   } catch (e) { /* best effort */ }
 
-  const command = `$env:WSC_API_KEY='${apiKey}'; irm https://api.it-wsc.com/enrol-script | iex`;
+  // TLS 1.2 is required by Cloudflare; Windows PowerShell 5.1 defaults to
+  // TLS 1.0/1.1 and would fail "underlying connection was closed" without
+  // this. PS 7+ ignores the setting (already on 1.2+).
+  const command = `[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $env:WSC_API_KEY='${apiKey}'; irm https://api.it-wsc.com/enrol-script | iex`;
   const body = `
     <div class="ok-badge">✓ Unlocked</div>
     <div class="step"><strong>1.</strong> Open PowerShell on this PC.</div>

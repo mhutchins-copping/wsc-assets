@@ -22,7 +22,10 @@ export const ENROL_SCRIPT = `# WSC Assets -- Device Enrolment Script
 # need admin -- those fields fall back to null if blocked).
 #
 # Usage (one-liner for each PC):
-#   \$env:WSC_API_KEY = '<your-key>'; irm https://api.it-wsc.com/enrol-script | iex
+#   [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; \$env:WSC_API_KEY = '<your-key>'; irm https://api.it-wsc.com/enrol-script | iex
+#
+# (The TLS line is only needed on Windows PowerShell 5.1 -- PS 7+ is fine
+# without it. Harmless either way, so keep it in.)
 #
 # Or download and run:
 #   irm https://api.it-wsc.com/enrol-script -o enrol.ps1

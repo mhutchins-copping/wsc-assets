@@ -72,7 +72,9 @@ quick-reference.
     with the API key. Rate-limited against brute-force. Best for
     day-to-day use; no signing in to the main site on each machine.
   - **Direct one-liner** for GPO / automation:
-    `$env:WSC_API_KEY='<key>'; irm https://api.it-wsc.com/enrol-script | iex`.
+    `[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $env:WSC_API_KEY='<key>'; irm https://api.it-wsc.com/enrol-script | iex`
+    (the TLS preamble is only needed on Windows PowerShell 5.1 but is safe
+    on PS 7+).
   Both paths call the same script. Idempotent by BIOS serial — re-running
   just refreshes the specs, so it's safe as a GPO logon script for
   fleet-wide auto-enrolment.
