@@ -12,8 +12,7 @@ INSERT INTO locations (id, name, address, type) VALUES
 INSERT INTO categories (id, name, prefix, parent_id, icon) VALUES
   ('cat_hw', 'Hardware', 'H', NULL, '💻'),
   ('cat_net', 'Network', 'N', NULL, '🌐'),
-  ('cat_periph', 'Peripherals', 'PE', NULL, '🖱️'),
-  ('cat_infra', 'Infrastructure', 'I', NULL, '🏗️');
+  ('cat_periph', 'Peripherals', 'PE', NULL, '🖱️');
 
 -- Categories — Hardware children
 INSERT INTO categories (id, name, prefix, parent_id, icon) VALUES
@@ -41,9 +40,5 @@ INSERT INTO categories (id, name, prefix, parent_id, icon) VALUES
   ('cat_webcam', 'Webcam', 'WC', 'cat_periph', '📷'),
   ('cat_dock', 'Docking Station', 'DS', 'cat_periph', '🔗');
 
--- Categories — Infrastructure children
-INSERT INTO categories (id, name, prefix, parent_id, icon) VALUES
-  ('cat_server', 'Server', 'SV', 'cat_infra', '🖥️'),
-  ('cat_ups', 'UPS', 'UPS', 'cat_infra', '🔋'),
-  ('cat_nvr', 'NVR', 'NVR', 'cat_infra', '📹'),
-  ('cat_camera', 'Camera', 'CAM', 'cat_infra', '📷');
+-- Infrastructure categories (server / UPS / NVR / camera) intentionally
+-- omitted -- not in scope for this council's register.

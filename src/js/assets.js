@@ -67,8 +67,8 @@ function renderAssetList() {
   loadAssets();
 }
 
-function renderAssetFilters() {
-  var filters = [
+async function renderAssetFilters() {
+  var statusFilters = [
     { value: '', label: 'All' },
     { value: 'available', label: 'Available' },
     { value: 'deployed', label: 'Deployed' },
@@ -76,11 +76,42 @@ function renderAssetFilters() {
     { value: 'retired', label: 'Retired' },
     { value: 'lost', label: 'Lost' }
   ];
-  document.getElementById('asset-filters').innerHTML = renderFilters({
-    filters: filters,
-    active: assetState.status,
-    onClick: 'filterAssetStatus'
+
+  var html = '<div style="display:flex;flex-direction:column;gap:6px">'
+    + renderFilters({
+        filters: statusFilters,
+        active: assetState.status,
+        onClick: 'filterAssetStatus'
+      });
+
+  // Category chips — one per leaf (child) category so users pick a
+  // concrete type (Laptop, Phone, Switch) rather than the parent
+  // groupings which aren't actionable on their own.
+  if (!_categories) {
+    try {
+      var catRes = await API.getCategories();
+      _categories = catRes.data || catRes.tree || [];
+    } catch (e) { _categories = []; }
+  }
+  var leaves = [];
+  (_categories || []).forEach(function(parent) {
+    if (parent.children && parent.children.length) {
+      parent.children.forEach(function(child) {
+        leaves.push({ value: child.id, label: child.name });
+      });
+    }
   });
+  if (leaves.length) {
+    var catFilters = [{ value: '', label: 'All types' }].concat(leaves);
+    html += renderFilters({
+      filters: catFilters,
+      active: assetState.category,
+      onClick: 'filterAssetCategory'
+    });
+  }
+  html += '</div>';
+
+  document.getElementById('asset-filters').innerHTML = html;
 }
 
 function filterAssetStatus(status) {
@@ -90,6 +121,14 @@ function filterAssetStatus(status) {
   renderAssetFilters();
 }
 window.filterAssetStatus = filterAssetStatus;
+
+function filterAssetCategory(categoryId) {
+  assetState.category = categoryId;
+  assetState.page = 1;
+  loadAssets();
+  renderAssetFilters();
+}
+window.filterAssetCategory = filterAssetCategory;
 
 var assetSearchDebounced = debounce(function(val) {
   assetState.search = val;
