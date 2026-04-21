@@ -56,15 +56,13 @@ function renderSettings() {
     '<div class="settings-section settings-section-dev">'
     + '<div class="settings-section-title">Admin <span class="settings-dev-badge">Admin</span></div>'
 
-    // Device Enrollment
+    // Device Enrolment (points at the password-gated launcher page -- the
+    // old copy-script / paste-JSON flow below has been retired).
     + '<div class="settings-card">'
-    + '<div class="settings-card-header">Device Enrollment</div>'
+    + '<div class="settings-card-header">Device Enrolment</div>'
     + '<div class="settings-card-body">'
-    + '<div class="form-hint" style="margin-bottom:12px">Enroll a Windows PC as an asset. Run the script on the target PC, paste the JSON result below.</div>'
-    + '<button class="btn sm" onclick="copyEnrollScript()">Copy Script</button>'
-    + '<textarea id="enroll-json" class="form-input" rows="3" placeholder="Paste JSON from PowerShell script..." style="font-family:var(--mono);font-size:11px;margin-top:12px"></textarea>'
-    + '<button class="btn primary" style="margin-top:8px" onclick="enrollFromClipboard()">Enroll Device</button>'
-    + '<div id="enroll-result" style="margin-top:8px"></div>'
+    + '<div class="form-hint" style="margin-bottom:12px">On each council PC, open PowerShell and visit <a href="https://api.it-wsc.com/enrol" target="_blank" rel="noopener">api.it-wsc.com/enrol</a>. Enter the enrolment password; the page hands over a one-line command that registers the machine. Safe to re-run -- dedupes on BIOS serial.</div>'
+    + '<a class="btn primary" href="https://api.it-wsc.com/enrol" target="_blank" rel="noopener">Open enrolment page</a>'
     + '</div></div>'
 
     // CSV Import/Export
@@ -310,8 +308,12 @@ async function doAddUser() {
   var role = document.getElementById('au-role').value;
   if (!email) { toast('Email required', 'error'); return; }
 
-  await API.fetch('/api/auth/users', { method: 'POST', body: { email: email, display_name: name || email, role: role } });
-  closeModal(); toast('User added', 'success'); loadUserList();
+  try {
+    await API.fetch('/api/auth/users', { method: 'POST', body: { email: email, display_name: name || email, role: role } });
+    closeModal();
+    toast('User added', 'success');
+    loadUserList();
+  } catch (e) { /* API.fetch already toasted the error; leave modal open so the user can correct + retry */ }
 }
 window.doAddUser = doAddUser;
 
@@ -329,86 +331,31 @@ function openEditUser(id, email, name, role, active) {
 window.openEditUser = openEditUser;
 
 async function doEditUser(id) {
-  await API.fetch('/api/auth/users/' + id, { method: 'PUT', body: {
-    email: document.getElementById('eu-email').value.trim(),
-    display_name: document.getElementById('eu-name').value.trim(),
-    role: document.getElementById('eu-role').value,
-    active: parseInt(document.getElementById('eu-active').value)
-  }});
-  closeModal(); toast('User updated', 'success'); loadUserList();
+  try {
+    await API.fetch('/api/auth/users/' + id, { method: 'PUT', body: {
+      email: document.getElementById('eu-email').value.trim(),
+      display_name: document.getElementById('eu-name').value.trim(),
+      role: document.getElementById('eu-role').value,
+      active: parseInt(document.getElementById('eu-active').value)
+    }});
+    closeModal();
+    toast('User updated', 'success');
+    loadUserList();
+  } catch (e) { /* toasted; keep modal open for retry */ }
 }
 window.doEditUser = doEditUser;
 
 async function doDeleteUser(id) {
-  if (!confirm('Delete user?')) return;
-  await API.fetch('/api/auth/users/' + id, { method: 'DELETE' });
-  closeModal(); toast('User deleted', 'success'); loadUserList();
+  var ok = await confirmDialog('Delete this user? They will lose access to the app immediately.', 'Delete User');
+  if (!ok) return;
+  try {
+    await API.fetch('/api/auth/users/' + id, { method: 'DELETE' });
+    closeModal();
+    toast('User deleted', 'success');
+    loadUserList();
+  } catch (e) { /* toasted */ }
 }
 window.doDeleteUser = doDeleteUser;
-
-// === Device Enrollment ===
-function buildEnrollScript() {
-  var lines = [
-    '# WSC Assets Hardware Collector',
-    '$cs = Get-CimInstance Win32_ComputerSystem',
-    '$bios = Get-CimInstance Win32_BIOS',
-    '$os = Get-CimInstance Win32_OperatingSystem',
-    '$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1',
-    '$disk = Get-CimInstance Win32_DiskDrive | Where-Object { $_.MediaType -like \"*fixed*\" } | Select-Object -First 1',
-    '$chassis = (Get-CimInstance Win32_SystemEnclosure).ChassisTypes',
-    '$isLaptop = ($chassis | Where-Object { $_ -in @(8,9,10,11,14,30,31,32) }).Count -gt 0',
-    '$ram = [math]::Round($cs.TotalPhysicalMemory / 1GB)',
-    '$diskGB = if ($disk) { [math]::Round($disk.Size / 1GB) } else { 0 }',
-    '$adapter = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.MACAddress } | Select-Object -First 1',
-    '$mac = if ($adapter) { $adapter.MACAddress } else { \"N/A\" }',
-    '$name = if ($cs.Model -match $cs.Manufacturer) { $cs.Model } else { \"$($cs.Manufacturer) $($cs.Model)\" }',
-    '$data = @{',
-    '  name = $name',
-    '  serial_number = $bios.SerialNumber',
-    '  category_id = if ($isLaptop) { \"cat_laptop\" } else { \"cat_desktop\" }',
-    '  manufacturer = $cs.Manufacturer',
-    '  model = $cs.Model',
-    '  status = \"available\"',
-    '  hostname = $cs.Name',
-    '  os = \"$($os.Caption) $($os.Version)\"',
-    '  cpu = $cpu.Name',
-    '  ram_gb = $ram',
-    '  disk_gb = $diskGB',
-    '  mac_address = $mac',
-    '  notes = \"Auto-enrolled $(Get-Date -Format \'yyyy-MM-dd HH:mm\')\"',
-    '} | ConvertTo-Json',
-    '$data | Set-Clipboard',
-    'Write-Host \"JSON copied to clipboard!\" -ForegroundColor Green'
-  ];
-  return lines.join('\r\n');
-}
-
-function copyEnrollScript() {
-  navigator.clipboard.writeText(buildEnrollScript()).then(function() {
-    toast('Script copied to clipboard', 'success');
-  });
-}
-window.copyEnrollScript = copyEnrollScript;
-
-async function enrollFromClipboard() {
-  var json = document.getElementById('enroll-json').value.trim();
-  if (!json) { toast('Paste JSON first', 'error'); return; }
-
-  var data;
-  try { data = JSON.parse(json); } catch(e) { toast('Invalid JSON', 'error'); return; }
-
-  try {
-    var existing = await API.fetch('/api/assets/serial/' + encodeURIComponent(data.serial_number));
-    document.getElementById('enroll-result').innerHTML = '<div class="settings-warn">Already registered: ' + existing.asset_tag + '</div>';
-    return;
-  } catch(e) { /* ok */ }
-
-  var result = await API.createAsset(data);
-  document.getElementById('enroll-result').innerHTML = '<div class="settings-success">Enrolled: ' + result.asset_tag + '</div>';
-  document.getElementById('enroll-json').value = '';
-  toast('Device enrolled', 'success');
-}
-window.enrollFromClipboard = enrollFromClipboard;
 
 // === Entra Sync ===
 // All credentials live on the worker as Wrangler secrets. The page only

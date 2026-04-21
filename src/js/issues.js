@@ -113,7 +113,8 @@ async function resendIssue(id) {
 window.resendIssue = resendIssue;
 
 async function cancelIssueConfirm(id) {
-  if (!confirm('Cancel this signing link? The recipient won\'t be able to sign afterwards.')) return;
+  var ok = await confirmDialog('Cancel this signing link? The recipient won\'t be able to sign afterwards.', 'Cancel link');
+  if (!ok) return;
   try {
     await API.cancelIssue(id);
     toast('Link cancelled', 'success');

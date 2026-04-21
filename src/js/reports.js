@@ -6,7 +6,6 @@ Router.register('/reports', function() {
   el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">'
     + '<div></div>'
     + '<div style="display:flex;gap:8px">'
-    + '<button class="btn sm" onclick="exportReportCSV()">Export CSV</button>'
     + '<button class="btn sm" onclick="loadReports()">Refresh</button>'
     + '</div></div>'
 
@@ -156,21 +155,6 @@ function renderAssignedTable(containerId, items) {
   el.innerHTML = html;
 }
 
-// ─── CSV Export ─────────────────────────────────
-
-async function exportReportCSV() {
-  try {
-    var res = await API.exportCSV();
-    var blob = await res.blob();
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'wsc-assets-' + new Date().toISOString().slice(0, 10) + '.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-    toast('CSV exported', 'success');
-  } catch(e) {
-    // Error already toasted
-  }
-}
-window.exportReportCSV = exportReportCSV;
+// CSV export intentionally not on this page -- it lives on the Asset list
+// where the data actually is. Having it here duplicated the functionality
+// and misleadingly shipped the asset CSV under a "Reports" button label.

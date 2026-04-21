@@ -757,7 +757,8 @@ async function loadAssetIssues(assetId) {
 window.loadAssetIssues = loadAssetIssues;
 
 async function sendAssetIssue(assetId, personId) {
-  if (!confirm('Email a receipt-signing link to the assigned recipient?')) return;
+  var ok = await confirmDialog('Email a receipt-signing link to the assigned recipient?', 'Send link');
+  if (!ok) return;
   try {
     await API.issueAsset(assetId, { person_id: personId });
     toast('Signing link sent', 'success');
