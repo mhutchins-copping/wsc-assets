@@ -972,8 +972,9 @@ async function createAsset(request, env) {
     INSERT INTO assets (id, asset_tag, name, serial_number, category_id, manufacturer, model, status,
       purchase_date, purchase_cost, purchase_order, supplier, warranty_months, warranty_expiry,
       notes, image_url, hostname, os, cpu, ram_gb, disk_gb, mac_address, ip_address, enrolled_user,
+      phone_number, carrier,
       location_id, assigned_to, assigned_date, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     assetId, tag, data.name, data.serial_number || null, data.category_id || null,
     data.manufacturer || null, data.model || null, data.status || 'available',
@@ -983,6 +984,7 @@ async function createAsset(request, env) {
     data.hostname || null, data.os || null, data.cpu || null,
     data.ram_gb || null, data.disk_gb || null, data.mac_address || null,
     data.ip_address || null, data.enrolled_user || null,
+    data.phone_number || null, data.carrier || null,
     data.location_id || null,
     data.assigned_to || null, data.assigned_to ? ts : null, ts, ts
   ).run();
@@ -1758,6 +1760,7 @@ async function updateAsset(request, env, assetId) {
       status = ?, purchase_date = ?, purchase_cost = ?, purchase_order = ?, supplier = ?,
       warranty_months = ?, warranty_expiry = ?, notes = ?, image_url = ?,
       hostname = ?, os = ?, cpu = ?, ram_gb = ?, disk_gb = ?, mac_address = ?, ip_address = ?, enrolled_user = ?,
+      phone_number = ?, carrier = ?,
       location_id = ?,
       assigned_to = ?, assigned_date = ?, updated_at = ?
     WHERE id = ?
@@ -1785,6 +1788,8 @@ async function updateAsset(request, env, assetId) {
     data.mac_address !== undefined ? data.mac_address : existing.mac_address,
     data.ip_address !== undefined ? data.ip_address : existing.ip_address,
     data.enrolled_user !== undefined ? data.enrolled_user : existing.enrolled_user,
+    data.phone_number !== undefined ? data.phone_number : existing.phone_number,
+    data.carrier !== undefined ? data.carrier : existing.carrier,
     data.location_id !== undefined ? data.location_id : existing.location_id,
     data.assigned_to !== undefined ? data.assigned_to : existing.assigned_to,
     data.assigned_to !== undefined && data.assigned_to !== existing.assigned_to ? ts : existing.assigned_date,

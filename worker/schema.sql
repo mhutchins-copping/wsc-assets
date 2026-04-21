@@ -69,6 +69,8 @@ CREATE TABLE IF NOT EXISTS assets (
   mac_address TEXT,
   ip_address TEXT,
   enrolled_user TEXT,
+  phone_number TEXT,
+  carrier TEXT,
   location_id TEXT REFERENCES locations(id),
   assigned_to TEXT REFERENCES people(id),
   assigned_date TEXT,

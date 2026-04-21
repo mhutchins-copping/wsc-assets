@@ -221,16 +221,7 @@ async function savePhone() {
   var number = document.getElementById('phone-number').value.trim();
   var carrier = document.getElementById('phone-carrier').value;
   var assignedTo = document.getElementById('phone-assigned').value || null;
-  var notesExtra = document.getElementById('phone-notes').value.trim();
-
-  // Build the notes field so phone-specific metadata (number, carrier)
-  // is still visible on the asset detail page -- avoids a schema
-  // migration for what's now a handful of fields.
-  var notesParts = [];
-  if (number) notesParts.push('Phone: ' + number);
-  if (carrier) notesParts.push('Carrier: ' + carrier);
-  if (notesExtra) notesParts.push(notesExtra);
-  var notes = notesParts.join(' · ');
+  var notes = document.getElementById('phone-notes').value.trim();
 
   var nameBits = [];
   if (make) nameBits.push(make);
@@ -248,6 +239,8 @@ async function savePhone() {
       manufacturer: make || null,
       model: model || null,
       os: os || null,
+      phone_number: number || null,
+      carrier: carrier || null,
       status: assignedTo ? 'deployed' : 'available',
       assigned_to: assignedTo,
       notes: notes || null

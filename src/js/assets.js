@@ -479,20 +479,28 @@ async function renderAssetDetail(id, preloaded) {
 
     html += '</div></div>';
 
-    // Hardware Specs (if any spec fields populated)
-    var hasSpecs = asset.hostname || asset.os || asset.cpu || asset.ram_gb || asset.disk_gb || asset.mac_address;
-    if (hasSpecs) {
-      html += '<div class="card" style="margin-bottom:12px"><div class="card-header"><span class="card-title">Hardware Specs</span></div>'
-        + '<div class="card-body"><div class="detail-grid" style="grid-template-columns:1fr 1fr 1fr 1fr">'
-        + detailField('Hostname', asset.hostname)
-        + detailField('Operating System', asset.os)
-        + detailField('CPU', asset.cpu)
-        + detailField('RAM', asset.ram_gb ? asset.ram_gb + ' GB' : null)
-        + detailField('Disk', asset.disk_gb ? asset.disk_gb + ' GB' : null)
-        + detailField('MAC Address', asset.mac_address)
-        + detailField('IP Address', asset.ip_address)
-        + detailField('Enrolled User', asset.enrolled_user)
-        + '</div></div></div>';
+    // Specs — unified PC + phone fields. Render only populated rows so
+    // a phone asset doesn't show a grid of PC-specific em-dashes.
+    var specRows = [
+      ['Hostname', asset.hostname],
+      ['Operating System', asset.os],
+      ['CPU', asset.cpu],
+      ['RAM', asset.ram_gb ? asset.ram_gb + ' GB' : null],
+      ['Disk', asset.disk_gb ? asset.disk_gb + ' GB' : null],
+      ['MAC Address', asset.mac_address],
+      ['IP Address', asset.ip_address],
+      ['Enrolled User', asset.enrolled_user],
+      ['Phone Number', asset.phone_number],
+      ['Carrier', asset.carrier]
+    ].filter(function(row) { return row[1]; });
+
+    if (specRows.length) {
+      html += '<div class="card" style="margin-bottom:12px"><div class="card-header"><span class="card-title">Specs</span></div>'
+        + '<div class="card-body"><div class="detail-grid" style="grid-template-columns:1fr 1fr 1fr 1fr">';
+      specRows.forEach(function(row) {
+        html += detailField(row[0], row[1]);
+      });
+      html += '</div></div></div>';
     }
 
     // Notes
@@ -932,6 +940,11 @@ async function renderAssetForm(editId) {
     + '<input type="text" id="af-ip" class="form-input" value="' + esc(asset ? asset.ip_address : '') + '" placeholder="192.168.1.100"></div>'
     + '<div class="form-group"><label class="form-label">Enrolled User</label>'
     + '<input type="text" id="af-enrolled-user" class="form-input" value="' + esc(asset ? asset.enrolled_user : '') + '" placeholder="DOMAIN\\username"></div></div>'
+    + '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">Phone Number</label>'
+    + '<input type="tel" id="af-phone-number" class="form-input" value="' + esc(asset ? asset.phone_number : '') + '" placeholder="04XX XXX XXX"></div>'
+    + '<div class="form-group"><label class="form-label">Carrier</label>'
+    + '<input type="text" id="af-carrier" class="form-input" value="' + esc(asset ? asset.carrier : '') + '" placeholder="Telstra / Optus / Vodafone"></div></div>'
     + '</details>';
 
   // Image
@@ -1017,7 +1030,9 @@ async function saveAsset(editId) {
     disk_gb: parseInt(document.getElementById('af-disk').value) || null,
     mac_address: document.getElementById('af-mac').value.trim() || null,
     ip_address: document.getElementById('af-ip').value.trim() || null,
-    enrolled_user: document.getElementById('af-enrolled-user').value.trim() || null
+    enrolled_user: document.getElementById('af-enrolled-user').value.trim() || null,
+    phone_number: (document.getElementById('af-phone-number') ? document.getElementById('af-phone-number').value.trim() : '') || null,
+    carrier: (document.getElementById('af-carrier') ? document.getElementById('af-carrier').value.trim() : '') || null
   };
 
   // Handle image upload
