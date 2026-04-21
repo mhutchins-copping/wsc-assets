@@ -42,6 +42,9 @@ quick-reference.
 
 - **Asset lifecycle** — register, assign, service, audit, dispose, purge.
   Auto-generated asset tags (`WSC-L-0042` style) with QR codes.
+- **Mobile-first asset list** — under 768px the list swaps from a table to
+  thumb-reachable cards, tap targets are bumped to Apple's minimum, and
+  inputs are pinned to 16px to stop iOS zoom on focus.
 - **Check out / check in** — keyboard-navigable person picker with live
   search and acknowledgement.
 - **Signed receipts** — on check-out, email the recipient a token-gated

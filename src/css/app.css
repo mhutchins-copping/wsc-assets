@@ -1280,9 +1280,20 @@ tbody td.mono {
   #main { margin-left: 0; }
 
   .topbar { padding: 0 14px; }
-  .topbar-search { display: none; }
+  /* Global search is the fastest path to an asset on phone; keep it
+     visible. Trim the width so the page title still fits. */
+  .topbar-search { display: flex; max-width: 160px; }
+  .topbar-search input { font-size: 16px; /* prevent iOS focus zoom */ }
+  .topbar-title { font-size: 15px; }
 
   .view-container { padding: 14px; }
+
+  /* iOS focus zooms any input under 16px. Pin every editable field to
+     16px on mobile so focusing search / forms doesn't punt the viewport. */
+  .toolbar-search input,
+  .form-input,
+  .form-textarea,
+  .form-select { font-size: 16px; }
 
   .kpi-row { grid-template-columns: 1fr 1fr; }
 
@@ -1309,9 +1320,76 @@ tbody td.mono {
 @media (max-width: 480px) {
   .kpi-row { grid-template-columns: 1fr; }
   .detail-grid { grid-template-columns: 1fr; }
-  .detail-header-actions .btn { font-size: 11px; padding: 4px 8px; }
-  .filter-bar { gap: 4px; }
-  .filter-pill { padding: 3px 8px; font-size: 11px; }
+  /* Pre-existing rule made these borderline-untappable (below ~32px); bump
+     to roughly Apple's 44pt minimum while keeping them compact enough to
+     wrap on a narrow phone. */
+  .detail-header-actions .btn { font-size: 13px; padding: 8px 12px; min-height: 36px; }
+  .filter-bar { gap: 6px; }
+  .filter-pill { padding: 6px 12px; font-size: 12px; min-height: 32px; }
+}
+
+/* ─── Asset list cards (mobile) ──────────────── */
+/* Swapped in place of the desktop table below 768px. Selection checkbox
+   on the right so it's thumb-reachable without covering the asset tag. */
+.asset-cards { display: flex; flex-direction: column; gap: 8px; }
+.asset-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  -webkit-tap-highlight-color: rgba(37, 99, 235, 0.1);
+}
+.asset-card:active { background: var(--surface2); }
+.asset-card-sel {
+  flex-shrink: 0;
+  order: 2; /* put checkbox on the right */
+  display: flex;
+  align-items: flex-start;
+  padding-top: 2px;
+  /* Widen the hit area around the checkbox. */
+  padding-left: 6px;
+  padding-right: 2px;
+}
+.asset-card-sel input { width: 18px; height: 18px; }
+.asset-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.asset-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.asset-card-tag {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.asset-card-name {
+  font-size: 15px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.asset-card-meta {
+  font-size: 12px;
+  color: var(--text2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.asset-card-serial {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text3);
 }
 
 /* ─── Settings Page ──────────────────────────── */

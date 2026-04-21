@@ -168,16 +168,23 @@ async function loadAssets() {
       return { id: r.id, asset_tag: r.asset_tag, name: r.name };
     });
 
-    tableEl.innerHTML = renderTable({
-      columns: columns,
-      data: result.data,
-      sortKey: assetState.sort,
-      sortDir: assetState.dir,
-      onSort: 'assetSort',
-      onRowClick: 'viewAsset',
-      emptyMsg: 'No assets found',
-      wrapClass: 'asset-table'
-    });
+    // Mobile: swap the table for stacked cards. Better thumb-reachable
+    // layout; the desktop table becomes horizontal-scroll and tiny at
+    // that width, and phone is the primary daily-use surface.
+    if (window.matchMedia('(max-width: 768px)').matches) {
+      tableEl.innerHTML = renderAssetCards(result.data || []);
+    } else {
+      tableEl.innerHTML = renderTable({
+        columns: columns,
+        data: result.data,
+        sortKey: assetState.sort,
+        sortDir: assetState.dir,
+        onSort: 'assetSort',
+        onRowClick: 'viewAsset',
+        emptyMsg: 'No assets found',
+        wrapClass: 'asset-table'
+      });
+    }
 
     document.getElementById('asset-pagination').innerHTML = renderPagination({
       page: result.page,
@@ -194,6 +201,58 @@ async function loadAssets() {
 
 function viewAsset(id) { navigate('#/assets/' + id); }
 window.viewAsset = viewAsset;
+
+// Mobile card layout for the asset list. Each row becomes a self-contained
+// card so there's no horizontal scroll and the tap target is larger than a
+// table cell. Selection checkbox lives on the top-right; tapping anywhere
+// else on the card opens the detail view. Sorting is hidden here -- the
+// default (updated_at desc) is what a field walker wants anyway, and full
+// sort is available on desktop.
+function renderAssetCards(data) {
+  if (!data.length) {
+    return '<div class="table-empty">No assets found</div>';
+  }
+  return '<div class="asset-cards">' + data.map(function(r) {
+    var checked = assetSelection.has(r.id) ? ' checked' : '';
+    var metaParts = [];
+    if (r.assigned_to_name) metaParts.push(esc(r.assigned_to_name));
+    else if (r.category_name) metaParts.push(esc(r.category_name));
+    if (r.manufacturer) metaParts.push(esc(r.manufacturer));
+    var meta = metaParts.join(' &middot; ');
+    return '<div class="asset-card" onclick="viewAsset(\'' + esc(r.id) + '\')">'
+      + '<label class="asset-card-sel" onclick="event.stopPropagation()">'
+      +   '<input type="checkbox" class="asset-select" data-id="' + esc(r.id) + '"' + checked
+      +   ' onclick="event.stopPropagation();toggleAssetSelection(\'' + esc(r.id) + '\')">'
+      + '</label>'
+      + '<div class="asset-card-main">'
+      +   '<div class="asset-card-top">'
+      +     '<span class="asset-card-tag">' + esc(r.asset_tag || '') + '</span>'
+      +     statusBadge(r.status)
+      +   '</div>'
+      +   '<div class="asset-card-name">' + esc(r.name || '') + '</div>'
+      +   (meta ? '<div class="asset-card-meta">' + meta + '</div>' : '')
+      +   (r.serial_number ? '<div class="asset-card-serial">S/N ' + esc(r.serial_number) + '</div>' : '')
+      + '</div>'
+      + '</div>';
+  }).join('') + '</div>';
+}
+window.renderAssetCards = renderAssetCards;
+
+// Re-render the list when the viewport crosses the 768px breakpoint.
+// Only fires on an actual media-query transition -- harmless when we're
+// not on the assets view.
+(function () {
+  if (!window.matchMedia) return;
+  var mq = window.matchMedia('(max-width: 768px)');
+  var handler = function () {
+    var active = document.querySelector('.view.active');
+    if (active && active.id === 'view-assets' && typeof loadAssets === 'function') {
+      loadAssets();
+    }
+  };
+  if (mq.addEventListener) mq.addEventListener('change', handler);
+  else if (mq.addListener) mq.addListener(handler);
+})();
 
 // ─── Multi-select helpers ─────────────────────
 
