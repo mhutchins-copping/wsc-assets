@@ -229,6 +229,7 @@ wsc-assets/
 │       ├── assets.js          # List, detail, create / edit forms, label printing
 │       ├── checkout.js        # Check-out / check-in modals + picker
 │       ├── issues.js          # Receipts admin view (resend / cancel / view signature)
+│       ├── phoneEnrol.js      # Mobile-first phone enrolment — IMEI + barcode scan
 │       ├── people.js
 │       ├── categories.js
 │       ├── audits.js

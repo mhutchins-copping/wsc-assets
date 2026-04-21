@@ -49,6 +49,7 @@ var Router = {
       '/audits': param ? 'audit-detail' : 'audits',
       '/reports': 'reports',
       '/issues': 'issues',
+      '/phone-enrol': 'phone-enrol',
       '/settings': 'settings',
       '/account': 'account'
     };
