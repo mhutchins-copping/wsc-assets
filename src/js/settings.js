@@ -66,7 +66,8 @@ function renderSettings() {
     + '<div class="form-hint" style="margin-bottom:12px"><strong>PCs (Windows):</strong> on each council PC, open PowerShell and visit <a href="https://api.it-wsc.com/enrol" target="_blank" rel="noopener">api.it-wsc.com/enrol</a>. Enter the enrolment password; the page hands over a one-line command that registers the machine. Safe to re-run — dedupes on BIOS serial.</div>'
     + '<a class="btn primary" href="https://api.it-wsc.com/enrol" target="_blank" rel="noopener" style="margin-right:8px">PC enrolment page</a>'
     + '<div class="form-hint" style="margin:16px 0 12px"><strong>Phones (iPhone &amp; Android):</strong> open on the phone being enrolled (or yours, if you\'re enrolling someone else\'s). Uses the IMEI as the serial — dial <code>*#06#</code> on the target phone to see it. Barcode scan on supported browsers.</div>'
-    + '<button class="btn primary" onclick="navigate(\'#/phone-enrol\')">Enrol a phone</button>'
+    + '<button class="btn primary" onclick="navigate(\'#/phone-enrol\')" style="margin-right:8px">Enrol a phone</button>'
+    + '<button class="btn" onclick="navigate(\'#/phone-enrol-batch\')">Batch enrol phones</button>'
     + '</div></div>'
 
     // CSV Import/Export

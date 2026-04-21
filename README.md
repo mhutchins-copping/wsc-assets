@@ -70,7 +70,9 @@ quick-reference.
   iPhone and Android, no app install. IMEI is the canonical identifier
   (dial `*#06#` on the target phone to see it). Browser barcode scan
   when available; paste/type fallback everywhere. Auto-detects OS and
-  make from the user agent where it can.
+  make from the user agent where it can. **Batch mode** at
+  `#/phone-enrol-batch` for registering a box of new devices in one
+  go: set make / model / OS / carrier once, then one row per device.
 - **PowerShell enrolment** for hardware specs. Two entry points:
   - **Password-gated web launcher** at `https://api.it-wsc.com/enrol` —
     visit the URL on the new PC, type the shared `ENROL_PASSWORD`, and

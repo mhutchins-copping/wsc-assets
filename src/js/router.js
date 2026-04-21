@@ -50,6 +50,7 @@ var Router = {
       '/reports': 'reports',
       '/issues': 'issues',
       '/phone-enrol': 'phone-enrol',
+      '/phone-enrol-batch': 'phone-enrol',
       '/settings': 'settings',
       '/account': 'account'
     };
