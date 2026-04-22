@@ -147,9 +147,9 @@ function buildEmail(event, data) {
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif">
   <div style="max-width:600px;margin:0 auto;padding:20px">
     <!-- Header -->
-    <div style="background:linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);padding:24px;border-radius:12px 12px 0 0">
+    <div style="background:linear-gradient(135deg,#0f2e1e 0%,#1f5136 100%);padding:24px;border-radius:12px 12px 0 0">
       <h1 style="margin:0;color:#fff;font-size:20px;font-weight:600">WSC IT Asset Management</h1>
-      <p style="margin:4px 0 0;color:#bfdbfe;font-size:13px">Walgett Shire Council</p>
+      <p style="margin:4px 0 0;color:#b8d4c0;font-size:13px">Walgett Shire Council</p>
     </div>
     
     <!-- Action Badge -->
@@ -172,7 +172,7 @@ function buildEmail(event, data) {
       <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:8px">
         ${actorLine ? `<p style="margin:0 0 4px;color:#6b7280;font-size:13px">${actorLine}</p>` : ''}
         <p style="margin:0 0 16px;color:#6b7280;font-size:13px">${timestampStr}</p>
-        ${assetUrl ? `<a href="${assetUrl}" style="display:inline-block;background:#2563eb;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:500">View in WSC Assets →</a>` : ''}
+        ${assetUrl ? `<a href="${assetUrl}" style="display:inline-block;background:#1f5136;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:500">View in WSC Assets →</a>` : ''}
       </div>
     </div>
     

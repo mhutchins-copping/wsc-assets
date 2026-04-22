@@ -1216,9 +1216,9 @@ async function sendIssueEmail(env, { asset, person, token, termsText, issuedBy }
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">
   <div style="max-width:600px;margin:0 auto;padding:20px">
-    <div style="background:linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);padding:24px;border-radius:12px 12px 0 0">
+    <div style="background:linear-gradient(135deg,#0f2e1e 0%,#1f5136 100%);padding:24px;border-radius:12px 12px 0 0">
       <h1 style="margin:0;color:#fff;font-size:20px;font-weight:600">WSC IT Asset Management</h1>
-      <p style="margin:4px 0 0;color:#bfdbfe;font-size:13px">Walgett Shire Council</p>
+      <p style="margin:4px 0 0;color:#b8d4c0;font-size:13px">Walgett Shire Council</p>
     </div>
     <div style="background:#fff;padding:28px 24px;border-radius:0 0 12px 12px;box-shadow:0 1px 3px rgba(0,0,0,.1)">
       <p style="margin:0 0 14px;font-size:15px;color:#111827">Hi ${escapeHtml(person.name)},</p>
@@ -1232,7 +1232,7 @@ async function sendIssueEmail(env, { asset, person, token, termsText, issuedBy }
         ${asset.manufacturer || asset.model ? `<tr><td style="padding:10px 14px;color:#6b7280;font-size:13px">Make / model</td><td style="padding:10px 14px;color:#111827;font-size:14px">${escapeHtml(((asset.manufacturer || '') + ' ' + (asset.model || '')).trim())}</td></tr>` : ''}
       </table>
       <div style="text-align:center;margin:24px 0">
-        <a href="${signingUrl}" style="display:inline-block;background:#2563eb;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:600">Review and sign</a>
+        <a href="${signingUrl}" style="display:inline-block;background:#1f5136;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:600">Review and sign</a>
       </div>
       <p style="margin:20px 0 0;font-size:12px;color:#6b7280;line-height:1.5">
         This link is unique to you and will expire in ${ISSUE_EXPIRY_DAYS} days. If you didn't expect this email, please let IT know.
@@ -1407,9 +1407,9 @@ async function renderSigningPage(env, token) {
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f3f4f6;color:#111827;min-height:100vh;padding:16px}
   .wrap{max-width:640px;margin:0 auto}
-  .header{background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff;padding:20px;border-radius:12px 12px 0 0}
+  .header{background:linear-gradient(135deg,#0f2e1e,#1f5136);color:#fff;padding:20px;border-radius:12px 12px 0 0}
   .header h1{margin:0;font-size:18px;font-weight:600}
-  .header p{margin:2px 0 0;font-size:12px;color:#bfdbfe}
+  .header p{margin:2px 0 0;font-size:12px;color:#b8d4c0}
   .card{background:#fff;padding:22px 20px;border-radius:0 0 12px 12px;box-shadow:0 2px 6px rgba(0,0,0,.06)}
   .row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #f3f4f6;font-size:14px}
   .row:last-child{border-bottom:0}.k{color:#6b7280}.v{color:#111827;font-weight:500;text-align:right;max-width:60%;word-break:break-word}
@@ -1417,13 +1417,13 @@ async function renderSigningPage(env, token) {
   .terms{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin:18px 0 12px;font-size:13px;line-height:1.55;color:#374151;white-space:pre-wrap}
   label{display:block;font-size:13px;color:#374151;margin:14px 0 6px;font-weight:500}
   input[type=text]{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:15px;font-family:inherit}
-  input[type=text]:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px #2563eb22}
+  input[type=text]:focus{outline:none;border-color:#1f5136;box-shadow:0 0 0 3px #1f513622}
   .pad-wrap{border:1px dashed #9ca3af;border-radius:8px;background:#fff;touch-action:none;position:relative}
   canvas{display:block;width:100%;height:180px;border-radius:8px;cursor:crosshair;touch-action:none}
   .pad-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#9ca3af;font-size:13px;pointer-events:none}
   .pad-actions{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:8px}
   .pad-actions button{background:transparent;border:0;color:#6b7280;font-size:13px;cursor:pointer;padding:6px;text-decoration:underline}
-  .submit{width:100%;margin-top:18px;padding:14px;background:#2563eb;color:#fff;border:0;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer}
+  .submit{width:100%;margin-top:18px;padding:14px;background:#1f5136;color:#fff;border:0;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer}
   .submit:disabled{background:#9ca3af;cursor:not-allowed}
   .submit.loading{opacity:.7}
   .err{color:#dc2626;font-size:13px;margin-top:8px;display:none}
@@ -1589,15 +1589,15 @@ function enrolPageHtml(body) {
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f3f4f6;color:#111827;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:20px}
   .wrap{max-width:560px;width:100%;margin-top:40px}
-  .header{background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff;padding:22px;border-radius:12px 12px 0 0}
+  .header{background:linear-gradient(135deg,#0f2e1e,#1f5136);color:#fff;padding:22px;border-radius:12px 12px 0 0}
   .header h1{margin:0;font-size:18px;font-weight:600}
-  .header p{margin:2px 0 0;font-size:12px;color:#bfdbfe}
+  .header p{margin:2px 0 0;font-size:12px;color:#b8d4c0}
   .card{background:#fff;padding:24px;border-radius:0 0 12px 12px;box-shadow:0 2px 6px rgba(0,0,0,.06)}
   label{display:block;font-size:13px;color:#374151;margin:0 0 6px;font-weight:500}
   input[type=password]{width:100%;padding:11px 13px;border:1px solid #d1d5db;border-radius:8px;font-size:15px;font-family:inherit}
-  input[type=password]:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
-  .btn{display:inline-block;background:#2563eb;color:#fff;border:0;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-top:12px}
-  .btn:hover{background:#1d4ed8}
+  input[type=password]:focus{outline:none;border-color:#1f5136;box-shadow:0 0 0 3px rgba(31,81,54,.15)}
+  .btn{display:inline-block;background:#1f5136;color:#fff;border:0;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-top:12px}
+  .btn:hover{background:#184229}
   .btn-secondary{background:#fff;color:#374151;border:1px solid #d1d5db}
   .btn-secondary:hover{background:#f9fafb}
   .err{margin-top:10px;padding:10px 12px;background:#fef2f2;color:#991b1b;border:1px solid #fecaca;border-radius:8px;font-size:13px}
