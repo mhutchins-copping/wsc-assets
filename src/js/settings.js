@@ -283,13 +283,14 @@ function loadUserList() {
     var users = res.data || [];
     if (!users.length) { container.innerHTML = '<div class="settings-empty">No users</div>'; return; }
 
-    var html = '<table class="table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>';
+    var html = '<table class="table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Notifications</th><th></th></tr></thead><tbody>';
     users.forEach(function(u) {
       html += '<tr><td>' + esc(u.display_name) + '</td>' +
         '<td><span class="mono">' + esc(u.email) + '</span></td>' +
         '<td>' + esc(u.role) + '</td>' +
         '<td><span class="' + (u.active ? 'text-green' : 'text-red') + '">' + (u.active ? 'Active' : 'Disabled') + '</span></td>' +
-        '<td><button class="btn sm" onclick="openEditUser(\'' + u.id + '\',\'' + esc(u.email) + '\',\'' + esc(u.display_name) + '\',\'' + esc(u.role) + '\',' + u.active + ')">Edit</button></td></tr>';
+        '<td>' + (u.notifications_enabled ? '<span class="text-green">On</span>' : '<span style="color:var(--text3)">Off</span>') + '</td>' +
+        '<td><button class="btn sm" onclick="openEditUser(\'' + u.id + '\',\'' + esc(u.email) + '\',\'' + esc(u.display_name) + '\',\'' + esc(u.role) + '\',' + u.active + ',' + (u.notifications_enabled ? 1 : 0) + ')">Edit</button></td></tr>';
     });
     container.innerHTML = html + '</tbody></table>';
   }).catch(function(e) {
@@ -302,6 +303,10 @@ function openAddUserModal() {
     '<div class="form-group"><label class="form-label">Email</label><input type="email" id="au-email" class="form-input" placeholder="user@walgett.nsw.gov.au"></div>' +
     '<div class="form-group"><label class="form-label">Display Name</label><input type="text" id="au-name" class="form-input" placeholder="Full name"></div>' +
     '<div class="form-group"><label class="form-label">Role</label><select id="au-role" class="form-select"><option value="user">User</option><option value="admin">Admin</option></select></div>' +
+    '<div class="form-group"><label class="co-ack-label" style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">' +
+      '<input type="checkbox" id="au-notifications">' +
+      '<span>Receive admin email notifications<div style="font-size:11px;color:var(--text3);font-weight:400">Off by default. Tick only for admins who should get every asset / user / security event.</div></span>' +
+    '</label></div>' +
     '<button class="btn primary full" onclick="doAddUser()">Add User</button>'
   );
 }
@@ -311,10 +316,11 @@ async function doAddUser() {
   var email = document.getElementById('au-email').value.trim();
   var name = document.getElementById('au-name').value.trim();
   var role = document.getElementById('au-role').value;
+  var notif = document.getElementById('au-notifications').checked ? 1 : 0;
   if (!email) { toast('Email required', 'error'); return; }
 
   try {
-    await API.fetch('/api/auth/users', { method: 'POST', body: { email: email, display_name: name || email, role: role } });
+    await API.fetch('/api/auth/users', { method: 'POST', body: { email: email, display_name: name || email, role: role, notifications_enabled: notif } });
     closeModal();
     toast('User added', 'success');
     loadUserList();
@@ -322,16 +328,21 @@ async function doAddUser() {
 }
 window.doAddUser = doAddUser;
 
-function openEditUser(id, email, name, role, active) {
+function openEditUser(id, email, name, role, active, notificationsEnabled) {
   openModal('Edit User',
     '<div class="form-group"><label class="form-label">Email</label><input type="email" id="eu-email" class="form-input" value="' + esc(email) + '"></div>' +
     '<div class="form-group"><label class="form-label">Name</label><input type="text" id="eu-name" class="form-input" value="' + esc(name) + '"></div>' +
     '<div class="form-group"><label class="form-label">Role</label><select id="eu-role" class="form-select"><option value="user">User</option><option value="admin">Admin</option></select></div>' +
     '<div class="form-group"><label class="form-label">Status</label><select id="eu-active" class="form-select"><option value="1">Active</option><option value="0">Disabled</option></select></div>' +
+    '<div class="form-group"><label class="co-ack-label" style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">' +
+      '<input type="checkbox" id="eu-notifications">' +
+      '<span>Receive admin email notifications<div style="font-size:11px;color:var(--text3);font-weight:400">Asset created / checked out / checked in / disposed, master-key logins, new users. Receipt-signing emails go to recipients regardless of this setting.</div></span>' +
+    '</label></div>' +
     '<div style="display:flex;gap:8px"><button class="btn primary" onclick="doEditUser(\'' + id + '\')">Save</button><button class="btn danger" onclick="doDeleteUser(\'' + id + '\')">Delete</button></div>'
   );
   document.getElementById('eu-role').value = role;
   document.getElementById('eu-active').value = active ? '1' : '0';
+  document.getElementById('eu-notifications').checked = !!notificationsEnabled;
 }
 window.openEditUser = openEditUser;
 
@@ -341,7 +352,8 @@ async function doEditUser(id) {
       email: document.getElementById('eu-email').value.trim(),
       display_name: document.getElementById('eu-name').value.trim(),
       role: document.getElementById('eu-role').value,
-      active: parseInt(document.getElementById('eu-active').value)
+      active: parseInt(document.getElementById('eu-active').value),
+      notifications_enabled: document.getElementById('eu-notifications').checked ? 1 : 0
     }});
     closeModal();
     toast('User updated', 'success');

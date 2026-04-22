@@ -510,7 +510,7 @@ async function routeUserManagement(request, env, url) {
 
 async function listUsers(env) {
   const result = await env.DB.prepare(
-    'SELECT id, email, display_name, role, active, created_at, last_login FROM users ORDER BY created_at'
+    'SELECT id, email, display_name, role, active, notifications_enabled, created_at, last_login FROM users ORDER BY created_at'
   ).all();
   return json({ data: result.results });
 }
@@ -523,10 +523,15 @@ async function createUser(request, env) {
   if (existing) return json({ error: 'User with this email already exists' }, 400);
 
   const userId = id();
+  // notifications_enabled defaults to 0 on create so a new admin does
+  // NOT start receiving admin emails automatically -- the existing
+  // admin has to explicitly opt them in. Column default is 1 at the
+  // schema level, so we override here.
+  const notif = data.notifications_enabled === 1 || data.notifications_enabled === true ? 1 : 0;
   await env.DB.prepare(`
-    INSERT INTO users (id, email, display_name, role, active)
-    VALUES (?, ?, ?, ?, 1)
-  `).bind(userId, data.email.toLowerCase(), data.display_name || data.email, data.role || 'user').run();
+    INSERT INTO users (id, email, display_name, role, active, notifications_enabled)
+    VALUES (?, ?, ?, ?, 1, ?)
+  `).bind(userId, data.email.toLowerCase(), data.display_name || data.email, data.role || 'user', notif).run();
 
   const currentUser = request._user;
   const actor = currentUser ? (currentUser.display_name || currentUser.email) : null;
@@ -548,13 +553,17 @@ async function updateUser(request, env, userId) {
   if (!existing) return json({ error: 'User not found' }, 404);
 
   const data = await body(request);
+  const notif = data.notifications_enabled === undefined
+    ? existing.notifications_enabled
+    : (data.notifications_enabled === 1 || data.notifications_enabled === true ? 1 : 0);
   await env.DB.prepare(`
-    UPDATE users SET display_name = ?, email = ?, role = ?, active = ? WHERE id = ?
+    UPDATE users SET display_name = ?, email = ?, role = ?, active = ?, notifications_enabled = ? WHERE id = ?
   `).bind(
     data.display_name !== undefined ? data.display_name : existing.display_name,
     data.email !== undefined ? data.email.toLowerCase() : existing.email,
     data.role !== undefined ? data.role : existing.role,
     data.active !== undefined ? data.active : existing.active,
+    notif,
     userId
   ).run();
 
