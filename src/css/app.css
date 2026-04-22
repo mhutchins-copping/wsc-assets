@@ -343,8 +343,12 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 16px 14px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 12px 14px;
+  /* Light strip so the logo (which has its own white text panel) sits
+     naturally instead of floating on dark. Subtle bottom rule divides
+     it from the dark nav body. */
+  background: #ffffff;
+  border-bottom: 1px solid rgba(0,0,0,0.1);
 }
 
 .sidebar-logo {
@@ -375,33 +379,33 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
   color: #ffffff;
 }
 
-/* Council logo replaces the W tile + text. The logo has a white
-   panel on its right half, so we host it on a small white pill in
-   the dark sidebar so it doesn't read as a jarring rectangle of
-   white text floating in the dark. */
+/* Council logo replaces the W tile + text. Sidebar header is white,
+   so the logo sits flush without needing a pill or shadow treatment. */
 .sidebar-logo-img {
   display: block;
-  max-width: 160px;
-  max-height: 38px;
+  max-width: 100%;
+  max-height: 44px;
   width: auto;
   height: auto;
-  background: #ffffff;
-  padding: 4px 8px;
-  border-radius: 5px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.sidebar-logo {
+  flex: 1;
+  min-width: 0;
 }
 
 .sidebar-collapse-btn {
   display: none;
   background: none;
   border: none;
-  color: rgba(255,255,255,0.5);
+  /* Header strip is white now; icon has to be dark to show up. */
+  color: var(--text2);
   cursor: pointer;
   padding: 4px;
   border-radius: var(--radius-sm);
 }
 
-.sidebar-collapse-btn:hover { background: rgba(255,255,255,0.1); }
+.sidebar-collapse-btn:hover { background: rgba(0,0,0,0.06); }
 
 .sidebar-nav {
   flex: 1;
