@@ -13,7 +13,7 @@ async function renderAuditsList() {
   el.innerHTML = '<div class="toolbar">'
     + '<div class="toolbar-left"><h2 style="margin:0;font-size:16px">Asset Audits</h2></div>'
     + '<div class="toolbar-right">'
-    + '<button class="btn primary sm" onclick="openNewAudit()">+ New Audit</button>'
+    + (Auth.isAdmin() ? '<button class="btn primary sm" onclick="openNewAudit()">+ New Audit</button>' : '')
     + '</div></div>'
     + '<div id="audits-table">' + skeleton(4) + '</div>';
 
@@ -126,12 +126,14 @@ async function renderAuditDetail(auditId) {
       + '</div></div>'
       + '<div class="detail-header-actions">';
 
-    if (isActive) {
+    if (isActive && Auth.isAdmin()) {
       html += '<button class="btn primary sm" onclick="openAuditScan(\'' + esc(auditId) + '\')">Scan Asset</button>'
         + '<button class="btn sm" onclick="doCompleteAudit(\'' + esc(auditId) + '\')">Finish Audit</button>';
     }
-    html += '<button class="btn danger sm" onclick="deleteAudit(\'' + esc(auditId) + '\')">Delete</button>'
-      + '</div></div>';
+    if (Auth.isAdmin()) {
+      html += '<button class="btn danger sm" onclick="deleteAudit(\'' + esc(auditId) + '\')">Delete</button>';
+    }
+    html += '</div></div>';
 
     // Stats row
     var total = audit.total_expected || items.length || 1;

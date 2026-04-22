@@ -4,7 +4,7 @@ Router.register('/categories', function() {
   var el = document.getElementById('view-categories');
   el.innerHTML = '<div class="toolbar">'
     + '<div class="toolbar-right">'
-    + '<button class="btn primary sm" onclick="openCategoryForm()">+ New Category</button>'
+    + (Auth.isAdmin() ? '<button class="btn primary sm" onclick="openCategoryForm()">+ New Category</button>' : '')
     + '</div></div>'
     + '<div id="categories-tree">' + skeleton(6) + '</div>';
 
@@ -35,8 +35,8 @@ async function loadCategories() {
         + '<span style="font-size:10px;font-family:var(--mono);color:var(--text3);background:var(--surface2);padding:2px 8px;border-radius:10px">' + esc(parent.prefix) + '</span>'
         + '</div>'
         + '<div style="display:flex;gap:6px">'
-        + '<button class="btn sm" onclick="openCategoryForm(null,\'' + esc(parent.id) + '\')">+ Subcategory</button>'
-        + '<button class="btn sm" onclick="openCategoryFormEdit(\'' + esc(parent.id) + '\')">Edit</button>'
+        + (Auth.isAdmin() ? '<button class="btn sm" onclick="openCategoryForm(null,\'' + esc(parent.id) + '\')">+ Subcategory</button>' : '')
+        + (Auth.isAdmin() ? '<button class="btn sm" onclick="openCategoryFormEdit(\'' + esc(parent.id) + '\')">Edit</button>' : '')
         + '</div></div>';
 
       if (parent.children && parent.children.length) {
@@ -51,8 +51,8 @@ async function loadCategories() {
             + '</div></div>'
             + '<div style="display:flex;align-items:center;gap:10px">'
             + '<span style="font-size:12px;font-family:var(--mono);color:var(--text2)">' + (child.asset_count || 0) + ' assets</span>'
-            + '<button class="icon-btn" onclick="openCategoryFormEdit(\'' + esc(child.id) + '\')" title="Edit">&#9998;</button>'
-            + '<button class="icon-btn" onclick="deleteCategoryConfirm(\'' + esc(child.id) + '\',\'' + esc(child.name) + '\',' + (child.asset_count || 0) + ')" title="Delete">&#10005;</button>'
+            + (Auth.isAdmin() ? '<button class="icon-btn" onclick="openCategoryFormEdit(\'' + esc(child.id) + '\')" title="Edit">&#9998;</button>' : '')
+            + (Auth.isAdmin() ? '<button class="icon-btn" onclick="deleteCategoryConfirm(\'' + esc(child.id) + '\',\'' + esc(child.name) + '\',' + (child.asset_count || 0) + ')" title="Delete">&#10005;</button>' : '')
             + '</div></div>';
         });
         html += '</div>';

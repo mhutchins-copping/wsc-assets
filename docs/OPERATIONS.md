@@ -30,11 +30,13 @@ deploying a change) — this is the page.
 
 Roles at a glance:
 
-| Role    | Can read | Can edit assets | Can manage users |
-| ------- | :------: | :-------------: | :--------------: |
-| viewer  | ✔        |                 |                  |
-| user    | ✔        | ✔               |                  |
-| admin   | ✔        | ✔               | ✔                |
+| Role    | Can read | Can mutate | Manage users | Notes |
+| ------- | :------: | :--------: | :----------: | ----- |
+| viewer  | ✔        |            |              | Read-only across the app. |
+| user    | ✔        |            |              | Functionally identical to viewer today — kept as a distinct role so future operational-only permissions (e.g. check-out / check-in without full admin) can be granted later without mixing with viewer. |
+| admin   | ✔        | ✔          | ✔            | Full access. Every mutation — create/edit/delete assets, check-out/check-in, send receipts, manage people, run Entra sync, enrol devices, manage users — is admin-only. |
+
+Only grant **admin** to people who are expected to operate the register day-to-day. Everyone else who needs to see asset assignments gets `user` (or `viewer` — same effect).
 
 ### Revoke access
 

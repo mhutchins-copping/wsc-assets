@@ -55,7 +55,7 @@ function renderAssetList() {
     + '<div class="toolbar-right">'
     + '<button class="btn sm" onclick="printFilteredLabels()">Print labels</button>'
     + '<button class="btn sm" onclick="exportAssetCSV()">Export CSV</button>'
-    + '<button class="btn primary sm" onclick="navigate(\'#/assets/new\')">+ New Asset</button>'
+    + (Auth.isAdmin() ? '<button class="btn primary sm" onclick="navigate(\'#/assets/new\')">+ New Asset</button>' : '')
     + '</div></div>'
     + '<div id="asset-filters"></div>'
     + '<div id="asset-selection-bar" style="display:none"></div>'
@@ -422,17 +422,22 @@ async function renderAssetDetail(id, preloaded) {
       + '</div>'
       + '<div class="detail-header-actions">';
 
-    if (asset.status === 'available') {
-      html += '<button class="btn primary sm" onclick="openCheckout(\'' + esc(asset.id) + '\')">Check Out</button>';
+    if (Auth.isAdmin()) {
+      if (asset.status === 'available') {
+        html += '<button class="btn primary sm" onclick="openCheckout(\'' + esc(asset.id) + '\')">Check Out</button>';
+      }
+      if (asset.status === 'deployed') {
+        html += '<button class="btn sm" onclick="openCheckin(\'' + esc(asset.id) + '\')">Check In</button>';
+      }
+      html += '<button class="btn sm" onclick="navigate(\'#/assets/edit/' + esc(asset.id) + '\')">Edit</button>'
+        + '<button class="btn sm" onclick="openMaintenanceForm(\'' + esc(asset.id) + '\')">+ Maintenance</button>';
     }
-    if (asset.status === 'deployed') {
-      html += '<button class="btn sm" onclick="openCheckin(\'' + esc(asset.id) + '\')">Check In</button>';
+    // Print is safe for any role — it's a read operation against the asset.
+    html += '<button class="btn sm" onclick="printAssetLabel(\'' + esc(asset.id) + '\')">Print</button>';
+    if (Auth.isAdmin()) {
+      html += '<button class="btn danger sm" onclick="permanentDeleteAsset(\'' + esc(asset.id) + '\')">Delete</button>';
     }
-    html += '<button class="btn sm" onclick="navigate(\'#/assets/edit/' + esc(asset.id) + '\')">Edit</button>'
-      + '<button class="btn sm" onclick="openMaintenanceForm(\'' + esc(asset.id) + '\')">+ Maintenance</button>'
-      + '<button class="btn sm" onclick="printAssetLabel(\'' + esc(asset.id) + '\')">Print</button>'
-      + '<button class="btn danger sm" onclick="permanentDeleteAsset(\'' + esc(asset.id) + '\')">Delete</button>'
-      + '</div></div>';
+    html += '</div></div>';
 
     // Info grid: 2-column layout (details/photo on left, assignment/qr on right)
     html += '<div class="asset-detail-grid">'
@@ -563,10 +568,12 @@ async function renderAssetDetail(id, preloaded) {
     html += '<div id="asset-tab-receipts" class="asset-tab-content" style="display:none">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
       + '<div style="font-size:12px;color:var(--text3)">Signed receipts for this asset</div>';
-    if (asset.assigned_to) {
+    if (Auth.isAdmin() && asset.assigned_to) {
       html += '<button class="btn primary sm" onclick="sendAssetIssue(\'' + esc(asset.id) + '\',\'' + esc(asset.assigned_to) + '\')">Email signing link to ' + esc(asset.assigned_to_name || 'recipient') + '</button>';
-    } else {
+    } else if (Auth.isAdmin()) {
       html += '<span style="font-size:11px;color:var(--text3)">Assign the asset to someone to email them a receipt link.</span>';
+    } else {
+      html += '<span></span>';
     }
     html += '</div><div id="asset-issues-list">' + skeleton(3) + '</div></div>';
 
@@ -787,7 +794,7 @@ async function loadAssetIssues(assetId) {
         + '<td class="mono">' + fmtDate(r.issued_at) + '</td>'
         + '<td class="mono">' + (r.signed_at ? fmtDate(r.signed_at) : '—') + '</td>'
         + '<td>';
-      if (r.status === 'pending') {
+      if (r.status === 'pending' && Auth.isAdmin()) {
         html += '<button class="btn sm" onclick="resendIssue(\'' + esc(r.id) + '\').then(function(){ loadAssetIssues(\'' + esc(assetId) + '\'); })">Resend</button> '
           + '<button class="btn sm" onclick="cancelIssueConfirm(\'' + esc(r.id) + '\').then(function(){ loadAssetIssues(\'' + esc(assetId) + '\'); })">Cancel</button>';
       } else if (r.status === 'signed') {
@@ -842,6 +849,15 @@ window.printFilteredLabels = printFilteredLabels;
 
 async function renderAssetForm(editId) {
   var el = document.getElementById('view-asset-form');
+  if (!Auth.isAdmin()) {
+    el.innerHTML = '<div style="max-width:520px;margin:40px auto;padding:24px;background:var(--surface);border:1px solid var(--border);border-radius:12px;text-align:center">'
+      + '<div style="font-size:40px;margin-bottom:12px">&#128274;</div>'
+      + '<h2 style="margin:0 0 8px;font-size:17px">Admin access required</h2>'
+      + '<p style="margin:0 0 16px;font-size:13px;color:var(--text2)">Creating and editing assets is restricted to administrators.</p>'
+      + '<button class="btn" onclick="history.back()">Back</button>'
+      + '</div>';
+    return;
+  }
   el.innerHTML = skeleton(10);
 
   // Load dropdown data

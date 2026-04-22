@@ -39,6 +39,10 @@ function peopleOptionsHtml(selected) {
 
 async function renderPhoneEnrol() {
   var el = document.getElementById('view-phone-enrol');
+  if (!Auth.isAdmin()) {
+    el.innerHTML = adminOnlyHtml();
+    return;
+  }
   el.innerHTML = phoneEnrolFormHtml();
 
   autoDetectPhoneFields();
@@ -47,6 +51,15 @@ async function renderPhoneEnrol() {
   await loadPhonePeople();
   var sel = document.getElementById('phone-assigned');
   if (sel) sel.innerHTML = peopleOptionsHtml(null);
+}
+
+function adminOnlyHtml() {
+  return '<div style="max-width:520px;margin:40px auto;padding:24px;background:var(--surface);border:1px solid var(--border);border-radius:12px;text-align:center">'
+    + '<div style="font-size:40px;margin-bottom:12px">&#128274;</div>'
+    + '<h2 style="margin:0 0 8px;font-size:17px">Admin access required</h2>'
+    + '<p style="margin:0 0 16px;font-size:13px;color:var(--text2)">Phone enrolment is restricted to administrators. If you need to register a device, ask an admin to do it for you.</p>'
+    + '<button class="btn" onclick="history.back()">Back</button>'
+    + '</div>';
 }
 
 function phoneEnrolFormHtml() {
@@ -232,6 +245,10 @@ var _batchRowCounter = 0;
 
 async function renderPhoneEnrolBatch() {
   var el = document.getElementById('view-phone-enrol');
+  if (!Auth.isAdmin()) {
+    el.innerHTML = adminOnlyHtml();
+    return;
+  }
   _batchRowCounter = 0;
   el.innerHTML = batchFormHtml();
   await loadPhonePeople();

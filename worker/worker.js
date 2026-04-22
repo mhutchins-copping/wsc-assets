@@ -619,16 +619,16 @@ async function route(request, env, url) {
     return deny('assets.read') || getAssetBySerial(env, decodeURIComponent(path.match(/^\/api\/assets\/serial\/(.+)$/)[1]));
   }
   if (path.match(/^\/api\/assets\/([^/]+)\/checkout$/) && method === 'POST') {
-    return deny('assets.write') || checkoutAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/checkout$/)[1]);
+    return deny('assets.checkout') || checkoutAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/checkout$/)[1]);
   }
   if (path.match(/^\/api\/assets\/([^/]+)\/checkin$/) && method === 'POST') {
-    return deny('assets.write') || checkinAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/checkin$/)[1]);
+    return deny('assets.checkout') || checkinAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/checkin$/)[1]);
   }
   if (path.match(/^\/api\/assets\/([^/]+)\/maintenance$/) && method === 'POST') {
     return deny('assets.maintenance') || addMaintenance(request, env, path.match(/^\/api\/assets\/([^/]+)\/maintenance$/)[1]);
   }
   if (path.match(/^\/api\/assets\/([^/]+)\/issue$/) && method === 'POST') {
-    return deny('assets.write') || issueAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/issue$/)[1]);
+    return deny('assets.issue') || issueAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/issue$/)[1]);
   }
   if (path.match(/^\/api\/assets\/([^/]+)$/) && method === 'GET') {
     return deny('assets.read') || getAsset(env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
@@ -652,10 +652,10 @@ async function route(request, env, url) {
     return deny('assets.read') || getIssue(env, path.match(/^\/api\/issues\/([^/]+)$/)[1]);
   }
   if (path.match(/^\/api\/issues\/([^/]+)\/resend$/) && method === 'POST') {
-    return deny('assets.write') || resendIssue(request, env, path.match(/^\/api\/issues\/([^/]+)\/resend$/)[1]);
+    return deny('assets.issue') || resendIssue(request, env, path.match(/^\/api\/issues\/([^/]+)\/resend$/)[1]);
   }
   if (path.match(/^\/api\/issues\/([^/]+)\/cancel$/) && method === 'POST') {
-    return deny('assets.write') || cancelIssue(request, env, path.match(/^\/api\/issues\/([^/]+)\/cancel$/)[1]);
+    return deny('assets.issue') || cancelIssue(request, env, path.match(/^\/api\/issues\/([^/]+)\/cancel$/)[1]);
   }
 
   // ── People ──
@@ -771,13 +771,12 @@ const VIEWER_PERMS = [
   'audits.read', 'reports.view', 'settings.read', 'users.read_self'
 ];
 
-const USER_PERMS = VIEWER_PERMS.concat([
-  'assets.write',       // create + update + checkout + checkin
-  'assets.maintenance', // log maintenance entries
-  'people.write',       // create + update + deactivate (soft)
-  'audits.write',       // start + scan + complete
-  'enrol.device'        // clipboard/API enrolment of new hardware
-]);
+// User role is view-only: functionally identical to viewer today. The
+// distinct role is kept so the role picker still offers three options
+// and so future operational permissions (e.g. "can check out / check
+// in only") can be granted to user without touching viewer. Admin is
+// the only role that can mutate anything.
+const USER_PERMS = VIEWER_PERMS.slice();
 
 const ROLE_PERMISSIONS = {
   viewer: new Set(VIEWER_PERMS),
