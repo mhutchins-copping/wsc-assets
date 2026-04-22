@@ -19,8 +19,6 @@ Router.register('/settings', function() {
 });
 
 function renderSettings() {
-  var currentUrl = API.baseUrl || '';
-  var hasKey = !!API.apiKey;
   var tagPrefix = localStorage.getItem('wsc_tag_prefix') || 'WSC';
   var isAdmin = Auth.isAdmin();
   var displayName = Auth.user ? Auth.user.display_name : '—';
@@ -115,64 +113,11 @@ function renderSettings() {
     + '<div id="user-list-container">Loading...</div>'
     + '</div></div>'
 
-    // API Connection (collapsed, at bottom — infrastructure only)
-    + '<details class="settings-card settings-advanced">'
-    + '<summary class="settings-card-header" style="cursor:pointer">API Connection</summary>'
-    + '<div class="settings-card-body">'
-    + '<div class="settings-info-row"><span>API URL</span><span class="mono">' + esc(currentUrl) + '</span></div>'
-    + '<div style="margin-top:8px;display:flex;gap:8px">'
-    + '<button class="btn sm" onclick="testApiConnection()">Test Connection</button>'
-    + '</div>'
-    + '<div class="form-group" style="margin-top:12px">'
-    + '<label class="form-label">Worker URL Override</label>'
-    + '<input type="text" id="settings-api-url" class="form-input" placeholder="https://api.it-wsc.com" value="' + esc(localStorage.getItem('wsc_api_url') || '') + '">'
-    + '</div>'
-    + '<div class="form-group">'
-    + '<label class="form-label">API Key (external scripts)</label>'
-    + '<input type="password" id="settings-api-key" class="form-input" placeholder="' + (hasKey ? '••••••••' : 'Optional') + '">'
-    + '</div>'
-    + '<div style="display:flex;gap:8px">'
-    + '<button class="btn primary sm" onclick="saveApiSettings()">Save</button>'
-    + '<button class="btn sm" onclick="clearApiOverride()">Reset</button>'
-    + '</div>'
-    + '</div></details>'
-
     + '</div>'
     : '')
 
     + '</div>';
 }
-
-async function testApiConnection() {
-  try {
-    var result = await API.getStats();
-    toast('Connected — ' + (result.total || 0) + ' assets', 'success');
-  } catch(e) {
-    toast('Connection failed: ' + e.message, 'error');
-  }
-}
-window.testApiConnection = testApiConnection;
-
-function saveApiSettings() {
-  var url = document.getElementById('settings-api-url').value.trim();
-  var key = document.getElementById('settings-api-key').value.trim();
-  if (url) API.setUrl(url);
-  if (key) API.setKey(key);
-  toast('Settings saved', 'success');
-  API.init();
-}
-window.saveApiSettings = saveApiSettings;
-
-function clearApiOverride() {
-  localStorage.removeItem('wsc_api_url');
-  localStorage.removeItem('wsc_api_key');
-  API.baseUrl = 'https://api.it-wsc.com';
-  API.apiKey = '';
-  document.getElementById('settings-api-url').value = '';
-  document.getElementById('settings-api-key').value = '';
-  toast('Reset to default', 'success');
-}
-window.clearApiOverride = clearApiOverride;
 
 function saveDefaults() {
   var prefix = document.getElementById('settings-tag-prefix').value.trim();

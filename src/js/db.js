@@ -27,26 +27,18 @@ var API = {
     }
     // Per-tab override for the master-key session — set in sessionStorage
     // by Auth.loginWithMasterKey so master-key users bypass CF Access on
-    // api.it-wsc.com even after a page refresh.
+    // api.it-wsc.com even after a page refresh. No user-facing knob to
+    // set this directly; it's purely internal to the master-key flow.
     var sessionUrl = sessionStorage.getItem('wsc_api_url');
     if (sessionUrl && sessionUrl.trim()) {
       this.baseUrl = sessionUrl.trim();
-    } else {
-      // Optional persistent override for operators pointing the UI at a
-      // preview deployment. Rarely used — only if explicitly set.
-      var savedUrl = localStorage.getItem('wsc_api_url');
-      if (savedUrl && savedUrl.trim()) {
-        this.baseUrl = savedUrl.trim();
-      }
     }
-    // Legacy: clear any pre-existing API key or master-key remnants from
-    // earlier builds that persisted them in localStorage.
+    // Legacy: clear pre-existing API URL / key overrides from earlier
+    // builds that exposed them via the Settings UI. That UI has been
+    // retired -- the API URL is fixed by the deployment, browser users
+    // auth via CF Access SSO, and API keys are for scripted callers only.
+    localStorage.removeItem('wsc_api_url');
     localStorage.removeItem('wsc_api_key');
-  },
-
-  setUrl: function(url) {
-    this.baseUrl = url.replace(/\/+$/, '');
-    localStorage.setItem('wsc_api_url', this.baseUrl);
   },
 
   fetch: async function(path, opts) {
