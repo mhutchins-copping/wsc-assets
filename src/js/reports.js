@@ -69,7 +69,7 @@ function renderReportKPIs(data) {
   (data.by_status || []).forEach(function(s) { if (s.status !== 'disposed') total += s.count; });
 
   el.innerHTML = kpiCard('rpt-k-total', 'Active Assets', total, 'Excludes disposed', 'var(--accent)')
-    + kpiCard('rpt-k-deployed', 'Deployed', statusMap.deployed || 0, 'Currently assigned', '#2563eb')
+    + kpiCard('rpt-k-deployed', 'Deployed', statusMap.deployed || 0, 'Currently assigned', '#1f5136')
     + kpiCard('rpt-k-available', 'Available', statusMap.available || 0, 'Ready for use', '#10b981')
     + kpiCard('rpt-k-maint', 'Maintenance', statusMap.maintenance || 0, 'Out of service', '#f59e0b')
     + kpiCard('rpt-k-new', 'Added (30d)', data.recently_added || 0, 'Last 30 days', '#8b5cf6')
@@ -79,7 +79,7 @@ function renderReportKPIs(data) {
 // ─── Chart Helpers ─────────────────────────────
 
 function statusColor(val) {
-  var colors = { deployed: '#2563eb', available: '#10b981', maintenance: '#f59e0b', retired: '#6b7280', disposed: '#ef4444' };
+  var colors = { deployed: '#1f5136', available: '#10b981', maintenance: '#f59e0b', retired: '#6b7280', disposed: '#ef4444' };
   return colors[val] || 'var(--accent)';
 }
 
@@ -123,7 +123,7 @@ function renderCategoryTable(containerId, items) {
     html += '<tr>'
       + '<td>' + (c.icon ? c.icon + ' ' : '') + esc(c.name) + '</td>'
       + '<td style="text-align:right;font-family:var(--mono);font-weight:600">' + c.count + '</td>'
-      + '<td style="text-align:right;font-family:var(--mono);color:#2563eb">' + (c.deployed || 0) + '</td>'
+      + '<td style="text-align:right;font-family:var(--mono);color:#1f5136">' + (c.deployed || 0) + '</td>'
       + '<td style="text-align:right;font-family:var(--mono);color:#10b981">' + (c.available || 0) + '</td>'
       + '<td style="text-align:right;font-family:var(--mono);color:#f59e0b">' + (c.maintenance || 0) + '</td>'
       + '</tr>';

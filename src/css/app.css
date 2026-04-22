@@ -37,8 +37,10 @@
   --amber:    #d97706;
   --amber-l:  #fef3c7;
   --amber-bg: rgba(217,119,6,0.08);
-  --blue:     #2563eb;
-  --blue-l:   #dbeafe;
+  /* --blue kept as an alias so any stragglers still render in the
+     council palette rather than the old saas blue. */
+  --blue:     #1f5136;
+  --blue-l:   #e7f0eb;
   --gray:     #6b7280;
   --gray-l:   #f3f4f6;
 
@@ -208,7 +210,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 
 .form-input:focus, .form-select:focus, .form-textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
+  box-shadow: 0 0 0 2px rgba(31,81,54,0.1);
 }
 
 .form-input::placeholder { color: var(--text3); }
@@ -343,7 +345,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px;
+  padding: 10px 12px;
   /* Light strip so the logo (which has its own white text panel) sits
      naturally instead of floating on dark. Subtle bottom rule divides
      it from the dark nav body. */
@@ -379,19 +381,18 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
   color: #ffffff;
 }
 
-/* Council logo replaces the W tile + text. Sidebar header is white,
-   so the logo sits flush without needing a pill or shadow treatment. */
-.sidebar-logo-img {
-  display: block;
-  max-width: 100%;
-  max-height: 44px;
-  width: auto;
-  height: auto;
-}
-
+/* Council logo replaces the W tile + text. Sidebar header is a white
+   strip; let the logo fill that strip at its natural 3:1 aspect. */
 .sidebar-logo {
   flex: 1;
   min-width: 0;
+  display: block;
+}
+.sidebar-logo-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 72px;
 }
 
 .sidebar-collapse-btn {
@@ -448,11 +449,11 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 .nav-item:hover svg { stroke: rgba(255,255,255,0.7); }
 
 .nav-item.active {
-  background: rgba(37,99,235,0.2);
+  background: rgba(31,81,54,0.2);
   color: #93bbfc;
 }
 
-.nav-item.active svg { stroke: #93bbfc; }
+.nav-item.active svg { stroke: #9ec4a7; }
 
 .sidebar-footer {
   padding: 12px 14px;
@@ -482,7 +483,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: rgba(37,99,235,0.3);
+  background: rgba(31,81,54,0.3);
   color: #93bbfc;
   display: flex;
   align-items: center;
@@ -565,7 +566,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 
 .topbar-search:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
+  box-shadow: 0 0 0 2px rgba(31,81,54,0.1);
   background: var(--surface);
 }
 
@@ -690,7 +691,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 }
 
 .badge.available   { background: var(--green-bg); color: var(--green); }
-.badge.deployed    { background: rgba(37,99,235,0.10); color: var(--accent); }
+.badge.deployed    { background: rgba(31,81,54,0.10); color: var(--accent); }
 .badge.maintenance { background: var(--amber-bg); color: var(--amber); }
 .badge.retired     { background: var(--gray-l); color: var(--gray); }
 .badge.lost        { background: var(--red-bg); color: var(--red); }
@@ -698,7 +699,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 
 /* Action badges for history */
 .badge.create      { background: var(--green-bg); color: var(--green); }
-.badge.checkout    { background: rgba(37,99,235,0.10); color: var(--accent); }
+.badge.checkout    { background: rgba(31,81,54,0.10); color: var(--accent); }
 .badge.checkin     { background: var(--amber-bg); color: var(--amber); }
 .badge.update      { background: var(--gray-l); color: var(--text2); }
 .badge.dispose     { background: var(--red-bg); color: var(--red); }
@@ -883,7 +884,7 @@ tbody td.mono {
 
 .toolbar-search:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
+  box-shadow: 0 0 0 2px rgba(31,81,54,0.1);
 }
 
 .toolbar-search input {
@@ -1376,7 +1377,7 @@ tbody td.mono {
   padding: 12px;
   cursor: pointer;
   transition: background var(--transition-fast);
-  -webkit-tap-highlight-color: rgba(37, 99, 235, 0.1);
+  -webkit-tap-highlight-color: rgba(31, 81, 54, 0.1);
 }
 .asset-card:active { background: var(--surface2); }
 .asset-card-sel {
@@ -1573,7 +1574,7 @@ tbody td.mono {
 }
 .co-search-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+  box-shadow: 0 0 0 3px rgba(31,81,54,0.12);
 }
 .co-search-input::placeholder { color: var(--text3); }
 
@@ -1617,7 +1618,7 @@ tbody td.mono {
   font-size: 12px;
   font-weight: var(--w-bold);
   letter-spacing: 0.02em;
-  box-shadow: 0 1px 2px rgba(37,99,235,0.25);
+  box-shadow: 0 1px 2px rgba(31,81,54,0.25);
 }
 
 .co-person { flex: 1; min-width: 0; }
@@ -1660,7 +1661,7 @@ tbody td.mono {
   padding: 9px 12px;
   margin-top: 10px;
   background: var(--accent-l);
-  border: 1px solid rgba(37,99,235,0.2);
+  border: 1px solid rgba(31,81,54,0.2);
   border-radius: var(--radius-sm);
   font-size: 13px;
   animation: co-slide-in 200ms var(--ease-out);
@@ -1761,7 +1762,7 @@ tbody td.mono {
   font-size: 20px;
   font-weight: var(--w-bold);
   letter-spacing: 0.02em;
-  box-shadow: 0 2px 6px rgba(37,99,235,0.3);
+  box-shadow: 0 2px 6px rgba(31,81,54,0.3);
   flex-shrink: 0;
 }
 .acct-headline { flex: 1; min-width: 0; }
@@ -1846,7 +1847,7 @@ tbody td.mono {
               transform 80ms ease-out;
 }
 .btn:active { transform: scale(0.98); }
-.btn.primary:hover { box-shadow: 0 1px 3px rgba(37,99,235,0.25); }
+.btn.primary:hover { box-shadow: 0 1px 3px rgba(31,81,54,0.25); }
 
 .dash-kpi, .kpi-card {
   transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
