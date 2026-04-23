@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS assets (
   supplier TEXT,
   warranty_months INTEGER,
   warranty_expiry TEXT,
+  retirement_date TEXT,
   notes TEXT,
   image_url TEXT,
   -- Hardware specs (auto-populated by enrollment script)

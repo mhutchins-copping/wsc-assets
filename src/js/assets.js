@@ -241,6 +241,56 @@ async function loadAssets() {
 function viewAsset(id) { navigate('#/assets/' + id); }
 window.viewAsset = viewAsset;
 
+// Auto-fill retirement date = purchase date + 3 years when the user
+// sets or changes a purchase date and the retirement field is empty.
+// Respects an explicit value the user typed in retirement.
+function autofillRetirement() {
+  var pd = document.getElementById('af-purchase-date');
+  var rd = document.getElementById('af-retirement-date');
+  if (!pd || !rd || !pd.value || rd.value) return;
+  var d = new Date(pd.value);
+  if (isNaN(d.getTime())) return;
+  d.setFullYear(d.getFullYear() + 3);
+  rd.value = d.toISOString().slice(0, 10);
+}
+window.autofillRetirement = autofillRetirement;
+
+// Render a small chip next to a retirement date indicating how far
+// away it is. Returns '' if no date. "Retires in 14 months" / "Due
+// for replacement" / "Overdue by 4 months".
+function retirementBadge(retirementDateStr) {
+  if (!retirementDateStr) return '';
+  var target = new Date(retirementDateStr);
+  if (isNaN(target.getTime())) return '';
+  var now = new Date();
+  var monthsDiff = (target.getFullYear() - now.getFullYear()) * 12 + (target.getMonth() - now.getMonth());
+  var tone, label;
+  if (monthsDiff < 0) {
+    tone = 'red';
+    label = 'Overdue by ' + Math.abs(monthsDiff) + ' month' + (Math.abs(monthsDiff) === 1 ? '' : 's');
+  } else if (monthsDiff <= 6) {
+    tone = 'amber';
+    label = monthsDiff === 0 ? 'Due this month' : 'Due in ' + monthsDiff + ' month' + (monthsDiff === 1 ? '' : 's');
+  } else if (monthsDiff <= 12) {
+    tone = 'amber-l';
+    label = 'Due in ' + monthsDiff + ' months';
+  } else {
+    var years = Math.round(monthsDiff / 12);
+    tone = 'green';
+    label = 'Retires in ' + years + ' year' + (years === 1 ? '' : 's');
+  }
+  var colors = {
+    red: 'background:var(--red-l);color:#991b1b',
+    amber: 'background:var(--amber-l);color:#92400e',
+    'amber-l': 'background:var(--amber-l);color:#92400e;opacity:0.85',
+    green: 'background:var(--accent-l);color:var(--accent)'
+  };
+  return '<span style="display:inline-block;' + colors[tone]
+    + ';font-size:11px;font-weight:500;padding:2px 8px;border-radius:4px;margin-left:8px">'
+    + esc(label) + '</span>';
+}
+window.retirementBadge = retirementBadge;
+
 // Mobile card layout for the asset list. Each row becomes a self-contained
 // card so there's no horizontal scroll and the tap target is larger than a
 // table cell. Selection checkbox lives on the top-right; tapping anywhere
@@ -440,6 +490,12 @@ async function renderAssetDetail(id, preloaded) {
     html += '</div></div>';
 
     // Info grid: 2-column layout (details/photo on left, assignment/qr on right)
+    // Retirement date value gets a status chip (green / amber / red)
+    // reflecting how close it is to end-of-life.
+    var retirementValueHtml = asset.retirement_date
+      ? esc(fmtDate(asset.retirement_date)) + retirementBadge(asset.retirement_date)
+      : null;
+
     html += '<div class="asset-detail-grid">'
       // Left column
       + '<div class="asset-detail-col">'
@@ -448,6 +504,8 @@ async function renderAssetDetail(id, preloaded) {
       + detailField('Category', asset.category_name)
       + detailField('Manufacturer', asset.manufacturer)
       + detailField('Model', asset.model)
+      + detailField('Purchase Date', asset.purchase_date ? fmtDate(asset.purchase_date) : null)
+      + detailField('Retirement Date', retirementValueHtml, true)
       + detailField('Created', fmtDate(asset.created_at))
       + '</div></div></div>';
 
@@ -928,6 +986,18 @@ async function renderAssetForm(editId) {
   });
   html += '</select><div class="form-hint">Setting this will change status to Deployed</div></div></div>';
 
+  // Lifecycle — purchase + retirement dates. Retirement auto-fills as
+  // purchase_date + 3 years (council IT policy) when the user types a
+  // purchase date, but stays editable.
+  html += '<div class="form-row">'
+    + '<div class="form-group"><label class="form-label">Purchase Date</label>'
+    + '<input type="date" id="af-purchase-date" class="form-input" value="' + esc(asset ? asset.purchase_date || '' : '') + '" onchange="autofillRetirement()">'
+    + '<div class="form-hint">When the device was bought. Drives the retirement date.</div></div>'
+    + '<div class="form-group"><label class="form-label">Retirement Date</label>'
+    + '<input type="date" id="af-retirement-date" class="form-input" value="' + esc(asset ? asset.retirement_date || '' : '') + '">'
+    + '<div class="form-hint">Defaults to purchase + 3 years. Edit for longer-lived gear.</div></div>'
+    + '</div>';
+
   // Notes
   html += '<div class="form-group"><label class="form-label">Notes</label>'
     + '<textarea id="af-notes" class="form-textarea" placeholder="Optional notes">' + esc(asset ? asset.notes || '' : '') + '</textarea></div>';
@@ -1039,6 +1109,8 @@ async function saveAsset(editId) {
     status: document.getElementById('af-status').value,
     assigned_to: document.getElementById('af-assign').value || null,
     notes: document.getElementById('af-notes').value.trim() || null,
+    purchase_date: document.getElementById('af-purchase-date').value || null,
+    retirement_date: document.getElementById('af-retirement-date').value || null,
     hostname: document.getElementById('af-hostname').value.trim() || null,
     os: document.getElementById('af-os').value.trim() || null,
     cpu: document.getElementById('af-cpu').value.trim() || null,

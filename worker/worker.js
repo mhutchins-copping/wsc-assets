@@ -989,20 +989,33 @@ async function createAsset(request, env) {
     warrantyExpiry = d.toISOString().slice(0, 10);
   }
 
+  // Retirement date: default to purchase_date + 3 years if the admin
+  // didn't supply one explicitly. Council lifecycle for IT gear is
+  // roughly a three-year refresh; editable per asset for longer-lived
+  // equipment.
+  let retirementDate = data.retirement_date || null;
+  if (!retirementDate && data.purchase_date) {
+    const d = new Date(data.purchase_date);
+    d.setFullYear(d.getFullYear() + 3);
+    retirementDate = d.toISOString().slice(0, 10);
+  }
+
   const ts = now();
 
   await env.DB.prepare(`
     INSERT INTO assets (id, asset_tag, name, serial_number, category_id, manufacturer, model, status,
       purchase_date, purchase_cost, purchase_order, supplier, warranty_months, warranty_expiry,
+      retirement_date,
       notes, image_url, hostname, os, cpu, ram_gb, disk_gb, mac_address, ip_address, enrolled_user,
       phone_number, carrier,
       location_id, assigned_to, assigned_date, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     assetId, tag, data.name, data.serial_number || null, data.category_id || null,
     data.manufacturer || null, data.model || null, data.status || 'available',
     data.purchase_date || null, data.purchase_cost || null, data.purchase_order || null,
     data.supplier || null, data.warranty_months || null, warrantyExpiry,
+    retirementDate,
     data.notes || null, data.image_url || null,
     data.hostname || null, data.os || null, data.cpu || null,
     data.ram_gb || null, data.disk_gb || null, data.mac_address || null,
@@ -1902,13 +1915,24 @@ async function updateAsset(request, env, assetId) {
     warrantyExpiry = d.toISOString().slice(0, 10);
   }
 
+  // Retirement date: respect an explicit update, otherwise auto-recalc
+  // when purchase_date changes and there's no stored retirement yet.
+  let retirementDate = data.retirement_date !== undefined
+    ? data.retirement_date
+    : existing.retirement_date;
+  if (!retirementDate && purchaseDate) {
+    const d = new Date(purchaseDate);
+    d.setFullYear(d.getFullYear() + 3);
+    retirementDate = d.toISOString().slice(0, 10);
+  }
+
   const ts = now();
 
   await env.DB.prepare(`
     UPDATE assets SET
       asset_tag = ?, name = ?, serial_number = ?, category_id = ?, manufacturer = ?, model = ?,
       status = ?, purchase_date = ?, purchase_cost = ?, purchase_order = ?, supplier = ?,
-      warranty_months = ?, warranty_expiry = ?, notes = ?, image_url = ?,
+      warranty_months = ?, warranty_expiry = ?, retirement_date = ?, notes = ?, image_url = ?,
       hostname = ?, os = ?, cpu = ?, ram_gb = ?, disk_gb = ?, mac_address = ?, ip_address = ?, enrolled_user = ?,
       phone_number = ?, carrier = ?,
       location_id = ?,
@@ -1928,6 +1952,7 @@ async function updateAsset(request, env, assetId) {
     data.supplier !== undefined ? data.supplier : existing.supplier,
     data.warranty_months !== undefined ? data.warranty_months : existing.warranty_months,
     warrantyExpiry,
+    retirementDate,
     data.notes !== undefined ? data.notes : existing.notes,
     data.image_url !== undefined ? data.image_url : existing.image_url,
     data.hostname !== undefined ? data.hostname : existing.hostname,
