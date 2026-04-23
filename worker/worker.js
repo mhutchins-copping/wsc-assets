@@ -1231,11 +1231,11 @@ async function sendIssueEmail(env, { asset, person, token, termsText, issuedBy }
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">
   <div style="max-width:600px;margin:0 auto;padding:20px">
-    <div style="background:linear-gradient(135deg,#0f2e1e 0%,#1f5136 100%);padding:20px 24px;border-radius:12px 12px 0 0">
-      <img src="https://api.it-wsc.com/logo.png" alt="Walgett Shire Council" width="220" style="display:block;max-width:220px;height:auto;background:#fff;padding:6px 10px;border-radius:6px;margin-bottom:12px">
-      <h1 style="margin:0;color:#fff;font-size:18px;font-weight:600">IT Asset Register</h1>
+    <div style="background:#fff;padding:24px 24px 16px;text-align:center;border-radius:12px 12px 0 0;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+      <img src="https://api.it-wsc.com/logo.png" alt="Walgett Shire Council" width="260" style="display:inline-block;max-width:260px;height:auto">
     </div>
-    <div style="background:#fff;padding:28px 24px;border-radius:0 0 12px 12px;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+    <div style="height:3px;background:#1f5136"></div>
+    <div style="background:#fff;padding:28px 24px 22px;border-radius:0 0 12px 12px;box-shadow:0 1px 3px rgba(0,0,0,.1)">
       <p style="margin:0 0 14px;font-size:15px;color:#111827">Hi ${escapeHtml(person.name)},</p>
       <p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.55">
         ${escapeHtml(actor)} has assigned you the following asset. Please review and sign the acknowledgement of receipt so we have a record of handover.
