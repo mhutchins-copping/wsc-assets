@@ -3,6 +3,7 @@
 
 import { notify, sendMail } from './lib/notify.js';
 import { ENROL_SCRIPT } from './lib/enrol-script.js';
+import { LOGO_BYTES } from './lib/logo.js';
 
 export default {
   async fetch(request, env) {
@@ -45,6 +46,20 @@ async function dispatch(request, env) {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'public, max-age=300'
+      }
+    });
+  }
+
+  // Public logo endpoint. Used as <img src="..."> in outbound emails
+  // (notify.js + receipt-signing email). The frontend copy served from
+  // assets.it-wsc.com is behind CF Access, so mail clients couldn't
+  // load it; this copy on the public api host can.
+  if (url.pathname === '/logo.png' && request.method === 'GET') {
+    return new Response(LOGO_BYTES, {
+      headers: {
+        'Content-Type': 'image/png',
+        'Cache-Control': 'public, max-age=86400',
+        'Access-Control-Allow-Origin': '*'
       }
     });
   }
@@ -1216,9 +1231,9 @@ async function sendIssueEmail(env, { asset, person, token, termsText, issuedBy }
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">
   <div style="max-width:600px;margin:0 auto;padding:20px">
-    <div style="background:linear-gradient(135deg,#0f2e1e 0%,#1f5136 100%);padding:24px;border-radius:12px 12px 0 0">
-      <h1 style="margin:0;color:#fff;font-size:20px;font-weight:600">WSC IT Asset Management</h1>
-      <p style="margin:4px 0 0;color:#b8d4c0;font-size:13px">Walgett Shire Council</p>
+    <div style="background:linear-gradient(135deg,#0f2e1e 0%,#1f5136 100%);padding:20px 24px;border-radius:12px 12px 0 0">
+      <img src="https://api.it-wsc.com/logo.png" alt="Walgett Shire Council" width="220" style="display:block;max-width:220px;height:auto;background:#fff;padding:6px 10px;border-radius:6px;margin-bottom:12px">
+      <h1 style="margin:0;color:#fff;font-size:18px;font-weight:600">IT Asset Register</h1>
     </div>
     <div style="background:#fff;padding:28px 24px;border-radius:0 0 12px 12px;box-shadow:0 1px 3px rgba(0,0,0,.1)">
       <p style="margin:0 0 14px;font-size:15px;color:#111827">Hi ${escapeHtml(person.name)},</p>

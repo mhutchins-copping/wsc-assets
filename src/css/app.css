@@ -328,9 +328,13 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 }
 
 /* ─── Sidebar ───────────────────────────────── */
+/* Sidebar flipped to a light palette so the council logo sits on a
+   consistent background all the way down rather than floating on top
+   of a contrasting dark strip. Active nav item takes the council
+   accent tint; hover stays subtle. */
 .sidebar {
   width: var(--sidebar-w);
-  background: #1a1d21;
+  background: var(--surface);
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -339,74 +343,42 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
   bottom: 0;
   z-index: 100;
   transition: transform 0.25s ease;
+  border-right: 1px solid var(--border);
 }
 
 .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
-  /* Light strip so the logo (which has its own white text panel) sits
-     naturally instead of floating on dark. Subtle bottom rule divides
-     it from the dark nav body. */
-  background: #ffffff;
-  border-bottom: 1px solid rgba(0,0,0,0.1);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
 }
 
-.sidebar-logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.sidebar-logo-icon {
-  width: 30px;
-  height: 30px;
-  background: var(--accent);
-  border-radius: 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
-  font-size: 14px;
-  flex-shrink: 0;
-}
-
-.sidebar-logo-text {
-  font-weight: 700;
-  font-size: 14px;
-  color: #ffffff;
-}
-
-/* Council logo replaces the W tile + text. Sidebar header is a white
-   strip; let the logo fill that strip at its natural 3:1 aspect. */
 .sidebar-logo {
   flex: 1;
   min-width: 0;
   display: block;
+  text-decoration: none;
 }
+
 .sidebar-logo-img {
   display: block;
   width: 100%;
   height: auto;
-  max-height: 72px;
+  max-height: 68px;
 }
 
 .sidebar-collapse-btn {
   display: none;
   background: none;
   border: none;
-  /* Header strip is white now; icon has to be dark to show up. */
   color: var(--text2);
   cursor: pointer;
   padding: 4px;
   border-radius: var(--radius-sm);
 }
 
-.sidebar-collapse-btn:hover { background: rgba(0,0,0,0.06); }
+.sidebar-collapse-btn:hover { background: var(--surface3); }
 
 .sidebar-nav {
   flex: 1;
@@ -419,7 +391,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(255,255,255,0.35);
+  color: var(--text3);
   padding: 16px 10px 5px;
 }
 
@@ -429,7 +401,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
   gap: 9px;
   padding: 7px 10px;
   border-radius: var(--radius-sm);
-  color: rgba(255,255,255,0.6);
+  color: var(--text2);
   text-decoration: none;
   font-size: 13px;
   font-weight: 500;
@@ -437,33 +409,34 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 }
 
 .nav-item svg {
-  stroke: rgba(255,255,255,0.45);
+  stroke: var(--text3);
   flex-shrink: 0;
 }
 
 .nav-item:hover {
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.9);
+  background: var(--surface3);
+  color: var(--text);
 }
 
-.nav-item:hover svg { stroke: rgba(255,255,255,0.7); }
+.nav-item:hover svg { stroke: var(--text2); }
 
 .nav-item.active {
-  background: rgba(31,81,54,0.2);
-  color: #93bbfc;
+  background: var(--accent-l);
+  color: var(--accent);
+  font-weight: 600;
 }
 
-.nav-item.active svg { stroke: #9ec4a7; }
+.nav-item.active svg { stroke: var(--accent); }
 
 .sidebar-footer {
   padding: 12px 14px;
-  border-top: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid var(--border);
 }
 
 .sidebar-footer-text {
   font-size: 11px;
   font-family: var(--mono);
-  color: rgba(255,255,255,0.3);
+  color: var(--text3);
 }
 
 .sidebar-user {
@@ -477,14 +450,14 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
   margin-bottom: 6px;
 }
 
-.sidebar-user:hover { background: rgba(255,255,255,0.06); }
+.sidebar-user:hover { background: var(--surface3); }
 
 .sidebar-user-avatar {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: rgba(31,81,54,0.3);
-  color: #93bbfc;
+  background: var(--accent);
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -502,7 +475,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 .sidebar-user-name {
   font-size: 12px;
   font-weight: 600;
-  color: rgba(255,255,255,0.85);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -510,7 +483,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 
 .sidebar-user-role {
   font-size: 10px;
-  color: rgba(255,255,255,0.4);
+  color: var(--text3);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }

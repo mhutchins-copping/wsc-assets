@@ -147,9 +147,9 @@ function buildEmail(event, data) {
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif">
   <div style="max-width:600px;margin:0 auto;padding:20px">
     <!-- Header -->
-    <div style="background:linear-gradient(135deg,#0f2e1e 0%,#1f5136 100%);padding:24px;border-radius:12px 12px 0 0">
-      <h1 style="margin:0;color:#fff;font-size:20px;font-weight:600">WSC IT Asset Management</h1>
-      <p style="margin:4px 0 0;color:#b8d4c0;font-size:13px">Walgett Shire Council</p>
+    <div style="background:linear-gradient(135deg,#0f2e1e 0%,#1f5136 100%);padding:20px 24px;border-radius:12px 12px 0 0">
+      <img src="https://api.it-wsc.com/logo.png" alt="Walgett Shire Council" width="220" style="display:block;max-width:220px;height:auto;background:#fff;padding:6px 10px;border-radius:6px;margin-bottom:12px">
+      <h1 style="margin:0;color:#fff;font-size:18px;font-weight:600">IT Asset Management</h1>
     </div>
     
     <!-- Action Badge -->
