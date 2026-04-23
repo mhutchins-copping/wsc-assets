@@ -1386,13 +1386,35 @@ function signingHtmlResponse(body, status) {
 }
 
 function signingStatusPage(title, message, tone) {
-  const color = tone === 'ok' ? '#10b981' : tone === 'warn' ? '#f59e0b' : '#ef4444';
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} — WSC Assets</title>
-<style>body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f3f4f6;color:#111827;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-.card{max-width:480px;width:100%;background:#fff;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.08);padding:32px;text-align:center}
-.dot{width:56px;height:56px;border-radius:50%;background:${color}22;color:${color};display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 16px}
-h1{font-size:20px;margin:0 0 8px}p{margin:0;color:#4b5563;font-size:14px;line-height:1.55}</style>
-</head><body><div class="card"><div class="dot">${tone === 'ok' ? '✓' : '!'}</div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></div></body></html>`;
+  const color = tone === 'ok' ? '#10b981' : tone === 'warn' ? '#b45309' : '#b42318';
+  const bg = tone === 'ok' ? '#ecfdf5' : tone === 'warn' ? '#fef3c7' : '#fef2f2';
+  const icon = tone === 'ok' ? '&#10003;' : '!';
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} &mdash; WSC Assets</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f5f6f7;color:#111827;min-height:100vh;padding:20px;display:flex;align-items:flex-start;justify-content:center}
+  .wrap{max-width:520px;width:100%;margin-top:24px}
+  .logo-bar{background:#fff;border-radius:12px 12px 0 0;padding:22px 24px 14px;text-align:center;border:1px solid #e5e7eb;border-bottom:0}
+  .logo-bar img{display:inline-block;max-width:220px;height:auto}
+  .accent{height:3px;background:#1f5136;border-left:1px solid #e5e7eb;border-right:1px solid #e5e7eb}
+  .card{background:#fff;padding:32px 28px;border-radius:0 0 12px 12px;text-align:center;border:1px solid #e5e7eb;border-top:0}
+  .dot{width:56px;height:56px;border-radius:50%;background:${bg};color:${color};display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;margin:0 auto 16px}
+  h1{font-size:20px;margin:0 0 8px;color:#111827;font-weight:600}
+  p{margin:0;color:#4b5563;font-size:14.5px;line-height:1.6}
+  .foot{margin:16px 0 0;text-align:center;color:#6b7280;font-size:12px}
+  .foot a{color:#1f5136;text-decoration:none}
+  .foot a:hover{text-decoration:underline}
+</style>
+</head><body><div class="wrap">
+  <div class="logo-bar"><img src="https://api.it-wsc.com/logo.png" alt="Walgett Shire Council"></div>
+  <div class="accent"></div>
+  <div class="card">
+    <div class="dot" aria-hidden="true">${icon}</div>
+    <h1>${escapeHtml(title)}</h1>
+    <p>${escapeHtml(message)}</p>
+  </div>
+  <p class="foot">Walgett Shire Council IT &middot; <a href="mailto:it@walgett.nsw.gov.au">it@walgett.nsw.gov.au</a></p>
+</div></body></html>`;
 }
 
 async function renderSigningPage(env, token) {
@@ -1413,69 +1435,144 @@ async function renderSigningPage(env, token) {
     }
   }
 
-  const assetLine = `${row.asset_tag} — ${row.asset_name}`;
   const makeModel = ((row.manufacturer || '') + ' ' + (row.model || '')).trim();
+  const firstName = (row.person_name || '').split(' ')[0] || '';
 
   const html = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Acknowledge receipt — WSC Assets</title>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Device handover &mdash; WSC Assets</title>
 <style>
   *{box-sizing:border-box}
-  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f3f4f6;color:#111827;min-height:100vh;padding:16px}
-  .wrap{max-width:640px;margin:0 auto}
-  .header{background:linear-gradient(135deg,#0f2e1e,#1f5136);color:#fff;padding:20px;border-radius:12px 12px 0 0}
-  .header h1{margin:0;font-size:18px;font-weight:600}
-  .header p{margin:2px 0 0;font-size:12px;color:#b8d4c0}
-  .card{background:#fff;padding:22px 20px;border-radius:0 0 12px 12px;box-shadow:0 2px 6px rgba(0,0,0,.06)}
-  .row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #f3f4f6;font-size:14px}
-  .row:last-child{border-bottom:0}.k{color:#6b7280}.v{color:#111827;font-weight:500;text-align:right;max-width:60%;word-break:break-word}
-  .mono{font-family:'JetBrains Mono',Menlo,Consolas,monospace}
-  .terms{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin:18px 0 12px;font-size:13px;line-height:1.55;color:#374151;white-space:pre-wrap}
-  label{display:block;font-size:13px;color:#374151;margin:14px 0 6px;font-weight:500}
-  input[type=text]{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:15px;font-family:inherit}
-  input[type=text]:focus{outline:none;border-color:#1f5136;box-shadow:0 0 0 3px #1f513622}
-  .pad-wrap{border:1px dashed #9ca3af;border-radius:8px;background:#fff;touch-action:none;position:relative}
-  canvas{display:block;width:100%;height:180px;border-radius:8px;cursor:crosshair;touch-action:none}
-  .pad-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#9ca3af;font-size:13px;pointer-events:none}
-  .pad-actions{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:8px}
-  .pad-actions button{background:transparent;border:0;color:#6b7280;font-size:13px;cursor:pointer;padding:6px;text-decoration:underline}
-  .submit{width:100%;margin-top:18px;padding:14px;background:#1f5136;color:#fff;border:0;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer}
-  .submit:disabled{background:#9ca3af;cursor:not-allowed}
-  .submit.loading{opacity:.7}
-  .err{color:#dc2626;font-size:13px;margin-top:8px;display:none}
-  .footer{margin:14px 0 0;text-align:center;color:#9ca3af;font-size:11px}
-  .ok{display:none;text-align:center;padding:40px 20px}.ok .tick{width:56px;height:56px;border-radius:50%;background:#10b98122;color:#10b981;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 12px}
-  .ok h2{margin:0 0 6px;font-size:18px}.ok p{margin:0;color:#4b5563;font-size:14px}
-  @media (max-width:380px){canvas{height:160px}}
+  :root{
+    --g:#1f5136; --g-h:#184229; --g-l:#e7f0eb;
+    --ink:#111827; --ink-2:#374151; --ink-3:#6b7280; --ink-4:#9ca3af;
+    --bg:#f5f6f7; --surface:#ffffff; --line:#e5e7eb; --line-2:#d1d5db;
+    --ok:#10b981; --ok-bg:#ecfdf5; --err:#b42318;
+  }
+  html,body{margin:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;padding:20px 16px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:560px;margin:0 auto}
+
+  /* Logo header */
+  .logo-bar{background:var(--surface);border:1px solid var(--line);border-bottom:0;border-radius:12px 12px 0 0;padding:22px 24px 14px;text-align:center}
+  .logo-bar img{display:inline-block;max-width:240px;height:auto}
+  .accent{height:3px;background:var(--g);border-left:1px solid var(--line);border-right:1px solid var(--line)}
+
+  /* Main card */
+  .card{background:var(--surface);border:1px solid var(--line);border-top:0;border-radius:0 0 12px 12px;padding:28px 24px}
+  @media (max-width:420px){.card{padding:22px 18px}}
+
+  .title{margin:0 0 6px;font-size:22px;font-weight:700;letter-spacing:-0.01em;color:var(--ink)}
+  .lede{margin:0 0 22px;font-size:15px;color:var(--ink-2)}
+
+  /* Asset summary */
+  .summary{border:1px solid var(--line);border-radius:10px;padding:16px 18px;background:#fafbfc;margin:0 0 22px}
+  .summary-tag{display:inline-block;background:var(--g-l);color:var(--g);font-family:'JetBrains Mono',Menlo,Consolas,monospace;font-weight:600;font-size:13px;padding:3px 9px;border-radius:5px;margin-bottom:10px}
+  .summary-name{font-size:17px;font-weight:600;color:var(--ink);margin:0 0 12px}
+  .dl{margin:0;font-size:14px}
+  .dl .kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0}
+  .dl .k{color:var(--ink-3);flex-shrink:0}
+  .dl .v{color:var(--ink);text-align:right;max-width:60%;word-break:break-word}
+  .dl .v.mono{font-family:'JetBrains Mono',Menlo,Consolas,monospace;font-size:13px}
+
+  /* Acknowledgement */
+  .ack-intro{font-size:14px;color:var(--ink-2);margin:0 0 8px;font-weight:500}
+  .ack-body{background:var(--g-l);border-left:3px solid var(--g);padding:12px 14px;border-radius:0 6px 6px 0;font-size:13.5px;color:var(--ink-2);line-height:1.6;margin:0 0 24px;white-space:pre-wrap}
+
+  /* Form controls */
+  .field{margin:0 0 18px}
+  .field-label{display:block;font-size:13px;font-weight:600;color:var(--ink);margin:0 0 4px}
+  .field-hint{font-size:12px;color:var(--ink-3);margin:0 0 8px}
+  input[type=text]{width:100%;padding:11px 13px;border:1px solid var(--line-2);border-radius:8px;font-size:16px;font-family:inherit;color:var(--ink);background:var(--surface);transition:border-color .15s,box-shadow .15s}
+  input[type=text]:focus{outline:0;border-color:var(--g);box-shadow:0 0 0 3px rgba(31,81,54,0.12)}
+
+  /* Signature pad */
+  .pad-wrap{position:relative;border:1px solid var(--line-2);border-radius:8px;background:var(--surface);overflow:hidden;touch-action:none}
+  .pad-wrap:focus-within{border-color:var(--g);box-shadow:0 0 0 3px rgba(31,81,54,0.12)}
+  canvas{display:block;width:100%;height:180px;touch-action:none;cursor:crosshair}
+  @media (max-width:420px){canvas{height:200px}}
+  .pad-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--ink-4);font-size:13.5px;pointer-events:none;user-select:none;font-style:italic}
+  .pad-actions{display:flex;justify-content:flex-end;margin-top:6px}
+  .pad-clear{background:transparent;border:0;color:var(--ink-3);font-size:13px;cursor:pointer;padding:6px 8px;font-family:inherit;text-decoration:underline}
+  .pad-clear:hover{color:var(--ink-2)}
+
+  /* Submit */
+  .submit{width:100%;margin-top:6px;padding:14px 16px;background:var(--g);color:#fff;border:0;border-radius:10px;font-size:15.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:background .12s}
+  .submit:hover:not(:disabled){background:var(--g-h)}
+  .submit:disabled{background:var(--ink-4);cursor:not-allowed}
+  .submit-note{margin:10px 2px 0;font-size:12px;color:var(--ink-3);text-align:center;line-height:1.5}
+  .err{display:none;margin-top:12px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;color:var(--err);font-size:13px}
+
+  /* Footer */
+  .foot{margin:18px 0 0;text-align:center;color:var(--ink-3);font-size:12px}
+  .foot a{color:var(--g);text-decoration:none}
+  .foot a:hover{text-decoration:underline}
+
+  /* Success state */
+  .ok-card{display:none;background:var(--surface);border:1px solid var(--line);border-top:0;border-radius:0 0 12px 12px;padding:40px 28px;text-align:center}
+  .ok-tick{width:60px;height:60px;border-radius:50%;background:var(--ok-bg);color:var(--ok);display:inline-flex;align-items:center;justify-content:center;font-size:30px;font-weight:700;margin:0 auto 16px}
+  .ok-h{margin:0 0 6px;font-size:20px;font-weight:600;color:var(--ink)}
+  .ok-p{margin:0 0 14px;color:var(--ink-2);font-size:14.5px;line-height:1.55}
+  .ok-tag{display:inline-block;background:var(--g-l);color:var(--g);font-family:'JetBrains Mono',Menlo,Consolas,monospace;font-weight:600;font-size:13px;padding:4px 10px;border-radius:5px}
+  .ok-sub{margin:18px 0 0;font-size:12px;color:var(--ink-3)}
 </style>
 </head><body>
 <div class="wrap">
-  <div class="header">
-    <h1>Acknowledge receipt</h1>
-    <p>Walgett Shire Council — IT Asset Register</p>
-  </div>
+  <div class="logo-bar"><img src="https://api.it-wsc.com/logo.png" alt="Walgett Shire Council"></div>
+  <div class="accent"></div>
+
   <div class="card" id="form-card">
-    <p style="margin:0 0 14px;font-size:14px;color:#4b5563">Hi <strong>${escapeHtml(row.person_name)}</strong>, please review the asset below and sign to confirm receipt.</p>
-    <div class="row"><span class="k">Asset tag</span><span class="v mono">${escapeHtml(row.asset_tag)}</span></div>
-    <div class="row"><span class="k">Name</span><span class="v">${escapeHtml(row.asset_name)}</span></div>
-    ${row.serial_number ? `<div class="row"><span class="k">Serial</span><span class="v mono">${escapeHtml(row.serial_number)}</span></div>` : ''}
-    ${makeModel ? `<div class="row"><span class="k">Make / model</span><span class="v">${escapeHtml(makeModel)}</span></div>` : ''}
-    <div class="terms">${escapeHtml(row.terms_text || DEFAULT_ISSUE_TERMS)}</div>
-    <form id="sign-form" onsubmit="return submitSig(event)">
-      <label for="typed-name">Full name</label>
-      <input id="typed-name" type="text" required autocomplete="name" placeholder="Type your name">
-      <label>Signature — draw below</label>
-      <div class="pad-wrap"><canvas id="pad" width="600" height="180"></canvas><span class="pad-hint" id="pad-hint">Draw with your finger or mouse</span></div>
-      <div class="pad-actions"><span style="font-size:12px;color:#6b7280">Your IP address is recorded with the signature.</span><button type="button" id="clear-btn" onclick="clearPad()">Clear</button></div>
-      <button type="submit" class="submit" id="submit-btn">I acknowledge — submit</button>
-      <div class="err" id="err"></div>
+    <h1 class="title">Device handover</h1>
+    <p class="lede">Hi ${escapeHtml(firstName) || 'there'}, the device below has been issued to you. Please confirm receipt so IT has a record on file.</p>
+
+    <section class="summary" aria-label="Device details">
+      <span class="summary-tag">${escapeHtml(row.asset_tag)}</span>
+      <h2 class="summary-name">${escapeHtml(row.asset_name)}</h2>
+      <dl class="dl">
+        ${row.serial_number ? `<div class="kv"><dt class="k">Serial</dt><dd class="v mono">${escapeHtml(row.serial_number)}</dd></div>` : ''}
+        ${makeModel ? `<div class="kv"><dt class="k">Make / model</dt><dd class="v">${escapeHtml(makeModel)}</dd></div>` : ''}
+        <div class="kv"><dt class="k">Issued to</dt><dd class="v">${escapeHtml(row.person_name)}</dd></div>
+      </dl>
+    </section>
+
+    <p class="ack-intro">By signing below, you agree to the following:</p>
+    <div class="ack-body">${escapeHtml(row.terms_text || DEFAULT_ISSUE_TERMS)}</div>
+
+    <form id="sign-form" onsubmit="return submitSig(event)" novalidate>
+      <div class="field">
+        <label for="typed-name" class="field-label">Your full name</label>
+        <div class="field-hint">Pre-filled from council records &mdash; adjust if needed.</div>
+        <input id="typed-name" type="text" required autocomplete="name" value="${escapeHtml(row.person_name)}" placeholder="Full name">
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="pad">Signature</label>
+        <div class="field-hint">Sign below using your finger on mobile, or your mouse on desktop.</div>
+        <div class="pad-wrap">
+          <canvas id="pad" width="600" height="180" role="img" aria-label="Signature pad"></canvas>
+          <span class="pad-hint" id="pad-hint">Sign here</span>
+        </div>
+        <div class="pad-actions"><button type="button" class="pad-clear" onclick="clearPad()">Clear signature</button></div>
+      </div>
+
+      <button type="submit" class="submit" id="submit-btn">Confirm receipt</button>
+      <p class="submit-note">Takes a few seconds. A copy of the signed receipt is kept with your asset record for audit.</p>
+      <div class="err" id="err" role="alert"></div>
     </form>
   </div>
-  <div class="card ok" id="ok-card">
-    <div class="tick">✓</div>
-    <h2>Thank you</h2>
-    <p>Your receipt for <strong>${escapeHtml(assetLine)}</strong> has been recorded. You can close this page.</p>
+
+  <div class="ok-card" id="ok-card" aria-live="polite">
+    <div class="ok-tick" aria-hidden="true">&#10003;</div>
+    <h2 class="ok-h">Receipt confirmed</h2>
+    <p class="ok-p">Thanks ${escapeHtml(firstName) || ''}. Your signature for:</p>
+    <span class="ok-tag">${escapeHtml(row.asset_tag)}</span>
+    <p class="ok-p" style="margin-top:10px">has been recorded. You can close this page.</p>
+    <p class="ok-sub">Spotted a mistake? Email <a href="mailto:it@walgett.nsw.gov.au" style="color:var(--g)">it@walgett.nsw.gov.au</a>.</p>
   </div>
-  <p class="footer">If you didn't expect this, contact IT straight away.</p>
+
+  <p class="foot">If you didn&rsquo;t expect this, please contact IT at <a href="mailto:it@walgett.nsw.gov.au">it@walgett.nsw.gov.au</a>.</p>
 </div>
 <script>
 (function(){
@@ -1483,38 +1580,60 @@ async function renderSigningPage(env, token) {
   var hint = document.getElementById('pad-hint');
   var ctx = canvas.getContext('2d');
   var drawing = false, dirty = false, lastX = 0, lastY = 0;
+
   function resize(){
     var rect = canvas.getBoundingClientRect();
     var ratio = window.devicePixelRatio || 1;
     canvas.width = Math.round(rect.width * ratio);
     canvas.height = Math.round(rect.height * ratio);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, rect.width, rect.height);
-    ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111827';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#0f172a';
   }
-  resize(); window.addEventListener('resize', function(){ var data = canvas.toDataURL(); resize(); var img = new Image(); img.onload = function(){ ctx.drawImage(img, 0, 0, canvas.width / (window.devicePixelRatio||1), canvas.height / (window.devicePixelRatio||1)); }; img.src = data; });
+  resize();
+  window.addEventListener('resize', function(){
+    var data = canvas.toDataURL();
+    resize();
+    var img = new Image();
+    img.onload = function(){
+      var r = canvas.getBoundingClientRect();
+      ctx.drawImage(img, 0, 0, r.width, r.height);
+    };
+    img.src = data;
+  });
+
   function pos(e){
     var rect = canvas.getBoundingClientRect();
-    var x, y;
-    if (e.touches && e.touches[0]) { x = e.touches[0].clientX - rect.left; y = e.touches[0].clientY - rect.top; }
-    else { x = e.clientX - rect.left; y = e.clientY - rect.top; }
-    return { x: x, y: y };
+    if (e.touches && e.touches[0]) return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
   function start(e){ e.preventDefault(); drawing = true; var p = pos(e); lastX = p.x; lastY = p.y; if(hint){ hint.style.display = 'none'; } }
   function move(e){ if(!drawing) return; e.preventDefault(); var p = pos(e); ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(p.x, p.y); ctx.stroke(); lastX = p.x; lastY = p.y; dirty = true; }
   function end(e){ if(drawing){ e.preventDefault(); } drawing = false; }
-  canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move); canvas.addEventListener('mouseup', end); canvas.addEventListener('mouseleave', end);
-  canvas.addEventListener('touchstart', start, {passive:false}); canvas.addEventListener('touchmove', move, {passive:false}); canvas.addEventListener('touchend', end, {passive:false});
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  canvas.addEventListener('mouseup', end);
+  canvas.addEventListener('mouseleave', end);
+  canvas.addEventListener('touchstart', start, {passive:false});
+  canvas.addEventListener('touchmove', move, {passive:false});
+  canvas.addEventListener('touchend', end, {passive:false});
+
   window.clearPad = function(){ resize(); dirty = false; if(hint){ hint.style.display = ''; } };
+
   window.submitSig = function(ev){
     ev.preventDefault();
     var name = document.getElementById('typed-name').value.trim();
     var err = document.getElementById('err');
     err.style.display = 'none';
-    if (!name) { err.textContent = 'Please type your full name.'; err.style.display = 'block'; return false; }
-    if (!dirty) { err.textContent = 'Please draw your signature in the box.'; err.style.display = 'block'; return false; }
+    if (!name) { err.textContent = 'Please enter your name.'; err.style.display = 'block'; return false; }
+    if (!dirty) { err.textContent = 'Please sign in the box above.'; err.style.display = 'block'; return false; }
     var btn = document.getElementById('submit-btn');
-    btn.disabled = true; btn.classList.add('loading'); btn.textContent = 'Submitting...';
+    btn.disabled = true;
+    btn.textContent = 'Submitting\u2026';
     var dataUrl = canvas.toDataURL('image/png');
     fetch(window.location.href, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ signature_name: name, signature_data_url: dataUrl }) })
       .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, data: j }; }); })
@@ -1522,8 +1641,14 @@ async function renderSigningPage(env, token) {
         if (!res.ok) throw new Error((res.data && res.data.error) || 'Submission failed');
         document.getElementById('form-card').style.display = 'none';
         document.getElementById('ok-card').style.display = 'block';
+        window.scrollTo({top:0, behavior:'smooth'});
       })
-      .catch(function(e){ err.textContent = e.message || 'Something went wrong.'; err.style.display = 'block'; btn.disabled = false; btn.classList.remove('loading'); btn.textContent = 'I acknowledge — submit'; });
+      .catch(function(e){
+        err.textContent = e.message || 'Something went wrong. Please try again.';
+        err.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Confirm receipt';
+      });
     return false;
   };
 })();
