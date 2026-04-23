@@ -14,60 +14,56 @@
 
   <!-- ═══ LOGIN SCREEN ═══ -->
   <div id="login-screen">
-    <div class="login-card">
-      <div class="login-logo">
+    <div class="login-wrap">
+      <div class="login-logo-bar">
         <img src="/walgett-shire-council.png" alt="Walgett Shire Council" class="login-logo-img">
-        <div>
-          <div class="login-logo-title">IT Asset Register</div>
-          <div class="login-logo-sub">Walgett Shire Council</div>
-        </div>
       </div>
+      <div class="login-accent"></div>
 
-      <!-- Hidden: kept for compatibility -->
-      <div id="login-setup" style="display:none"></div>
-      <div id="login-form" style="display:none"></div>
+      <div class="login-card">
 
-      <!-- Access denied -->
-      <div id="login-denied" style="display:none">
-        <div style="text-align:center;padding:20px 0">
-          <div style="font-size:32px;margin-bottom:12px">&#128274;</div>
-          <p id="login-denied-msg" style="color:var(--text2);font-size:14px;line-height:1.6;margin-bottom:20px">
-            You do not have access to this application.
-          </p>
-          <button class="btn" onclick="Auth.clearSession()">Clear session &amp; sign in fresh</button>
-          <div style="margin-top:12px">
-            <a href="#" onclick="Auth.showMasterKey();return false" style="color:var(--text3);font-size:12px;text-decoration:underline">Use master key instead</a>
+        <!-- Loading -->
+        <div id="login-loading" class="login-panel">
+          <h1 class="login-title">IT Asset Register</h1>
+          <p class="login-sub">Signing you in&hellip;</p>
+          <div class="login-spinner" aria-hidden="true"></div>
+          <div class="login-alt">
+            <a href="#" onclick="Auth.clearSession();return false">Stuck? Clear session</a>
+            <span class="login-alt-sep">&middot;</span>
+            <a href="#" onclick="Auth.showMasterKey();return false">Use master key</a>
           </div>
         </div>
-      </div>
 
-      <!-- Loading -->
-      <div id="login-loading">
-        <p class="login-hint" style="text-align:center">Authenticating via SSO...</p>
-        <div style="margin-top:20px;text-align:center">
-          <a href="#" onclick="Auth.showMasterKey();return false" style="color:var(--text3);font-size:12px;text-decoration:underline">Use master key instead</a>
-        </div>
-        <div style="margin-top:8px;text-align:center">
-          <a href="#" onclick="Auth.clearSession();return false" style="color:var(--text3);font-size:12px;text-decoration:underline">Stuck? Clear session</a>
-        </div>
-      </div>
-
-      <!-- Master key login -->
-      <div id="login-master-key" style="display:none">
-        <div style="padding:8px 0">
-          <p style="color:var(--text2);font-size:13px;margin-bottom:16px">Enter master key to access without SSO:</p>
-          <input type="password" id="master-key-input" placeholder="Master key" class="form-input" style="width:100%;margin-bottom:12px" onkeydown="if(event.key==='Enter')Auth.loginWithMasterKey()">
-          <button class="btn btn-primary" onclick="Auth.loginWithMasterKey()" style="width:100%">Sign In</button>
-          <p id="master-key-error" style="color:var(--red);font-size:12px;margin-top:8px;display:none"></p>
-          <div style="margin-top:12px;text-align:center">
-            <a href="#" onclick="location.reload();return false" style="color:var(--text3);font-size:12px;text-decoration:underline">Back to SSO</a>
+        <!-- Access denied -->
+        <div id="login-denied" class="login-panel" style="display:none">
+          <div class="login-icon login-icon-warn" aria-hidden="true">&#128274;</div>
+          <h1 class="login-title">Access denied</h1>
+          <p id="login-denied-msg" class="login-sub">You do not have access to this application.</p>
+          <button class="btn primary full" onclick="Auth.clearSession()">Sign in as someone else</button>
+          <div class="login-alt">
+            <a href="#" onclick="Auth.showMasterKey();return false">Use master key instead</a>
           </div>
         </div>
+
+        <!-- Master key -->
+        <div id="login-master-key" class="login-panel" style="display:none">
+          <h1 class="login-title">Master key</h1>
+          <p class="login-sub">Use the break-glass key to sign in when SSO isn&rsquo;t working.</p>
+          <input type="password" id="master-key-input" class="login-input" placeholder="Enter master key" autocomplete="off" onkeydown="if(event.key==='Enter')Auth.loginWithMasterKey()">
+          <p id="master-key-error" class="login-err" style="display:none" role="alert"></p>
+          <button class="btn primary full" style="margin-top:14px" onclick="Auth.loginWithMasterKey()">Sign in</button>
+          <div class="login-alt">
+            <a href="#" onclick="location.reload();return false">Back to SSO</a>
+          </div>
+        </div>
+
+        <!-- Hidden: kept for compatibility -->
+        <div id="login-setup" style="display:none"></div>
+        <div id="login-form" style="display:none"></div>
+
       </div>
 
-      <div class="login-footer">
-        Cloudflare Access SSO &middot; Walgett Shire Council
-      </div>
+      <p class="login-foot">Walgett Shire Council IT &middot; <a href="mailto:it@walgett.nsw.gov.au">it@walgett.nsw.gov.au</a></p>
     </div>
   </div>
 

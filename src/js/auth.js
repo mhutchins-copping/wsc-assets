@@ -138,6 +138,10 @@ var Auth = {
   showDenied: function(message) {
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('app').style.display = 'none';
+    // All other panels hidden so we don't double-stack on top of the
+    // initial loading spinner.
+    document.getElementById('login-loading').style.display = 'none';
+    document.getElementById('login-master-key').style.display = 'none';
     document.getElementById('login-setup').style.display = 'none';
     document.getElementById('login-form').style.display = 'none';
     document.getElementById('login-denied').style.display = 'block';

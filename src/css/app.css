@@ -104,81 +104,159 @@ input, select, textarea, button { font-family: var(--font); font-weight: var(--w
 h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; line-height: 1.25; }
 
 /* ─── Login Screen ──────────────────────────── */
+/* Matches the signing-page visual language: centered logo bar, 3px
+   accent rule, content card below. One layout for all three states
+   (loading / denied / master-key) -- panels toggle via display on
+   their own wrapper. */
 #login-screen {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   min-height: 100vh;
   background: var(--bg);
-  padding: 20px;
+  padding: 24px 16px;
+}
+
+.login-wrap {
+  width: 100%;
+  max-width: 400px;
+  margin-top: 40px;
+}
+
+.login-logo-bar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  padding: 22px 24px 14px;
+  text-align: center;
+}
+
+.login-logo-img {
+  display: inline-block;
+  max-width: 220px;
+  width: auto;
+  height: auto;
+}
+
+.login-accent {
+  height: 3px;
+  background: var(--accent);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
 }
 
 .login-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: 36px;
-  width: 100%;
-  max-width: 380px;
-}
-
-.login-logo {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 28px;
-}
-
-.login-logo-img {
-  display: block;
-  max-width: 120px;
-  max-height: 56px;
-  width: auto;
-  height: auto;
-  flex-shrink: 0;
-}
-
-.login-logo-icon {
-  width: 40px;
-  height: 40px;
-  background: var(--accent);
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
-  font-size: 20px;
-  flex-shrink: 0;
-}
-
-.login-logo-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.login-logo-sub {
-  font-size: 11px;
-  font-family: var(--mono);
-  color: var(--text3);
-  margin-top: 1px;
-}
-
-.login-hint {
-  font-size: 13px;
-  color: var(--text2);
-  margin-bottom: 16px;
-}
-
-.login-footer {
-  margin-top: 20px;
-  font-size: 11px;
-  font-family: var(--mono);
-  color: var(--text3);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  padding: 30px 28px;
   text-align: center;
 }
+@media (max-width: 420px) {
+  .login-card { padding: 24px 20px; }
+  .login-wrap { margin-top: 20px; }
+}
+
+.login-panel {
+  animation: login-fade-in 220ms ease-out;
+}
+@keyframes login-fade-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.login-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
+
+.login-sub {
+  font-size: 14px;
+  color: var(--text2);
+  margin: 0 0 22px;
+  line-height: 1.55;
+}
+
+.login-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  margin: 4px 0 14px;
+}
+.login-icon-warn { background: #fef3c7; color: #b45309; }
+
+.login-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--accent-l);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  margin: 6px auto 18px;
+  animation: login-spin 0.85s linear infinite;
+}
+@keyframes login-spin { to { transform: rotate(360deg); } }
+
+.login-input {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  font-size: 16px; /* 16px so iOS doesn't zoom */
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.login-input:focus {
+  outline: 0;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(31,81,54,0.12);
+}
+
+.login-err {
+  font-size: 13px;
+  color: var(--red);
+  margin: 8px 0 0;
+  text-align: left;
+}
+
+.login-alt {
+  margin-top: 18px;
+  font-size: 12.5px;
+  color: var(--text3);
+}
+.login-alt a {
+  color: var(--text3);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.login-alt a:hover { color: var(--text2); }
+.login-alt-sep {
+  margin: 0 6px;
+  color: var(--text3);
+  opacity: 0.7;
+}
+
+.login-foot {
+  margin: 16px 0 0;
+  text-align: center;
+  color: var(--text3);
+  font-size: 12px;
+}
+.login-foot a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.login-foot a:hover { text-decoration: underline; }
 
 /* ─── Forms ─────────────────────────────────── */
 .form-group {
