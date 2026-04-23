@@ -8,22 +8,23 @@
 
 /* ─── Design Tokens ─────────────────────────── */
 :root {
-  /* Surface & Background */
-  --bg:       #f4f5f7;
+  /* Surface & Background. Cream page background matches the
+     walgett.nsw.gov.au site; cards and the sidebar stay white so
+     content still reads as "on a surface" rather than floating. */
+  --bg:       #f7efd9;
   --surface:  #ffffff;
-  --surface2: #f8f9fb;
-  --surface3: #edf0f4;
-  --border:   #e1e4e8;
-  --border2:  #d0d4da;
+  --surface2: #fdf8e9;
+  --surface3: #efe7d0;
+  --border:   #e4ddc6;
+  --border2:  #d0c9b3;
 
-  /* Brand / Accent */
-  /* WSC council green (from the logo shield). Replaces the generic SaaS
-     blue; gold is kept as a secondary highlight via --gold below, used
-     sparingly so the palette stays grounded rather than heraldic. */
-  --accent:   #1f5136;
-  --accent-h: #184229;
-  --accent-l: #e7f0eb;
-  --accent-subtle: rgba(31,81,54,0.06);
+  /* Brand / Accent. Green is warmer / more olive than the previous
+     deep-forest shade so it sits naturally alongside the cream body,
+     closer to the green on the public council site. */
+  --accent:   #2e5842;
+  --accent-h: #234433;
+  --accent-l: #e5ece5;
+  --accent-subtle: rgba(46,88,66,0.06);
   --gold:     #d4a017;
   --gold-l:   #fbeec8;
 
@@ -39,8 +40,8 @@
   --amber-bg: rgba(217,119,6,0.08);
   /* --blue kept as an alias so any stragglers still render in the
      council palette rather than the old saas blue. */
-  --blue:     #1f5136;
-  --blue-l:   #e7f0eb;
+  --blue:     #2e5842;
+  --blue-l:   #e5ece5;
   --gray:     #6b7280;
   --gray-l:   #f3f4f6;
 
@@ -219,7 +220,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 .login-input:focus {
   outline: 0;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(31,81,54,0.12);
+  box-shadow: 0 0 0 3px rgba(46,88,66,0.12);
 }
 
 .login-err {
@@ -288,7 +289,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 
 .form-input:focus, .form-select:focus, .form-textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(31,81,54,0.1);
+  box-shadow: 0 0 0 2px rgba(46,88,66,0.1);
 }
 
 .form-input::placeholder { color: var(--text3); }
@@ -617,7 +618,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 
 .topbar-search:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(31,81,54,0.1);
+  box-shadow: 0 0 0 2px rgba(46,88,66,0.1);
   background: var(--surface);
 }
 
@@ -742,7 +743,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 }
 
 .badge.available   { background: var(--green-bg); color: var(--green); }
-.badge.deployed    { background: rgba(31,81,54,0.10); color: var(--accent); }
+.badge.deployed    { background: rgba(46,88,66,0.10); color: var(--accent); }
 .badge.maintenance { background: var(--amber-bg); color: var(--amber); }
 .badge.retired     { background: var(--gray-l); color: var(--gray); }
 .badge.lost        { background: var(--red-bg); color: var(--red); }
@@ -750,7 +751,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 
 /* Action badges for history */
 .badge.create      { background: var(--green-bg); color: var(--green); }
-.badge.checkout    { background: rgba(31,81,54,0.10); color: var(--accent); }
+.badge.checkout    { background: rgba(46,88,66,0.10); color: var(--accent); }
 .badge.checkin     { background: var(--amber-bg); color: var(--amber); }
 .badge.update      { background: var(--gray-l); color: var(--text2); }
 .badge.dispose     { background: var(--red-bg); color: var(--red); }
@@ -935,7 +936,7 @@ tbody td.mono {
 
 .toolbar-search:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(31,81,54,0.1);
+  box-shadow: 0 0 0 2px rgba(46,88,66,0.1);
 }
 
 .toolbar-search input {
@@ -1428,7 +1429,7 @@ tbody td.mono {
   padding: 12px;
   cursor: pointer;
   transition: background var(--transition-fast);
-  -webkit-tap-highlight-color: rgba(31, 81, 54, 0.1);
+  -webkit-tap-highlight-color: rgba(46, 88, 66, 0.1);
 }
 .asset-card:active { background: var(--surface2); }
 .asset-card-sel {
@@ -1625,7 +1626,7 @@ tbody td.mono {
 }
 .co-search-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(31,81,54,0.12);
+  box-shadow: 0 0 0 3px rgba(46,88,66,0.12);
 }
 .co-search-input::placeholder { color: var(--text3); }
 
@@ -1669,7 +1670,7 @@ tbody td.mono {
   font-size: 12px;
   font-weight: var(--w-bold);
   letter-spacing: 0.02em;
-  box-shadow: 0 1px 2px rgba(31,81,54,0.25);
+  box-shadow: 0 1px 2px rgba(46,88,66,0.25);
 }
 
 .co-person { flex: 1; min-width: 0; }
@@ -1712,7 +1713,7 @@ tbody td.mono {
   padding: 9px 12px;
   margin-top: 10px;
   background: var(--accent-l);
-  border: 1px solid rgba(31,81,54,0.2);
+  border: 1px solid rgba(46,88,66,0.2);
   border-radius: var(--radius-sm);
   font-size: 13px;
   animation: co-slide-in 200ms var(--ease-out);
@@ -1813,7 +1814,7 @@ tbody td.mono {
   font-size: 20px;
   font-weight: var(--w-bold);
   letter-spacing: 0.02em;
-  box-shadow: 0 2px 6px rgba(31,81,54,0.3);
+  box-shadow: 0 2px 6px rgba(46,88,66,0.3);
   flex-shrink: 0;
 }
 .acct-headline { flex: 1; min-width: 0; }
@@ -1898,7 +1899,7 @@ tbody td.mono {
               transform 80ms ease-out;
 }
 .btn:active { transform: scale(0.98); }
-.btn.primary:hover { box-shadow: 0 1px 3px rgba(31,81,54,0.25); }
+.btn.primary:hover { box-shadow: 0 1px 3px rgba(46,88,66,0.25); }
 
 .dash-kpi, .kpi-card {
   transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);

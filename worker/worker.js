@@ -1234,7 +1234,7 @@ async function sendIssueEmail(env, { asset, person, token, termsText, issuedBy }
     <div style="background:#fff;padding:24px 24px 16px;text-align:center;border-radius:12px 12px 0 0;box-shadow:0 1px 3px rgba(0,0,0,.1)">
       <img src="https://api.it-wsc.com/logo.png" alt="Walgett Shire Council" width="260" style="display:inline-block;max-width:260px;height:auto">
     </div>
-    <div style="height:3px;background:#1f5136"></div>
+    <div style="height:3px;background:#2e5842"></div>
     <div style="background:#fff;padding:28px 24px 22px;border-radius:0 0 12px 12px;box-shadow:0 1px 3px rgba(0,0,0,.1)">
       <p style="margin:0 0 14px;font-size:15px;color:#111827">Hi ${escapeHtml(person.name)},</p>
       <p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.55">
@@ -1247,7 +1247,7 @@ async function sendIssueEmail(env, { asset, person, token, termsText, issuedBy }
         ${asset.manufacturer || asset.model ? `<tr><td style="padding:10px 14px;color:#6b7280;font-size:13px">Make / model</td><td style="padding:10px 14px;color:#111827;font-size:14px">${escapeHtml(((asset.manufacturer || '') + ' ' + (asset.model || '')).trim())}</td></tr>` : ''}
       </table>
       <div style="text-align:center;margin:24px 0">
-        <a href="${signingUrl}" style="display:inline-block;background:#1f5136;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:600">Review and sign</a>
+        <a href="${signingUrl}" style="display:inline-block;background:#2e5842;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:600">Review and sign</a>
       </div>
       <p style="margin:20px 0 0;font-size:12px;color:#6b7280;line-height:1.5">
         This link is unique to you and will expire in ${ISSUE_EXPIRY_DAYS} days. If you didn't expect this email, please let IT know.
@@ -1398,13 +1398,13 @@ function signingStatusPage(title, message, tone) {
   .wrap{max-width:520px;width:100%;margin-top:24px}
   .logo-bar{background:#fff;border-radius:12px 12px 0 0;padding:22px 24px 14px;text-align:center;border:1px solid #e5e7eb;border-bottom:0}
   .logo-bar img{display:inline-block;max-width:220px;height:auto}
-  .accent{height:3px;background:#1f5136;border-left:1px solid #e5e7eb;border-right:1px solid #e5e7eb}
+  .accent{height:3px;background:#2e5842;border-left:1px solid #e5e7eb;border-right:1px solid #e5e7eb}
   .card{background:#fff;padding:32px 28px;border-radius:0 0 12px 12px;text-align:center;border:1px solid #e5e7eb;border-top:0}
   .dot{width:56px;height:56px;border-radius:50%;background:${bg};color:${color};display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;margin:0 auto 16px}
   h1{font-size:20px;margin:0 0 8px;color:#111827;font-weight:600}
   p{margin:0;color:#4b5563;font-size:14.5px;line-height:1.6}
   .foot{margin:16px 0 0;text-align:center;color:#6b7280;font-size:12px}
-  .foot a{color:#1f5136;text-decoration:none}
+  .foot a{color:#2e5842;text-decoration:none}
   .foot a:hover{text-decoration:underline}
 </style>
 </head><body><div class="wrap">
@@ -1448,7 +1448,7 @@ async function renderSigningPage(env, token) {
 <style>
   *{box-sizing:border-box}
   :root{
-    --g:#1f5136; --g-h:#184229; --g-l:#e7f0eb;
+    --g:#2e5842; --g-h:#234433; --g-l:#e5ece5;
     --ink:#111827; --ink-2:#374151; --ink-3:#6b7280; --ink-4:#9ca3af;
     --bg:#f5f6f7; --surface:#ffffff; --line:#e5e7eb; --line-2:#d1d5db;
     --ok:#10b981; --ok-bg:#ecfdf5; --err:#b42318;
@@ -1488,11 +1488,11 @@ async function renderSigningPage(env, token) {
   .field-label{display:block;font-size:13px;font-weight:600;color:var(--ink);margin:0 0 4px}
   .field-hint{font-size:12px;color:var(--ink-3);margin:0 0 8px}
   input[type=text]{width:100%;padding:11px 13px;border:1px solid var(--line-2);border-radius:8px;font-size:16px;font-family:inherit;color:var(--ink);background:var(--surface);transition:border-color .15s,box-shadow .15s}
-  input[type=text]:focus{outline:0;border-color:var(--g);box-shadow:0 0 0 3px rgba(31,81,54,0.12)}
+  input[type=text]:focus{outline:0;border-color:var(--g);box-shadow:0 0 0 3px rgba(46,88,66,0.12)}
 
   /* Signature pad */
   .pad-wrap{position:relative;border:1px solid var(--line-2);border-radius:8px;background:var(--surface);overflow:hidden;touch-action:none}
-  .pad-wrap:focus-within{border-color:var(--g);box-shadow:0 0 0 3px rgba(31,81,54,0.12)}
+  .pad-wrap:focus-within{border-color:var(--g);box-shadow:0 0 0 3px rgba(46,88,66,0.12)}
   canvas{display:block;width:100%;height:180px;touch-action:none;cursor:crosshair}
   @media (max-width:420px){canvas{height:200px}}
   .pad-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--ink-4);font-size:13.5px;pointer-events:none;user-select:none;font-style:italic}
@@ -1731,15 +1731,15 @@ function enrolPageHtml(body) {
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f3f4f6;color:#111827;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:20px}
   .wrap{max-width:560px;width:100%;margin-top:40px}
-  .header{background:linear-gradient(135deg,#0f2e1e,#1f5136);color:#fff;padding:22px;border-radius:12px 12px 0 0}
+  .header{background:linear-gradient(135deg,#1a3326,#2e5842);color:#fff;padding:22px;border-radius:12px 12px 0 0}
   .header h1{margin:0;font-size:18px;font-weight:600}
   .header p{margin:2px 0 0;font-size:12px;color:#b8d4c0}
   .card{background:#fff;padding:24px;border-radius:0 0 12px 12px;box-shadow:0 2px 6px rgba(0,0,0,.06)}
   label{display:block;font-size:13px;color:#374151;margin:0 0 6px;font-weight:500}
   input[type=password]{width:100%;padding:11px 13px;border:1px solid #d1d5db;border-radius:8px;font-size:15px;font-family:inherit}
-  input[type=password]:focus{outline:none;border-color:#1f5136;box-shadow:0 0 0 3px rgba(31,81,54,.15)}
-  .btn{display:inline-block;background:#1f5136;color:#fff;border:0;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-top:12px}
-  .btn:hover{background:#184229}
+  input[type=password]:focus{outline:none;border-color:#2e5842;box-shadow:0 0 0 3px rgba(46,88,66,.15)}
+  .btn{display:inline-block;background:#2e5842;color:#fff;border:0;padding:12px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-top:12px}
+  .btn:hover{background:#234433}
   .btn-secondary{background:#fff;color:#374151;border:1px solid #d1d5db}
   .btn-secondary:hover{background:#f9fafb}
   .err{margin-top:10px;padding:10px 12px;background:#fef2f2;color:#991b1b;border:1px solid #fecaca;border-radius:8px;font-size:13px}

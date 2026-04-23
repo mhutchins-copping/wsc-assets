@@ -150,7 +150,7 @@ function buildEmail(event, data) {
     <div style="background:#fff;padding:24px 24px 16px;text-align:center;border-radius:12px 12px 0 0;box-shadow:0 1px 3px rgba(0,0,0,0.1)">
       <img src="https://api.it-wsc.com/logo.png" alt="Walgett Shire Council" width="260" style="display:inline-block;max-width:260px;height:auto">
     </div>
-    <div style="height:3px;background:#1f5136;box-shadow:0 1px 3px rgba(0,0,0,0.08)"></div>
+    <div style="height:3px;background:#2e5842;box-shadow:0 1px 3px rgba(0,0,0,0.08)"></div>
 
     <!-- Action Badge -->
     <div style="background:${actionBg};border-left:4px solid ${actionBorder};padding:14px 22px;margin:0">
@@ -173,7 +173,7 @@ function buildEmail(event, data) {
       <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:8px">
         ${actorLine ? `<p style="margin:0 0 4px;color:#6b7280;font-size:13px">${actorLine}</p>` : ''}
         <p style="margin:0 0 16px;color:#6b7280;font-size:13px">${timestampStr}</p>
-        ${assetUrl ? `<a href="${assetUrl}" style="display:inline-block;background:#1f5136;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:500">View in WSC Assets →</a>` : ''}
+        ${assetUrl ? `<a href="${assetUrl}" style="display:inline-block;background:#2e5842;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:500">View in WSC Assets →</a>` : ''}
       </div>
     </div>
     
