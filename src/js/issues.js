@@ -21,12 +21,13 @@ function renderIssuesList() {
 }
 
 function renderIssuesFilters() {
+  // Cancelled status intentionally omitted -- cancel now deletes the row
+  // so there are never any rows to filter to.
   var filters = [
     { value: '', label: 'All' },
     { value: 'pending', label: 'Pending' },
     { value: 'signed', label: 'Signed' },
-    { value: 'expired', label: 'Expired' },
-    { value: 'cancelled', label: 'Cancelled' }
+    { value: 'expired', label: 'Expired' }
   ];
   document.getElementById('issues-filters').innerHTML = renderFilters({
     filters: filters, active: issuesState.status, onClick: 'filterIssuesStatus'

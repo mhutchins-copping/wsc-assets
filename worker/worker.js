@@ -1344,14 +1344,16 @@ async function cancelIssue(request, env, issueId) {
   if (!row) return json({ error: 'Issue not found' }, 404);
   if (row.status === 'signed') return json({ error: 'Cannot cancel a signed issue' }, 400);
 
-  await env.DB.prepare("UPDATE asset_issues SET status = 'cancelled', updated_at = ? WHERE id = ?")
-    .bind(now(), issueId).run();
+  // Hard-delete on cancel: the operator wants cancelled issues gone from
+  // the UI, not lingering with a "cancelled" badge. The activity_log
+  // entry below keeps the audit trail intact.
+  await env.DB.prepare('DELETE FROM asset_issues WHERE id = ?').bind(issueId).run();
 
   const user = request._user;
   await logActivity(env, {
     asset_id: row.asset_id,
     action: 'issue_cancelled',
-    details: 'Signing link cancelled',
+    details: 'Signing link cancelled and removed',
     performed_by: user ? (user.display_name || user.email) : null
   });
 
@@ -2109,6 +2111,15 @@ async function checkinAsset(request, env, assetId) {
     WHERE id = ?
   `).bind(newStatus, ts, assetId).run();
 
+  // Clear any receipts tied to this asset. Check-in resets the asset to
+  // available, so old signing links (pending or signed) no longer apply
+  // -- when the asset is next checked out a fresh receipt flow begins.
+  // Activity log captures who signed what historically.
+  const issueCleanup = await env.DB.prepare(
+    'DELETE FROM asset_issues WHERE asset_id = ?'
+  ).bind(assetId).run();
+  const cleared = (issueCleanup && issueCleanup.meta && issueCleanup.meta.changes) || 0;
+
   const person = previousPerson
     ? await env.DB.prepare('SELECT name FROM people WHERE id = ?').bind(previousPerson).first()
     : null;
@@ -2118,7 +2129,8 @@ async function checkinAsset(request, env, assetId) {
   await logActivity(env, {
     asset_id: assetId,
     action: 'checkin',
-    details: data.notes || `Checked in from ${person?.name || 'unknown'} (condition: ${condition})`,
+    details: data.notes || `Checked in from ${person?.name || 'unknown'} (condition: ${condition})`
+      + (cleared ? ` -- ${cleared} receipt${cleared === 1 ? '' : 's'} cleared` : ''),
     person_id: previousPerson,
     location_id: asset.location_id,
     performed_by
