@@ -12,12 +12,29 @@ function renderDashboardSkeleton() {
   for (var i = 0; i < 4; i++) {
     kpi += '<div class="dash-kpi"><div class="dash-kpi-label">&nbsp;</div><div class="dash-kpi-value"><span class="dash-skeleton-text" style="width:80px"></span></div><div class="dash-kpi-sub">&nbsp;</div></div>';
   }
-  return '<div class="dash-kpi-row" id="dash-kpis">' + kpi + '</div>'
+  return renderDashWelcome()
+    + '<div class="dash-kpi-row" id="dash-kpis">' + kpi + '</div>'
     + '<div class="dash-grid">'
     + '<div class="dash-section"><div class="dash-section-title">Status Breakdown</div><div id="dash-status">' + renderSkeletonBlock(110) + '</div></div>'
     + '<div class="dash-section"><div class="dash-section-title">Recent Activity</div><div id="dash-activity">' + renderSkeletonBlock(210) + '</div></div>'
     + '</div>'
     + '<div class="dash-section"><div class="dash-section-title">Top Categories</div><div id="dash-category" class="dash-minibar-area">' + renderSkeletonBlock(140) + '</div></div>';
+}
+
+// Welcome strip at the top of the dashboard. Echoes the "Welcome to
+// Walgett Shire Council" hero on the public council site, scaled down
+// so it reads as a friendly greeting rather than a marketing banner.
+function renderDashWelcome() {
+  var name = (Auth && Auth.user && Auth.user.display_name) ? Auth.user.display_name : '';
+  var first = name.split(' ')[0];
+  var hour = new Date().getHours();
+  var greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  var title = first ? greet + ', ' + esc(first) : 'Welcome';
+  return '<div class="dash-welcome">'
+    + '<div class="dash-welcome-eyebrow">IT Asset Register</div>'
+    + '<h1 class="dash-welcome-title">' + title + '</h1>'
+    + '<p class="dash-welcome-sub">Here\'s how the council hardware fleet is tracking right now.</p>'
+    + '</div>';
 }
 
 function renderSkeletonBlock(h) {

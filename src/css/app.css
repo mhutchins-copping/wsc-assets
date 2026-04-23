@@ -1532,6 +1532,45 @@ tbody td.mono {
 .settings-about-tech { font-size: 11px; color: var(--text3); margin-top: 8px; font-family: var(--mono); }
 
 /* ─── Dashboard ───────────────────────────────── */
+/* Welcome hero at the top of the dashboard. Echo of the council
+   website's "Welcome to Walgett Shire Council" section -- same
+   feel at a smaller scale. Left-border accent in council green, the
+   card itself sits on the cream body so the bordered interior feels
+   warm rather than dropping a second heavy card on top. */
+.dash-welcome {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 18px 22px 18px 22px;
+  margin-bottom: 16px;
+}
+.dash-welcome-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.dash-welcome-title {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.dash-welcome-sub {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text2);
+  line-height: 1.5;
+}
+@media (max-width: 520px) {
+  .dash-welcome { padding: 16px 18px; }
+  .dash-welcome-title { font-size: 19px; }
+}
+
 .dash-kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 14px; }
 .dash-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
 .dash-kpi-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text3); margin-bottom: 6px; }
