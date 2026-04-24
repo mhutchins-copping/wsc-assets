@@ -203,29 +203,42 @@ exports never leave the operator's machine.
 If a fresh D1 instance is being stood up (new dev environment,
 disaster recovery, etc.), the database has no `d1_migrations` tracking
 table yet. Wrangler creates it on first run and attempts to run every
-migration in order — which fails against an existing prod database
-that already has those changes applied manually.
+migration in order — which fails against an existing database that
+already has those changes applied manually.
 
-To bootstrap the tracking table on an existing unmanaged DB, run this
-once in the D1 console:
+To bootstrap the tracking table on an existing unmanaged DB:
 
-```sql
-CREATE TABLE IF NOT EXISTS d1_migrations (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT UNIQUE,
-  applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+1. List every file in `worker/migrations/` (ordered by name — the
+   numeric prefix keeps them sorted). These are the migrations that
+   should be marked as already-applied:
 
-INSERT OR IGNORE INTO d1_migrations (name) VALUES
-  ('0001_add_hardware_specs.sql'),
-  ('0002_add_users.sql'),
-  ('0003_fix_audits_and_indexes.sql'),
-  ('0004_drop_software_licenses.sql'),
-  ('0005_add_notifications_enabled.sql'),
-  ('0006_add_activity_ip_address.sql');
-```
+   ```bash
+   ls worker/migrations
+   ```
+
+2. In the D1 console, create the tracking table and insert one row
+   per filename from step 1:
+
+   ```sql
+   CREATE TABLE IF NOT EXISTS d1_migrations (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     name TEXT UNIQUE,
+     applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+   );
+
+   -- One line per filename from step 1. Copy-paste, don't retype.
+   INSERT OR IGNORE INTO d1_migrations (name) VALUES
+     ('0001_add_hardware_specs.sql'),
+     ('0002_add_users.sql'),
+     -- ...every file from the directory...
+     ('NNNN_most_recent_migration.sql');
+   ```
 
 After that, only genuinely new migrations will run on future deploys.
+
+The previous version of this document hard-coded the list of
+migrations up to a point in time. It rotted within three months. Read
+the directory instead.
 
 ## Incident response
 

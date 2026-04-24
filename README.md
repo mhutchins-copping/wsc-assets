@@ -11,7 +11,10 @@ restricted to council staff).
 
 ## Documentation
 
-If you're trying to understand what this is or how it's built, start here:
+**New to the project? Start with [docs/ONBOARDING.md](docs/ONBOARDING.md).**
+It walks through concepts, day-one setup, and a first-change tutorial.
+
+The rest of the docs:
 
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — what the system is,
   how it's put together, and why these choices were made.
@@ -22,7 +25,7 @@ If you're trying to understand what this is or how it's built, start here:
   summary. Data location, ownership, BCP, cost, risk, and security
   controls.
 
-Those three cover the full picture. The rest of this README is a
+Those four cover the full picture. The rest of this README is a
 quick-reference.
 
 ## What's inside

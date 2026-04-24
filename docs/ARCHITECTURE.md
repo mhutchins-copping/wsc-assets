@@ -178,14 +178,18 @@ only usable by someone who knows the out-of-band secret. See
 
 | Table             | What it holds                                                  |
 | ----------------- | -------------------------------------------------------------- |
-| `assets`          | Every device. Tag, serial, status, hardware specs, assignment. |
+| `assets`          | Every device. Tag, serial, status, hardware specs, assignment, loaner flag, retirement date. |
 | `people`          | Staff directory. Synced from Entra; manually edited when needed.|
 | `categories`      | Asset categories and tag prefix (e.g. `L` → WSC-L-0042).       |
 | `users`           | Who can sign in to the app and what role they have.            |
-| `activity_log`    | Every mutation — creates, updates, check-outs, disposes.       |
+| `sessions`        | Short-lived bearer tokens issued after master-key login.       |
+| `activity_log`    | Every mutation — creates, updates, check-outs, disposes — with acting user and source IP. |
 | `maintenance_log` | Service/repair history per asset.                              |
 | `audits`          | Floor-walk audit runs with found / missing / unexpected counts.|
 | `audit_items`     | Per-asset state within each audit.                             |
+| `asset_issues`    | Signing-receipt workflow. One row per emailed acknowledgement link. |
+| `asset_flags`     | User-filed fault reports (damaged / slow / lost / other).      |
+| `loans`           | Short-term loaner-pool lends with a due date and return event. |
 
 All tables use opaque IDs (16 hex chars) as primary keys, not
 incrementing integers. That means IDs don't leak how many rows exist,
@@ -223,12 +227,14 @@ wsc-assets/
 │       ├── db.js              # API client wrapper
 │       ├── router.js          # Hash-based router
 │       ├── components.js      # Shared UI helpers (renderTable etc.)
-│       ├── utils.js           # esc, toast, modals, keyboard shortcuts
+│       ├── utils.js           # esc, toast, modals, keyboard shortcuts, Ctrl+K command palette
 │       ├── qr.js              # QR code rendering for asset tags + scan URLs
-│       ├── dashboard.js       # KPIs, status breakdown, recent activity
+│       ├── dashboard.js       # KPIs, status breakdown, recent activity, fleet mosaic
 │       ├── assets.js          # List, detail, create / edit forms, label printing
 │       ├── checkout.js        # Check-out / check-in modals + picker
 │       ├── issues.js          # Receipts admin view (resend / cancel / view signature)
+│       ├── flags.js           # Flags inbox — user-filed fault reports
+│       ├── loans.js           # Loaner-pool admin view + loan / return flow
 │       ├── phoneEnrol.js      # Mobile-first phone enrolment — IMEI + barcode scan
 │       ├── people.js
 │       ├── categories.js
@@ -244,11 +250,10 @@ wsc-assets/
 │   ├── lib/
 │   │   ├── notify.js          # Graph-backed admin notifications + sendMail helper
 │   │   └── enrol-script.js    # PS enrolment script served at GET /enrol-script
-│   └── migrations/            # Incremental schema changes
-│       ├── 0001_add_hardware_specs.sql
-│       ├── 0002_add_users.sql
-│       ├── ...
-│       └── 0008_add_asset_issues.sql   # Signed receipt workflow
+│   └── migrations/            # Incremental schema changes (list every
+│                              # file in this folder with `ls` — the
+│                              # numbering is the source of truth, not
+│                              # anything hard-coded in this document)
 ├── scripts/
 │   ├── smoke-test.sh          # Post-deploy health check (run by CI)
 │   ├── restore-db.sh          # Automated D1 restore with safety export
@@ -262,10 +267,11 @@ wsc-assets/
     └── GOVERNANCE.md          # One-pager for exec review
 ```
 
-The worker is one file on purpose. It's long (~1,800 lines) but
-straightforward to read top-to-bottom, and there's no build step
-hiding what actually ships to Cloudflare. A future maintainer opens
-one file and sees the whole API.
+The worker is one file on purpose. It's long but straightforward to
+read top-to-bottom, organised with `// ─── Section ───` banner
+comments, and there's no build step hiding what actually ships to
+Cloudflare. A future maintainer opens one file and sees the whole
+API. This is a deliberate choice, not a backlog item.
 
 ## Trade-offs accepted
 
@@ -279,9 +285,10 @@ Every architecture has them. These are the known ones:
   replaceable. Leaving Cloudflare would require a rewrite of the
   storage layer. Mitigated by: the schema being plain SQL and the
   stored images being plain files.
-- **Monolithic worker file.** Works now, won't scale past
-  3,000–4,000 lines without hurting readability. When that bites, it
-  will be broken up into modules per resource.
+- **Monolithic worker file.** Deliberate — see the paragraph under
+  "Where the code lives". The cost is that search-and-replace is the
+  only navigation aid; the benefit is a new maintainer doesn't have to
+  trace through an import graph to understand a request's path.
 - **Frontend is not typed.** No TypeScript. Class of bugs (e.g. typos
   in field names) that a typed codebase would catch, this one doesn't.
   Mitigated by: small surface area and the smoke test suite.
