@@ -637,10 +637,10 @@ async function route(request, env, url) {
     return deny('assets.read') || nextTag(env, path.match(/^\/api\/assets\/next-tag\/(.+)$/)[1]);
   }
   if (path.match(/^\/api\/assets\/tag\/(.+)$/) && method === 'GET') {
-    return deny('assets.read') || getAssetByTag(env, decodeURIComponent(path.match(/^\/api\/assets\/tag\/(.+)$/)[1]));
+    return deny('assets.read') || getAssetByTag(env, decodeURIComponent(path.match(/^\/api\/assets\/tag\/(.+)$/)[1]), request);
   }
   if (path.match(/^\/api\/assets\/serial\/(.+)$/) && method === 'GET') {
-    return deny('assets.read') || getAssetBySerial(env, decodeURIComponent(path.match(/^\/api\/assets\/serial\/(.+)$/)[1]));
+    return deny('assets.read') || getAssetBySerial(env, decodeURIComponent(path.match(/^\/api\/assets\/serial\/(.+)$/)[1]), request);
   }
   if (path.match(/^\/api\/assets\/([^/]+)\/checkout$/) && method === 'POST') {
     return deny('assets.checkout') || checkoutAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/checkout$/)[1]);
@@ -655,7 +655,7 @@ async function route(request, env, url) {
     return deny('assets.issue') || issueAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/issue$/)[1]);
   }
   if (path.match(/^\/api\/assets\/([^/]+)$/) && method === 'GET') {
-    return deny('assets.read') || getAsset(env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
+    return deny('assets.read') || getAsset(env, path.match(/^\/api\/assets\/([^/]+)$/)[1], request);
   }
   if (path.match(/^\/api\/assets\/([^/]+)$/) && method === 'PUT') {
     return deny('assets.write') || updateAsset(request, env, path.match(/^\/api\/assets\/([^/]+)$/)[1]);
@@ -859,6 +859,22 @@ async function listAssets(request, env, url) {
   let where = [];
   let binds = [];
 
+  // Non-admins see only their own gear. Match the signed-in SSO email to a
+  // people row and filter assigned_to. If there's no matching person record
+  // (user exists in users table but not yet in people) the list is empty —
+  // that's the correct fail-closed behaviour.
+  const currentUser = request._user;
+  if (currentUser && currentUser.role !== 'admin') {
+    const person = currentUser.email
+      ? await env.DB.prepare('SELECT id FROM people WHERE LOWER(email) = LOWER(?)').bind(currentUser.email).first()
+      : null;
+    if (!person) {
+      return json({ data: [], total: 0, page: 1, limit: 50, pages: 0 });
+    }
+    where.push('a.assigned_to = ?');
+    binds.push(person.id);
+  }
+
   if (params.get('status')) {
     where.push('a.status = ?');
     binds.push(params.get('status'));
@@ -928,7 +944,7 @@ async function listAssets(request, env, url) {
   });
 }
 
-async function getAsset(env, assetId) {
+async function getAsset(env, assetId, request) {
   const asset = await env.DB.prepare(`
     SELECT a.*,
            p.name as assigned_to_name, p.email as assigned_to_email, p.department as assigned_to_department,
@@ -942,6 +958,17 @@ async function getAsset(env, assetId) {
   `).bind(assetId).first();
 
   if (!asset) return json({ error: 'Asset not found' }, 404);
+
+  // Non-admins can only see assets assigned to themselves. Match by the
+  // SSO email → people.email. 404 (not 403) keeps us from leaking that
+  // a given asset ID exists at all.
+  const currentUser = request && request._user;
+  if (currentUser && currentUser.role !== 'admin') {
+    if (!asset.assigned_to || !asset.assigned_to_email ||
+        asset.assigned_to_email.toLowerCase() !== (currentUser.email || '').toLowerCase()) {
+      return json({ error: 'Asset not found' }, 404);
+    }
+  }
 
   // Get activity history
   const history = await env.DB.prepare(`
@@ -962,16 +989,16 @@ async function getAsset(env, assetId) {
   return json({ ...asset, history: history.results, maintenance: maintenance.results });
 }
 
-async function getAssetByTag(env, tag) {
+async function getAssetByTag(env, tag, request) {
   const asset = await env.DB.prepare('SELECT id FROM assets WHERE asset_tag = ?').bind(tag).first();
   if (!asset) return json({ error: 'Asset not found' }, 404);
-  return getAsset(env, asset.id);
+  return getAsset(env, asset.id, request);
 }
 
-async function getAssetBySerial(env, serial) {
+async function getAssetBySerial(env, serial, request) {
   const asset = await env.DB.prepare("SELECT id FROM assets WHERE serial_number = ? AND status != 'disposed'").bind(serial).first();
   if (!asset) return json({ error: 'Asset not found' }, 404);
-  return getAsset(env, asset.id);
+  return getAsset(env, asset.id, request);
 }
 
 async function createAsset(request, env) {

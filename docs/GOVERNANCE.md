@@ -154,6 +154,7 @@ A realistic paid-tier scenario would cost less than AUD $30/month.
 | Security event logging           | Separate channel for auth events (master-key etc).|
 | Rate limiting                    | Applied to break-glass master-key endpoint.        |
 | Least privilege                  | API endpoints check role; destructive ops admin-only.|
+| Data minimisation per user       | Non-admin users see only assets assigned to their own person record — list, detail, and sidebar nav are all scoped. |
 | Dependency hygiene               | Vanilla JS frontend; minimal server dependencies.  |
 | Backup integrity                 | Off-provider backups; retention 90 days.           |
 

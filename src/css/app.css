@@ -663,6 +663,21 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
    topbar is cleaner and they don't tap a button that 403s. */
 body:not(.is-admin) .topbar-new { display: none; }
 
+/* Non-admin sidebar is pared back to just the Assets nav item — everything
+   else (Dashboard, People, Categories, Audits, Reports, Receipts, Settings)
+   is admin chrome. The section labels disappear too since Assets is the
+   only survivor and a single-item list doesn't need a header. */
+body:not(.is-admin) .sidebar-nav .nav-section-label,
+body:not(.is-admin) .nav-item[data-view="dashboard"],
+body:not(.is-admin) .nav-item[data-view="people"],
+body:not(.is-admin) .nav-item[data-view="categories"],
+body:not(.is-admin) .nav-item[data-view="audits"],
+body:not(.is-admin) .nav-item[data-view="reports"],
+body:not(.is-admin) .nav-item[data-view="issues"],
+body:not(.is-admin) .nav-item[data-view="settings"] {
+  display: none;
+}
+
 .mobile-menu-btn {
   display: none;
   background: none;

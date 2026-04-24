@@ -92,6 +92,10 @@ quick-reference.
   Graph.
 - **Account page** — each signed-in user can view their identity, role,
   last sign-in, and sign out, reached from the sidebar user card.
+- **Per-role UI** — admins see the full app (dashboard, audits, receipts,
+  people, categories, reports, settings); non-admins see only the assets
+  assigned to their own person record, with the sidebar and API both
+  scoped to match.
 - **Break-glass login** — rate-limited master-key path with IP-scoped
   audit logging, for SSO outages.
 
