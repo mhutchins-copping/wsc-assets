@@ -267,16 +267,65 @@ async function resolveSsoEmail(request, env) {
   return null;
 }
 
+// Domain that can self-provision a 'user'-role account on first SSO sign-in.
+// Anyone whose SSO email matches gets a view-only account created automatically;
+// admins are still granted explicitly. Override via env.AUTO_PROVISION_DOMAIN.
+const DEFAULT_AUTO_PROVISION_DOMAIN = 'walgett.nsw.gov.au';
+
+// First-login JIT provisioning. Given a trusted SSO email:
+//   - return the active user row if one already exists, OR
+//   - if the email's domain matches the auto-provision allowlist, create a
+//     fresh 'user'-role row and return it, OR
+//   - return null if neither condition holds (caller should deny access).
+// Inactive existing users are intentionally NOT re-activated — admins may
+// have disabled them deliberately.
+async function findOrProvisionUser(env, email) {
+  if (!email) return null;
+  const normalised = email.toLowerCase();
+  try {
+    const existing = await env.DB.prepare(
+      'SELECT id, email, display_name, role, active FROM users WHERE LOWER(email) = ?'
+    ).bind(normalised).first();
+    if (existing) {
+      if (!existing.active) return null;
+      return { id: existing.id, email: existing.email, display_name: existing.display_name, role: existing.role };
+    }
+  } catch (e) { return null; /* users table may not exist yet */ }
+
+  const allowedDomain = ((env && env.AUTO_PROVISION_DOMAIN) || DEFAULT_AUTO_PROVISION_DOMAIN).toLowerCase();
+  const at = normalised.lastIndexOf('@');
+  if (at < 0 || normalised.slice(at + 1) !== allowedDomain) return null;
+
+  // Try to borrow a nicer display_name from the people table (populated by
+  // Entra sync). Falls back to the local-part of the email otherwise.
+  let displayName = normalised.split('@')[0];
+  try {
+    const person = await env.DB.prepare(
+      'SELECT name FROM people WHERE LOWER(email) = ?'
+    ).bind(normalised).first();
+    if (person && person.name) displayName = person.name;
+  } catch (e) { /* best-effort */ }
+
+  const userId = id();
+  try {
+    await env.DB.prepare(`
+      INSERT INTO users (id, email, display_name, role, active, notifications_enabled)
+      VALUES (?, ?, ?, 'user', 1, 0)
+    `).bind(userId, normalised, displayName).run();
+  } catch (e) {
+    console.error('auto-provision insert failed:', e.message);
+    return null;
+  }
+
+  return { id: userId, email: normalised, display_name: displayName, role: 'user' };
+}
+
 async function authenticate(request, env) {
   // 1 + 2. SSO identity from either the CF Access header or the CF cookie JWT.
   const ssoEmail = await resolveSsoEmail(request, env);
   if (ssoEmail) {
-    try {
-      const user = await env.DB.prepare(
-        'SELECT id, email, display_name, role FROM users WHERE email = ? AND active = 1'
-      ).bind(ssoEmail).first();
-      if (user) return user;
-    } catch (e) { /* users table may not exist yet */ }
+    const user = await findOrProvisionUser(env, ssoEmail);
+    if (user) return user;
   }
 
   // 2. Session bearer token (preferred over raw master key). Cheap lookup and
@@ -338,10 +387,7 @@ async function authIdentify(request, env) {
   }
 
   try {
-    const user = await env.DB.prepare(
-      'SELECT id, email, display_name, role FROM users WHERE email = ? AND active = 1'
-    ).bind(ssoEmail).first();
-
+    const user = await findOrProvisionUser(env, ssoEmail);
     if (!user) {
       return json({ authorized: false, error: 'No access. Contact your IT administrator.' }, 403);
     }
@@ -668,6 +714,31 @@ async function route(request, env, url) {
     // Hard delete with cascading removals — admin only.
     if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
     return purgeAsset(request, env, path.match(/^\/api\/assets\/([^/]+)\/purge$/)[1]);
+  }
+
+  // ── Loaner pool ──
+  if (path === '/api/loans' && method === 'GET') return deny('assets.read') || listLoans(request, env, url);
+  if (path.match(/^\/api\/assets\/([^/]+)\/loan$/) && method === 'POST') {
+    return deny('assets.checkout') || startLoan(request, env, path.match(/^\/api\/assets\/([^/]+)\/loan$/)[1]);
+  }
+  if (path.match(/^\/api\/loans\/([^/]+)\/return$/) && method === 'POST') {
+    return deny('assets.checkout') || returnLoan(request, env, path.match(/^\/api\/loans\/([^/]+)\/return$/)[1]);
+  }
+
+  // ── Asset Flags (user-filed fault reports) ──
+  // POST is owner-or-admin (enforced inside createAssetFlag), so a plain
+  // 'assets.read' gate is all we need at the routing layer.
+  if (path.match(/^\/api\/assets\/([^/]+)\/flag$/) && method === 'POST') {
+    return deny('assets.read') || createAssetFlag(request, env, path.match(/^\/api\/assets\/([^/]+)\/flag$/)[1]);
+  }
+  if (path === '/api/flags' && method === 'GET') {
+    return deny('assets.read') || listAssetFlags(request, env, url);
+  }
+  if (path.match(/^\/api\/flags\/([^/]+)\/resolve$/) && method === 'POST') {
+    return resolveAssetFlag(request, env, path.match(/^\/api\/flags\/([^/]+)\/resolve$/)[1], 'resolve');
+  }
+  if (path.match(/^\/api\/flags\/([^/]+)\/dismiss$/) && method === 'POST') {
+    return resolveAssetFlag(request, env, path.match(/^\/api\/flags\/([^/]+)\/dismiss$/)[1], 'dismiss');
   }
 
   // ── Asset Issues (signing receipts) ──
@@ -1035,8 +1106,9 @@ async function createAsset(request, env) {
       retirement_date,
       notes, image_url, hostname, os, cpu, ram_gb, disk_gb, mac_address, ip_address, enrolled_user,
       phone_number, carrier,
+      is_loaner,
       location_id, assigned_to, assigned_date, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     assetId, tag, data.name, data.serial_number || null, data.category_id || null,
     data.manufacturer || null, data.model || null, data.status || 'available',
@@ -1048,6 +1120,7 @@ async function createAsset(request, env) {
     data.ram_gb || null, data.disk_gb || null, data.mac_address || null,
     data.ip_address || null, data.enrolled_user || null,
     data.phone_number || null, data.carrier || null,
+    data.is_loaner ? 1 : 0,
     data.location_id || null,
     data.assigned_to || null, data.assigned_to ? ts : null, ts, ts
   ).run();
@@ -1267,6 +1340,13 @@ async function sendIssueEmail(env, { asset, person, token, termsText, issuedBy }
   const signingUrl = issueSigningUrl(token);
   const subject = `[WSC IT] Please acknowledge receipt of ${asset.asset_tag}`;
   const actor = issuedBy ? (issuedBy.display_name || issuedBy.email) : 'WSC IT';
+  // Date the receipt was issued, in Sydney time. Shown in the table so the
+  // recipient can see at a glance when the handover happened — handy when
+  // they're signing a backfilled receipt days later.
+  const issuedDate = new Date().toLocaleString('en-AU', {
+    timeZone: 'Australia/Sydney',
+    day: 'numeric', month: 'short', year: 'numeric'
+  });
   const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">
@@ -1281,7 +1361,8 @@ async function sendIssueEmail(env, { asset, person, token, termsText, issuedBy }
         ${escapeHtml(actor)} has assigned you the following asset. Please review and sign the acknowledgement of receipt so we have a record of handover.
       </p>
       <table style="width:100%;border-collapse:collapse;margin:16px 0 20px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px">
-        <tr><td style="padding:10px 14px;color:#6b7280;font-size:13px;width:35%;border-bottom:1px solid #e5e7eb">Asset tag</td><td style="padding:10px 14px;color:#111827;font-size:14px;font-weight:600;border-bottom:1px solid #e5e7eb;font-family:monospace">${escapeHtml(asset.asset_tag)}</td></tr>
+        <tr><td style="padding:10px 14px;color:#6b7280;font-size:13px;width:35%;border-bottom:1px solid #e5e7eb">Issued</td><td style="padding:10px 14px;color:#111827;font-size:14px;border-bottom:1px solid #e5e7eb">${escapeHtml(issuedDate)}</td></tr>
+        <tr><td style="padding:10px 14px;color:#6b7280;font-size:13px;border-bottom:1px solid #e5e7eb">Asset tag</td><td style="padding:10px 14px;color:#111827;font-size:14px;font-weight:600;border-bottom:1px solid #e5e7eb;font-family:monospace">${escapeHtml(asset.asset_tag)}</td></tr>
         <tr><td style="padding:10px 14px;color:#6b7280;font-size:13px;border-bottom:1px solid #e5e7eb">Name</td><td style="padding:10px 14px;color:#111827;font-size:14px;border-bottom:1px solid #e5e7eb">${escapeHtml(asset.name)}</td></tr>
         ${asset.serial_number ? `<tr><td style="padding:10px 14px;color:#6b7280;font-size:13px;border-bottom:1px solid #e5e7eb">Serial</td><td style="padding:10px 14px;color:#111827;font-size:14px;border-bottom:1px solid #e5e7eb;font-family:monospace">${escapeHtml(asset.serial_number)}</td></tr>` : ''}
         ${asset.manufacturer || asset.model ? `<tr><td style="padding:10px 14px;color:#6b7280;font-size:13px">Make / model</td><td style="padding:10px 14px;color:#111827;font-size:14px">${escapeHtml(((asset.manufacturer || '') + ' ' + (asset.model || '')).trim())}</td></tr>` : ''}
@@ -1296,7 +1377,7 @@ async function sendIssueEmail(env, { asset, person, token, termsText, issuedBy }
     <p style="text-align:center;color:#9ca3af;font-size:11px;margin:18px 0 0">WSC IT Asset Management — automated receipt request</p>
   </div>
 </body></html>`;
-  const text = `Hi ${person.name},\n\n${actor} has assigned you ${asset.asset_tag} — ${asset.name}. Please acknowledge receipt by signing at:\n\n${signingUrl}\n\nThis link expires in ${ISSUE_EXPIRY_DAYS} days.`;
+  const text = `Hi ${person.name},\n\nIssued: ${issuedDate}\n\n${actor} has assigned you ${asset.asset_tag} — ${asset.name}. Please acknowledge receipt by signing at:\n\n${signingUrl}\n\nThis link expires in ${ISSUE_EXPIRY_DAYS} days.`;
   return await sendMail(env, person.email, subject, html, text);
 }
 
@@ -1395,6 +1476,247 @@ async function cancelIssue(request, env, issueId) {
     action: 'issue_cancelled',
     details: 'Signing link cancelled and removed',
     performed_by: user ? (user.display_name || user.email) : null
+  });
+
+  return json({ ok: true });
+}
+
+// ─── Loaner pool ─────────────────────────────────────────
+// Short-term lending: separate from the permanent checkout flow because
+// loans carry a due_date and return event. The asset's is_loaner flag
+// gates which assets can be loaned at all, so the loaner pool can't
+// accidentally scoop up someone's daily-driver laptop.
+
+async function listLoans(request, env, url) {
+  const params = url.searchParams;
+  const filter = params.get('filter') || 'active'; // active | overdue | returned | all
+  const limit = Math.min(200, Math.max(1, parseInt(params.get('limit')) || 100));
+
+  const todayAu = new Date().toLocaleString('sv-SE', { timeZone: 'Australia/Sydney' }).slice(0, 10);
+
+  const where = [];
+  const binds = [];
+  if (filter === 'active') { where.push('l.returned_at IS NULL'); }
+  else if (filter === 'returned') { where.push('l.returned_at IS NOT NULL'); }
+  else if (filter === 'overdue') {
+    where.push('l.returned_at IS NULL AND l.due_date < ?');
+    binds.push(todayAu);
+  }
+
+  const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
+
+  const result = await env.DB.prepare(`
+    SELECT l.id, l.asset_id, l.person_id, l.loaned_at, l.due_date,
+           l.returned_at, l.loaned_by_email, l.notes, l.created_at,
+           a.asset_tag, a.name AS asset_name, a.serial_number,
+           p.name AS person_name, p.email AS person_email, p.department
+    FROM loans l
+    JOIN assets a ON a.id = l.asset_id
+    JOIN people p ON p.id = l.person_id
+    ${whereClause}
+    ORDER BY
+      CASE WHEN l.returned_at IS NULL THEN 0 ELSE 1 END,
+      CASE WHEN l.returned_at IS NULL AND l.due_date < '${todayAu}' THEN 0 ELSE 1 END,
+      l.due_date ASC
+    LIMIT ?
+  `).bind(...binds, limit).all();
+
+  return json({ data: result.results || [], today: todayAu });
+}
+
+async function startLoan(request, env, assetId) {
+  const user = request._user;
+  const data = await body(request);
+  if (!data.person_id) return json({ error: 'person_id is required' }, 400);
+  if (!data.due_date) return json({ error: 'due_date is required (yyyy-mm-dd)' }, 400);
+
+  const asset = await env.DB.prepare('SELECT * FROM assets WHERE id = ?').bind(assetId).first();
+  if (!asset) return json({ error: 'Asset not found' }, 404);
+  if (!asset.is_loaner) return json({ error: 'Asset is not in the loaner pool' }, 400);
+
+  // Block double-lending: if there's already an open loan on this asset,
+  // force the operator to return it before issuing a new one.
+  const existing = await env.DB.prepare(
+    'SELECT id FROM loans WHERE asset_id = ? AND returned_at IS NULL'
+  ).bind(assetId).first();
+  if (existing) return json({ error: 'Asset is already on loan — return it first' }, 409);
+
+  const person = await env.DB.prepare('SELECT id, name, department FROM people WHERE id = ?').bind(data.person_id).first();
+  if (!person) return json({ error: 'Person not found' }, 404);
+
+  const loanId = id();
+  const ts = now();
+  await env.DB.prepare(`
+    INSERT INTO loans (id, asset_id, person_id, loaned_at, due_date, loaned_by_email, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    loanId, assetId, data.person_id, ts, data.due_date,
+    user ? user.email : null,
+    (data.notes || '').toString().slice(0, 1000) || null
+  ).run();
+
+  // Also flip the asset into deployed status + assigned_to for the loan
+  // duration so the asset list / detail reflects reality.
+  await env.DB.prepare(`
+    UPDATE assets SET status = 'deployed', assigned_to = ?, assigned_date = ?, updated_at = ? WHERE id = ?
+  `).bind(data.person_id, ts, ts, assetId).run();
+
+  await logActivity(env, {
+    asset_id: assetId,
+    action: 'loan_started',
+    details: `Loaned to ${person.name} until ${data.due_date}`,
+    person_id: data.person_id,
+    performed_by: user ? (user.display_name || user.email) : null
+  });
+
+  return json({ id: loanId, ok: true }, 201);
+}
+
+async function returnLoan(request, env, loanId) {
+  const user = request._user;
+  const loan = await env.DB.prepare('SELECT * FROM loans WHERE id = ?').bind(loanId).first();
+  if (!loan) return json({ error: 'Loan not found' }, 404);
+  if (loan.returned_at) return json({ error: 'Loan already returned' }, 400);
+
+  const ts = now();
+  await env.DB.prepare('UPDATE loans SET returned_at = ? WHERE id = ?').bind(ts, loanId).run();
+  await env.DB.prepare(`
+    UPDATE assets SET status = 'available', assigned_to = NULL, assigned_date = NULL, updated_at = ? WHERE id = ?
+  `).bind(ts, loan.asset_id).run();
+
+  await logActivity(env, {
+    asset_id: loan.asset_id,
+    action: 'loan_returned',
+    details: 'Loan returned',
+    person_id: loan.person_id,
+    performed_by: user ? (user.display_name || user.email) : null
+  });
+
+  return json({ ok: true });
+}
+
+// ─── Asset Flags (user-filed fault reports) ──────────────
+// Non-admin users use this to flag a problem on their own gear. Admins
+// use the same handlers from the Flags inbox to triage and resolve.
+
+const FLAG_CATEGORIES = ['damaged', 'slow', 'lost', 'other'];
+
+async function createAssetFlag(request, env, assetId) {
+  const user = request._user;
+  if (!user) return json({ error: 'Unauthorized' }, 401);
+
+  // Owner-or-admin check: anyone else trying to file a flag on an asset
+  // that isn't theirs gets a plain 404 (matches getAsset behaviour so we
+  // don't leak existence).
+  const asset = await env.DB.prepare(`
+    SELECT a.id, a.asset_tag, a.name, a.assigned_to, p.email AS assigned_to_email, p.name AS assigned_to_name
+    FROM assets a
+    LEFT JOIN people p ON a.assigned_to = p.id
+    WHERE a.id = ?
+  `).bind(assetId).first();
+  if (!asset) return json({ error: 'Asset not found' }, 404);
+
+  if (user.role !== 'admin') {
+    const mine = asset.assigned_to_email && asset.assigned_to_email.toLowerCase() === (user.email || '').toLowerCase();
+    if (!mine) return json({ error: 'Asset not found' }, 404);
+  }
+
+  const data = await body(request);
+  const category = (data.category || '').toLowerCase();
+  if (!FLAG_CATEGORIES.includes(category)) {
+    return json({ error: 'Invalid category. Use one of: ' + FLAG_CATEGORIES.join(', ') }, 400);
+  }
+  const description = (data.description || '').toString().slice(0, 2000);
+
+  const flagId = id();
+  await env.DB.prepare(`
+    INSERT INTO asset_flags (id, asset_id, reported_by_email, reported_by_name, category, description)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).bind(
+    flagId, assetId,
+    user.email || 'unknown',
+    user.display_name || user.email || null,
+    category,
+    description || null
+  ).run();
+
+  await logActivity(env, {
+    asset_id: assetId,
+    action: 'flag_filed',
+    details: `${category}${description ? ': ' + description.slice(0, 200) : ''}`,
+    performed_by: user.display_name || user.email
+  });
+
+  try {
+    await notify(env, 'asset_flag_filed', {
+      asset: { id: asset.id, asset_tag: asset.asset_tag, name: asset.name },
+      category,
+      description,
+      reporter: { email: user.email, name: user.display_name || user.email }
+    });
+  } catch (e) { console.error('notify error:', e); }
+
+  return json({ id: flagId, ok: true }, 201);
+}
+
+async function listAssetFlags(request, env, url) {
+  const user = request._user;
+  const params = url.searchParams;
+  const status = params.get('status') || '';
+  const limit = Math.min(200, Math.max(1, parseInt(params.get('limit')) || 100));
+
+  const where = [];
+  const binds = [];
+  if (status) { where.push('f.status = ?'); binds.push(status); }
+
+  // Non-admins only see the flags they themselves filed. Matches the
+  // non-admin scoping applied to the asset list.
+  if (user && user.role !== 'admin') {
+    where.push('LOWER(f.reported_by_email) = LOWER(?)');
+    binds.push(user.email || '');
+  }
+
+  const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  const result = await env.DB.prepare(`
+    SELECT f.id, f.asset_id, f.category, f.description, f.status,
+           f.reported_by_email, f.reported_by_name,
+           f.resolved_by_email, f.resolution_notes, f.resolved_at, f.created_at,
+           a.asset_tag, a.name AS asset_name, a.serial_number
+    FROM asset_flags f
+    LEFT JOIN assets a ON a.id = f.asset_id
+    ${whereClause}
+    ORDER BY
+      CASE f.status WHEN 'open' THEN 0 WHEN 'resolved' THEN 1 ELSE 2 END,
+      f.created_at DESC
+    LIMIT ?
+  `).bind(...binds, limit).all();
+
+  return json({ data: result.results || [] });
+}
+
+async function resolveAssetFlag(request, env, flagId, action) {
+  const user = request._user;
+  if (!user || user.role !== 'admin') return json({ error: 'Admin access required' }, 403);
+
+  const flag = await env.DB.prepare('SELECT * FROM asset_flags WHERE id = ?').bind(flagId).first();
+  if (!flag) return json({ error: 'Flag not found' }, 404);
+  if (flag.status !== 'open') return json({ error: 'Flag is not open' }, 400);
+
+  const data = await body(request).catch(() => ({}));
+  const notes = (data.notes || '').toString().slice(0, 2000) || null;
+  const newStatus = action === 'dismiss' ? 'dismissed' : 'resolved';
+
+  await env.DB.prepare(`
+    UPDATE asset_flags
+       SET status = ?, resolved_by_email = ?, resolution_notes = ?, resolved_at = ?
+     WHERE id = ?
+  `).bind(newStatus, user.email || null, notes, now(), flagId).run();
+
+  await logActivity(env, {
+    asset_id: flag.asset_id,
+    action: 'flag_' + newStatus,
+    details: `Flag "${flag.category}" ${newStatus}${notes ? ': ' + notes.slice(0, 200) : ''}`,
+    performed_by: user.display_name || user.email
   });
 
   return json({ ok: true });
@@ -1962,6 +2284,7 @@ async function updateAsset(request, env, assetId) {
       warranty_months = ?, warranty_expiry = ?, retirement_date = ?, notes = ?, image_url = ?,
       hostname = ?, os = ?, cpu = ?, ram_gb = ?, disk_gb = ?, mac_address = ?, ip_address = ?, enrolled_user = ?,
       phone_number = ?, carrier = ?,
+      is_loaner = ?,
       location_id = ?,
       assigned_to = ?, assigned_date = ?, updated_at = ?
     WHERE id = ?
@@ -1992,6 +2315,7 @@ async function updateAsset(request, env, assetId) {
     data.enrolled_user !== undefined ? data.enrolled_user : existing.enrolled_user,
     data.phone_number !== undefined ? data.phone_number : existing.phone_number,
     data.carrier !== undefined ? data.carrier : existing.carrier,
+    data.is_loaner !== undefined ? (data.is_loaner ? 1 : 0) : (existing.is_loaner ? 1 : 0),
     data.location_id !== undefined ? data.location_id : existing.location_id,
     data.assigned_to !== undefined ? data.assigned_to : existing.assigned_to,
     data.assigned_to !== undefined && data.assigned_to !== existing.assigned_to ? ts : existing.assigned_date,

@@ -474,16 +474,32 @@ async function renderAssetDetail(id, preloaded) {
 
     if (Auth.isAdmin()) {
       if (asset.status === 'available') {
-        html += '<button class="btn primary sm" onclick="openCheckout(\'' + esc(asset.id) + '\')">Check Out</button>';
+        // Loaner-pool assets get their own Loan flow so the operator picks a
+        // due date up front; regular assets stick with the permanent-checkout
+        // button that doesn't carry a return expectation.
+        if (asset.is_loaner) {
+          html += '<button class="btn primary sm" onclick="openLoanModal(\'' + esc(asset.id) + '\')">Loan out</button>';
+        } else {
+          html += '<button class="btn primary sm" onclick="openCheckout(\'' + esc(asset.id) + '\')">Check Out</button>';
+        }
       }
       if (asset.status === 'deployed') {
-        html += '<button class="btn sm" onclick="openCheckin(\'' + esc(asset.id) + '\')">Check In</button>';
+        if (asset.is_loaner) {
+          html += '<button class="btn sm" onclick="returnLoanForAsset(\'' + esc(asset.id) + '\')">Return</button>';
+        } else {
+          html += '<button class="btn sm" onclick="openCheckin(\'' + esc(asset.id) + '\')">Check In</button>';
+        }
       }
       html += '<button class="btn sm" onclick="navigate(\'#/assets/edit/' + esc(asset.id) + '\')">Edit</button>'
         + '<button class="btn sm" onclick="openMaintenanceForm(\'' + esc(asset.id) + '\')">+ Maintenance</button>';
     }
     // Print is safe for any role — it's a read operation against the asset.
     html += '<button class="btn sm" onclick="printAssetLabel(\'' + esc(asset.id) + '\')">Print</button>';
+    // Flag a problem: owner-or-admin. For non-admins this is the main
+    // self-service action — the backend accepts the request because the
+    // asset is theirs. Admins keep the button so IT can raise an internal
+    // flag on behalf of a caller who can't sign in.
+    html += '<button class="btn sm" onclick="openFlagModal(\'' + esc(asset.id) + '\')">Flag a problem</button>';
     if (Auth.isAdmin()) {
       html += '<button class="btn danger sm" onclick="permanentDeleteAsset(\'' + esc(asset.id) + '\')">Delete</button>';
     }
@@ -998,6 +1014,15 @@ async function renderAssetForm(editId) {
     + '<div class="form-hint">Defaults to purchase + 3 years. Edit for longer-lived gear.</div></div>'
     + '</div>';
 
+  // Loaner pool flag — toggling this puts the asset into the short-term
+  // lending pool (visitor laptops etc.) instead of permanent allocation.
+  var isLoaner = asset && asset.is_loaner ? 'checked' : '';
+  html += '<div class="form-group" style="display:flex;align-items:center;gap:8px">'
+    + '<input type="checkbox" id="af-is-loaner" ' + isLoaner + ' style="width:auto;margin:0">'
+    + '<label class="form-label" for="af-is-loaner" style="margin:0">In loaner pool</label>'
+    + '<span class="form-hint" style="margin:0">Short-term lends with a due date (visitor laptops, spare phones).</span>'
+    + '</div>';
+
   // Notes
   html += '<div class="form-group"><label class="form-label">Notes</label>'
     + '<textarea id="af-notes" class="form-textarea" placeholder="Optional notes">' + esc(asset ? asset.notes || '' : '') + '</textarea></div>';
@@ -1120,7 +1145,8 @@ async function saveAsset(editId) {
     ip_address: document.getElementById('af-ip').value.trim() || null,
     enrolled_user: document.getElementById('af-enrolled-user').value.trim() || null,
     phone_number: (document.getElementById('af-phone-number') ? document.getElementById('af-phone-number').value.trim() : '') || null,
-    carrier: (document.getElementById('af-carrier') ? document.getElementById('af-carrier').value.trim() : '') || null
+    carrier: (document.getElementById('af-carrier') ? document.getElementById('af-carrier').value.trim() : '') || null,
+    is_loaner: document.getElementById('af-is-loaner') && document.getElementById('af-is-loaner').checked ? 1 : 0
   };
 
   // Handle image upload
@@ -1149,3 +1175,35 @@ async function saveAsset(editId) {
 }
 window.saveAsset = saveAsset;
 
+// ─── Flag a problem (user self-service) ─────────
+
+function openFlagModal(assetId) {
+  openModal('Flag a problem',
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'
+    + 'Tell IT what\u2019s wrong with this asset. An email goes to the team right away.'
+    + '</div>'
+    + '<div class="form-group"><label class="form-label">Category</label>'
+    + '<select id="flag-category" class="form-select">'
+    + '<option value="damaged">Damaged (cracked screen, broken keys, etc.)</option>'
+    + '<option value="slow">Running slow / performance issue</option>'
+    + '<option value="lost">Lost or stolen</option>'
+    + '<option value="other">Other</option>'
+    + '</select></div>'
+    + '<div class="form-group"><label class="form-label">What\u2019s happening?</label>'
+    + '<textarea id="flag-desc" class="form-textarea" rows="4" placeholder="e.g. Screen cracked after it fell off the desk yesterday"></textarea></div>'
+    + '<button class="btn primary" onclick="submitFlag(\'' + esc(assetId) + '\')">Send to IT</button>'
+  );
+}
+window.openFlagModal = openFlagModal;
+
+async function submitFlag(assetId) {
+  var category = document.getElementById('flag-category').value;
+  var description = document.getElementById('flag-desc').value.trim();
+  try {
+    await API.flagAsset(assetId, { category: category, description: description });
+    closeModal();
+    toast('Thanks \u2014 IT has been notified', 'success');
+    renderAssetDetail(assetId);
+  } catch(e) { /* toasted */ }
+}
+window.submitFlag = submitFlag;

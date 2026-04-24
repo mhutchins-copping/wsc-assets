@@ -96,6 +96,21 @@ quick-reference.
   people, categories, reports, settings); non-admins see only the assets
   assigned to their own person record, with the sidebar and API both
   scoped to match.
+- **JIT user provisioning** — anyone with an `@walgett.nsw.gov.au` SSO
+  identity who hits the site is auto-created as a `user`-role account on
+  first sign-in. No manual add required for view-only access. Admin
+  access is still granted explicitly. Override the allowed domain with
+  the `AUTO_PROVISION_DOMAIN` env var if needed.
+- **Self-service flags** — non-admin staff can flag a problem on their
+  own gear (damaged / slow / lost / other) from the asset detail page.
+  The flag lands in an admin-only Flags inbox and fires an email
+  notification so IT sees it immediately.
+- **Loaner pool** — mark an asset as "in loaner pool" and it switches to
+  a short-term lending flow with a due date. Overdue loans show in red
+  on the Loaners page and the sidebar count badge.
+- **Command palette** — `Ctrl/Cmd+K` opens a keyboard-driven palette
+  with quick actions (new asset, jump to any view, sync Entra, sign out)
+  and live asset search. Arrow keys + Enter to navigate.
 - **Break-glass login** — rate-limited master-key path with IP-scoped
   audit logging, for SSO outages.
 

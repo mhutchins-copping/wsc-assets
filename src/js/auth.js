@@ -264,6 +264,10 @@ function showApp() {
     }
   }
   if (typeof Router !== 'undefined') Router.handleRoute();
+  // Populate the sidebar flags count for admins. Safe to call for non-admins
+  // too — the helper short-circuits.
+  if (typeof updateFlagsBadge === 'function') updateFlagsBadge();
+  if (typeof updateLoansBadge === 'function') updateLoansBadge();
 }
 window.showApp = showApp;
 

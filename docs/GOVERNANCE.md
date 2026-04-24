@@ -147,7 +147,7 @@ A realistic paid-tier scenario would cost less than AUD $30/month.
 | Multi-factor authentication      | Enforced via Entra ID policy on council accounts.  |
 | Single sign-on                   | Enforced at edge via Cloudflare Access.            |
 | Role-based access control        | `admin` / `user` / `viewer` roles, server-enforced.|
-| Default-deny authorisation       | Internal `users` allow-list; SSO alone insufficient.|
+| Default-deny authorisation       | Internal `users` allow-list; SSO alone insufficient. JIT provisioning grants view-only `user` role to @walgett.nsw.gov.au SSO identities on first sign-in; admin still explicit. |
 | Transport encryption             | HTTPS only; HSTS enforced at edge.                 |
 | Secret management                | Wrangler secret store; never in Git.               |
 | Audit logging                    | Every mutation logged with user, timestamp, IP.    |

@@ -75,6 +75,10 @@ CREATE TABLE IF NOT EXISTS assets (
   location_id TEXT REFERENCES locations(id),
   assigned_to TEXT REFERENCES people(id),
   assigned_date TEXT,
+  -- Loaner pool flag: 1 if this asset belongs to the short-term lending
+  -- pool (meeting-room laptops, visitor phones, etc.) rather than the
+  -- permanent allocation pool.
+  is_loaner INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -181,3 +185,39 @@ CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_asset_issues_asset ON asset_issues(asset_id);
 CREATE INDEX IF NOT EXISTS idx_asset_issues_person ON asset_issues(person_id);
 CREATE INDEX IF NOT EXISTS idx_asset_issues_status ON asset_issues(status);
+
+-- User-filed fault reports ("flags"). Distinct from asset_issues (which
+-- are signing-receipts) and reports view (analytics).
+CREATE TABLE IF NOT EXISTS asset_flags (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  asset_id TEXT NOT NULL REFERENCES assets(id),
+  reported_by_email TEXT NOT NULL,
+  reported_by_name TEXT,
+  category TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  resolved_by_email TEXT,
+  resolution_notes TEXT,
+  resolved_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_asset_flags_asset ON asset_flags(asset_id);
+CREATE INDEX IF NOT EXISTS idx_asset_flags_status ON asset_flags(status);
+CREATE INDEX IF NOT EXISTS idx_asset_flags_reporter ON asset_flags(LOWER(reported_by_email));
+
+-- Loaner pool: short-term lends with a due_date, tracked separately from
+-- permanent checkout/assignment.
+CREATE TABLE IF NOT EXISTS loans (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  asset_id TEXT NOT NULL REFERENCES assets(id),
+  person_id TEXT NOT NULL REFERENCES people(id),
+  loaned_at TEXT NOT NULL DEFAULT (datetime('now')),
+  due_date TEXT NOT NULL,
+  returned_at TEXT,
+  loaned_by_email TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_loans_asset ON loans(asset_id);
+CREATE INDEX IF NOT EXISTS idx_loans_person ON loans(person_id);
+CREATE INDEX IF NOT EXISTS idx_loans_active ON loans(returned_at);

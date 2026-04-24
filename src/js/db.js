@@ -157,6 +157,31 @@ var API = {
   resendIssue: function(id) { return this.fetch('/api/issues/' + id + '/resend', { method: 'POST', body: {} }); },
   cancelIssue: function(id) { return this.fetch('/api/issues/' + id + '/cancel', { method: 'POST', body: {} }); },
 
+  // ─── Asset Flags (user-filed fault reports)
+  flagAsset: function(assetId, data) {
+    return this.fetch('/api/assets/' + assetId + '/flag', { method: 'POST', body: data || {} });
+  },
+  getFlags: function(params) {
+    return this.fetch('/api/flags?' + new URLSearchParams(params || {}));
+  },
+  resolveFlag: function(id, notes) {
+    return this.fetch('/api/flags/' + id + '/resolve', { method: 'POST', body: { notes: notes || '' } });
+  },
+  dismissFlag: function(id, notes) {
+    return this.fetch('/api/flags/' + id + '/dismiss', { method: 'POST', body: { notes: notes || '' } });
+  },
+
+  // ─── Loaner pool
+  getLoans: function(params) {
+    return this.fetch('/api/loans?' + new URLSearchParams(params || {}));
+  },
+  startLoan: function(assetId, data) {
+    return this.fetch('/api/assets/' + assetId + '/loan', { method: 'POST', body: data || {} });
+  },
+  returnLoan: function(loanId) {
+    return this.fetch('/api/loans/' + loanId + '/return', { method: 'POST', body: {} });
+  },
+
   // ─── Images (R2)
   uploadImage: async function(assetId, file) {
     // Sanitise both halves of the key so it passes the worker's strict regex

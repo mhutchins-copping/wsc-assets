@@ -213,12 +213,76 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
-// ─── Search Overlay (Ctrl+K) ───────────────────
+// ─── Command Palette (Ctrl+K / Cmd+K) ──────────
+// What started as a plain asset search has grown into a proper command
+// palette: quick actions (new asset, jump to view, sync Entra, sign out)
+// live above live-search results, and arrow keys + Enter work throughout.
+// The overlay is still id="search-overlay" so anything else on the page
+// that toggled it keeps working.
+
+// Items shown when the palette is empty or as the "actions" block above
+// asset results. Each entry declares its admin-ness so non-admins only
+// see actions they can actually take.
+function commandPaletteActions() {
+  var admin = Auth.isAdmin && Auth.isAdmin();
+  var items = [
+    { label: 'Go to Assets', hint: 'a', icon: 'assets', run: function() { navigate('#/assets'); } },
+    { label: 'Your account', hint: 'me', icon: 'user', run: function() { navigate('#/account'); } }
+  ];
+  if (admin) {
+    items.unshift(
+      { label: 'New asset', hint: 'ctrl+n', icon: 'plus', run: function() { navigate('#/assets/new'); } },
+      { label: 'Go to Dashboard', hint: 'home', icon: 'grid', run: function() { navigate('#/'); } }
+    );
+    items.push(
+      { label: 'Go to People', icon: 'people', run: function() { navigate('#/people'); } },
+      { label: 'Go to Categories', icon: 'list', run: function() { navigate('#/categories'); } },
+      { label: 'Go to Audits', icon: 'check', run: function() { navigate('#/audits'); } },
+      { label: 'Go to Reports', icon: 'chart', run: function() { navigate('#/reports'); } },
+      { label: 'Go to Receipts', icon: 'file', run: function() { navigate('#/issues'); } },
+      { label: 'Go to Flags', icon: 'flag', run: function() { navigate('#/flags'); } },
+      { label: 'Enrol a phone', icon: 'phone', run: function() { navigate('#/phone-enrol'); } },
+      { label: 'Settings', icon: 'gear', run: function() { navigate('#/settings'); } },
+      { label: 'Sync Entra users', hint: 'from Settings', icon: 'sync', run: function() {
+        navigate('#/settings');
+        setTimeout(function() {
+          if (typeof syncEntraUsers === 'function') syncEntraUsers();
+        }, 300);
+      }}
+    );
+  }
+  items.push({ label: 'Sign out', icon: 'out', run: function() { if (typeof Auth !== 'undefined') Auth.logout(); } });
+  return items;
+}
+
+var paletteIconSvgs = {
+  plus:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  grid:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
+  assets: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><polyline points="16 7 16 2 8 2 8 7"/></svg>',
+  people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>',
+  list:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>',
+  check:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+  chart:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+  file:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+  flag:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>',
+  phone:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg>',
+  gear:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v3m0 16v3M4.22 4.22l2.12 2.12m11.32 11.32l2.12 2.12M1 12h3m16 0h3M4.22 19.78l2.12-2.12m11.32-11.32l2.12-2.12"/></svg>',
+  sync:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
+  user:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  out:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
+};
+
+// Palette state. `items` is the flat list of currently-visible actionable
+// entries (actions + asset rows). `active` is the keyboard-selected index.
+// Both reset every time the palette reopens or the query changes.
+var paletteState = { items: [], active: 0, query: '' };
+window.paletteState = paletteState;
+window.updatePaletteActive = function() { updatePaletteActive(); };
 
 function openSearchOverlay() {
   if (!Auth.isLoggedIn) return;
 
-  // Create overlay if it doesn't exist
   var overlay = document.getElementById('search-overlay');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -226,57 +290,158 @@ function openSearchOverlay() {
     overlay.className = 'search-overlay';
     overlay.onclick = function(e) { if (e.target === overlay) overlay.classList.remove('open'); };
     overlay.innerHTML = '<div class="search-overlay-card">'
-      + '<input type="text" class="search-overlay-input" id="search-overlay-input" placeholder="Search assets by name, tag, serial, or assignee…" oninput="searchOverlayDebounced(this.value)">'
-      + '<div class="search-overlay-results" id="search-overlay-results">'
-      + '<div class="search-overlay-empty">Type to search across all assets</div>'
-      + '</div></div>';
+      + '<input type="text" class="search-overlay-input" id="search-overlay-input" placeholder="Type a command or search assets\u2026" oninput="paletteOnInput(this.value)" onkeydown="paletteOnKeyDown(event)" autocomplete="off">'
+      + '<div class="search-overlay-results" id="search-overlay-results"></div>'
+      + '<div class="palette-footer">'
+      + '<span><kbd>\u2191</kbd><kbd>\u2193</kbd> navigate</span>'
+      + '<span><kbd>\u21B5</kbd> select</span>'
+      + '<span><kbd>Esc</kbd> close</span>'
+      + '</div>'
+      + '</div>';
     document.body.appendChild(overlay);
   }
 
   overlay.classList.add('open');
+  paletteState.query = '';
   setTimeout(function() {
     var input = document.getElementById('search-overlay-input');
     if (input) { input.value = ''; input.focus(); }
+    renderPalette('');
   }, 50);
 }
 window.openSearchOverlay = openSearchOverlay;
 
-var searchOverlayDebounced = debounce(async function(query) {
+function paletteOnInput(value) {
+  paletteState.query = value || '';
+  renderPalette(paletteState.query);
+}
+window.paletteOnInput = paletteOnInput;
+
+function paletteOnKeyDown(e) {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    paletteState.active = Math.min(paletteState.items.length - 1, paletteState.active + 1);
+    updatePaletteActive();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    paletteState.active = Math.max(0, paletteState.active - 1);
+    updatePaletteActive();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    var item = paletteState.items[paletteState.active];
+    if (item) paletteActivate(item);
+  }
+}
+window.paletteOnKeyDown = paletteOnKeyDown;
+
+function updatePaletteActive() {
+  var nodes = document.querySelectorAll('#search-overlay-results .palette-item');
+  nodes.forEach(function(n, i) {
+    n.classList.toggle('active', i === paletteState.active);
+    if (i === paletteState.active) n.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+function paletteActivate(item) {
+  document.getElementById('search-overlay').classList.remove('open');
+  try { item.run(); } catch (e) { console.error('palette action failed', e); }
+}
+window.paletteActivate = paletteActivate;
+
+// Index for onclick activation — the markup references items by their
+// palette index rather than carrying a closure through innerHTML.
+window.__paletteItemAt = function(i) {
+  var item = paletteState.items[i];
+  if (item) paletteActivate(item);
+};
+
+function paletteItemMarkup(item, index) {
+  var icon = paletteIconSvgs[item.icon] || paletteIconSvgs.search;
+  return '<div class="palette-item' + (index === paletteState.active ? ' active' : '') + '"'
+    + ' onmousemove="paletteState.active=' + index + ';updatePaletteActive()"'
+    + ' onclick="__paletteItemAt(' + index + ')">'
+    + '<div class="palette-item-icon">' + icon + '</div>'
+    + '<div class="palette-item-main">'
+    + '<div class="palette-item-label">' + esc(item.label) + '</div>'
+    + (item.sub ? '<div class="palette-item-sub">' + item.sub + '</div>' : '')
+    + '</div>'
+    + (item.hint ? '<div class="palette-item-hint">' + esc(item.hint) + '</div>' : '')
+    + '</div>';
+}
+
+async function renderPalette(query) {
   var resultsEl = document.getElementById('search-overlay-results');
   if (!resultsEl) return;
-  if (!query || query.length < 2) {
-    resultsEl.innerHTML = '<div class="search-overlay-empty">Type to search across all assets</div>';
-    return;
+
+  var q = (query || '').trim().toLowerCase();
+  var actions = commandPaletteActions();
+  var matchedActions = q
+    ? actions.filter(function(a) { return a.label.toLowerCase().indexOf(q) !== -1; })
+    : actions;
+
+  paletteState.items = matchedActions.slice();
+  paletteState.active = 0;
+
+  var html = '';
+  if (matchedActions.length) {
+    html += '<div class="palette-group-label">Actions</div>';
+    matchedActions.forEach(function(item, i) { html += paletteItemMarkup(item, i); });
   }
-  if (!API.baseUrl) {
-    resultsEl.innerHTML = '<div class="search-overlay-empty">Configure API in Settings first</div>';
-    return;
+
+  // Show a loading row for assets while we fetch, then replace.
+  if (q.length >= 2 && API.baseUrl) {
+    html += '<div class="palette-group-label">Assets</div>'
+      + '<div class="search-overlay-empty" id="palette-assets-loading">Searching\u2026</div>';
   }
 
-  resultsEl.innerHTML = '<div class="search-overlay-empty">Searching...</div>';
+  resultsEl.innerHTML = html;
 
-  try {
-    var results = await API.getAssets({ search: query, limit: 8 });
-    var data = results.data || [];
+  if (q.length >= 2 && API.baseUrl) {
+    try {
+      var results = await API.getAssets({ search: query, limit: 8 });
+      // Guard against a stale response racing a newer query.
+      if (paletteState.query.trim().toLowerCase() !== q) return;
 
-    if (!data.length) {
-      resultsEl.innerHTML = '<div class="search-overlay-empty">No results for "' + esc(query) + '"</div>';
-      return;
+      var data = results.data || [];
+      var assetItems = data.map(function(a) {
+        return {
+          label: a.name,
+          sub: '<span class="mono">' + esc(a.asset_tag) + '</span>'
+             + (a.serial_number ? ' &middot; ' + esc(a.serial_number) : '')
+             + (a.assigned_to_name ? ' &middot; ' + esc(a.assigned_to_name) : ''),
+          icon: 'assets',
+          hint: a.status,
+          run: (function(id) { return function() { navigate('#/assets/' + id); }; })(a.id)
+        };
+      });
+
+      paletteState.items = matchedActions.concat(assetItems);
+
+      var offset = matchedActions.length;
+      var assetsHtml = assetItems.length
+        ? assetItems.map(function(it, i) { return paletteItemMarkup(it, offset + i); }).join('')
+        : '<div class="search-overlay-empty">No asset matches</div>';
+
+      resultsEl.innerHTML = (matchedActions.length
+        ? '<div class="palette-group-label">Actions</div>'
+          + matchedActions.map(function(it, i) { return paletteItemMarkup(it, i); }).join('')
+        : '')
+        + '<div class="palette-group-label">Assets</div>' + assetsHtml;
+    } catch (e) {
+      var loading = document.getElementById('palette-assets-loading');
+      if (loading) loading.textContent = 'Search failed';
     }
-
-    resultsEl.innerHTML = data.map(function(a) {
-      return '<div class="search-overlay-item" onclick="document.getElementById(\'search-overlay\').classList.remove(\'open\');navigate(\'#/assets/' + esc(a.id) + '\')">'
-        + '<div style="flex:1;min-width:0">'
-        + '<div style="font-weight:500;font-size:13px">' + esc(a.name) + '</div>'
-        + '<div style="font-size:11px;font-family:var(--mono);color:var(--text3)">'
-        + esc(a.asset_tag) + (a.serial_number ? ' &middot; ' + esc(a.serial_number) : '')
-        + (a.assigned_to_name ? ' &middot; ' + esc(a.assigned_to_name) : '')
-        + '</div></div>'
-        + statusBadge(a.status)
-        + '</div>';
-    }).join('');
-  } catch(e) {
-    resultsEl.innerHTML = '<div class="search-overlay-empty">Search failed</div>';
+  } else if (!matchedActions.length) {
+    resultsEl.innerHTML = '<div class="search-overlay-empty">No matches for "' + esc(query) + '"</div>';
   }
-}, 200);
+}
+window.renderPalette = renderPalette;
+
+// Back-compat shim: globalSearch() in router.js used to call this debounced
+// search directly. Forward to the palette's query handler so that one-off
+// path still works.
+var searchOverlayDebounced = function(query) {
+  paletteState.query = query || '';
+  renderPalette(paletteState.query);
+};
 window.searchOverlayDebounced = searchOverlayDebounced;

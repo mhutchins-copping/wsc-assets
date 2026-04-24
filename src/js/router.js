@@ -19,7 +19,7 @@ var Router = {
     // Non-admins don't get dashboard/audits/receipts/etc — the sidebar
     // hides those nav items, but someone could still land on them via a
     // bookmark or typed hash. Bounce them back to the one view they can use.
-    var adminOnly = ['/', '/people', '/categories', '/audits', '/reports', '/issues', '/settings'];
+    var adminOnly = ['/', '/people', '/categories', '/audits', '/reports', '/issues', '/flags', '/loans', '/settings'];
     if (Auth.user && Auth.user.role !== 'admin' && adminOnly.indexOf(route) !== -1) {
       location.hash = '#/assets';
       return;
@@ -58,6 +58,8 @@ var Router = {
       '/audits': param ? 'audit-detail' : 'audits',
       '/reports': 'reports',
       '/issues': 'issues',
+      '/flags': 'flags',
+      '/loans': 'loans',
       '/phone-enrol': 'phone-enrol',
       '/phone-enrol-batch': 'phone-enrol',
       '/settings': 'settings',

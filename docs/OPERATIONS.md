@@ -24,9 +24,20 @@ deploying a change) — this is the page.
 
 ### Grant a staff member access to the app
 
+Most of the time you don't need to do anything. Any `@walgett.nsw.gov.au`
+SSO identity is auto-provisioned as a view-only `user` account on their
+first visit — they hit the site, CF Access lets them through, and the
+worker creates the row on the fly. This covers every "my asset isn't
+showing up" ask.
+
+To grant **admin** (or another specific role) ahead of time:
+
 1. Settings → User Management → Add User.
 2. Enter their `@walgett.nsw.gov.au` email, display name, and role.
 3. Save. They can sign in immediately.
+
+The allowed auto-provision domain is set by `AUTO_PROVISION_DOMAIN`
+(Wrangler env var). Defaults to `walgett.nsw.gov.au` if unset.
 
 Roles at a glance:
 

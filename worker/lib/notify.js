@@ -118,6 +118,18 @@ function buildEmail(event, data) {
       details.push({ label: 'Role', value: data.user.role || 'user' });
       break;
 
+    case 'asset_flag_filed':
+      subject = `[WSC Assets] Flag Raised — ${data.asset.asset_tag}`;
+      actionColor = '#f59e0b';
+      actionLabel = 'Fault Flagged';
+      details.push({ label: 'Asset', value: `${data.asset.asset_tag} — ${data.asset.name}` });
+      details.push({ label: 'Category', value: data.category });
+      if (data.description) details.push({ label: 'Description', value: data.description });
+      details.push({ label: 'Reported by', value: `${data.reporter.name} <${data.reporter.email}>` });
+      details.push({ label: 'Time', value: timestampStr });
+      assetUrl = baseUrl + data.asset.id;
+      break;
+
     case 'asset_issue_signed':
       subject = `[WSC Assets] Receipt Signed — ${data.asset.asset_tag}`;
       actionColor = '#10b981';
