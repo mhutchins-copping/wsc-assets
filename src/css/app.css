@@ -1406,6 +1406,22 @@ tbody td.mono {
   outline-offset: 2px;
 }
 
+/* ─── Scrollbars ────────────────────────────── */
+/* Subtle track-less scrollbars tuned to the cream body. Defaults on
+   Windows Chrome/Edge are a loud grey that stand out against the
+   warm palette -- these recede to a muted pill that only asserts
+   itself when the user interacts with it. */
+* { scrollbar-width: thin; scrollbar-color: var(--border2) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text3); background-clip: padding-box; }
+
 /* ─── Reduced Motion ────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
