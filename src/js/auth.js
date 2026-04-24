@@ -241,6 +241,16 @@ var Auth = {
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
+  // Body-level role flag so CSS can gate admin-only chrome (the topbar
+  // "+ New Asset" button and similar) without each view having to
+  // re-check Auth.isAdmin() every render.
+  document.body.classList.toggle('is-admin', !!(Auth.user && Auth.user.role === 'admin'));
+  // Localise the Ctrl/Cmd keyboard hint on first show so Mac users
+  // don't see the wrong shortcut glyph.
+  var kbd = document.querySelector('.topbar-kbd');
+  if (kbd && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '')) {
+    kbd.textContent = '\u2318 K';
+  }
   // Update sidebar user profile
   if (Auth.user) {
     var nameEl = document.getElementById('sidebar-user-name');

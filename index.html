@@ -154,9 +154,10 @@
         <div class="topbar-actions">
           <div class="topbar-search">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" id="global-search" class="topbar-search-input" placeholder="Search assets... (Ctrl+K)" onkeydown="if(event.key==='Enter')globalSearch(this.value)" onfocus="this.select()">
+            <input type="text" id="global-search" class="topbar-search-input" placeholder="Search assets…" onkeydown="if(event.key==='Enter')globalSearch(this.value)" onfocus="this.select()">
+            <kbd class="topbar-kbd" aria-hidden="true">Ctrl K</kbd>
           </div>
-          <button class="btn primary sm" onclick="navigate('#/assets/new')">+ New Asset</button>
+          <button class="btn primary sm topbar-new" onclick="navigate('#/assets/new')">+ New Asset</button>
         </div>
       </header>
 

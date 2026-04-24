@@ -637,6 +637,32 @@ h1, h2, h3, h4, h5, h6 { font-weight: var(--w-bold); letter-spacing: -0.015em; l
 
 .topbar-search-input::placeholder { color: var(--text3); }
 
+/* Keyboard-shortcut hint pill sitting inside the search field. Swaps
+   to "Cmd K" on macOS so Mac users don't see the wrong thing. Hidden
+   below 560px so the search stays usable on phones. */
+.topbar-kbd {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  letter-spacing: 0.04em;
+  user-select: none;
+  pointer-events: none;
+}
+@media (max-width: 560px) { .topbar-kbd { display: none; } }
+
+/* Admin-only topbar chrome. body.is-admin is toggled by showApp() on
+   auth. Hides the + New Asset shortcut from non-admin viewers so the
+   topbar is cleaner and they don't tap a button that 403s. */
+body:not(.is-admin) .topbar-new { display: none; }
+
 .mobile-menu-btn {
   display: none;
   background: none;
