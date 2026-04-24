@@ -18,7 +18,15 @@ function renderDashboardSkeleton() {
     + '<div class="dash-section"><div class="dash-section-title">Status Breakdown</div><div id="dash-status">' + renderSkeletonBlock(110) + '</div></div>'
     + '<div class="dash-section"><div class="dash-section-title">Recent Activity</div><div id="dash-activity">' + renderSkeletonBlock(210) + '</div></div>'
     + '</div>'
-    + '<div class="dash-section"><div class="dash-section-title">Top Categories</div><div id="dash-category" class="dash-minibar-area">' + renderSkeletonBlock(140) + '</div></div>';
+    + '<div class="dash-section"><div class="dash-section-title">Top Categories</div><div id="dash-category" class="dash-minibar-area">' + renderSkeletonBlock(140) + '</div></div>'
+    + '<div class="dash-section dash-mosaic-section">'
+    +   '<div class="dash-section-head">'
+    +     '<div class="dash-section-title">Fleet at a glance</div>'
+    +     '<div id="dash-mosaic-legend" class="dash-mosaic-legend"></div>'
+    +   '</div>'
+    +   '<div id="dash-mosaic">' + renderSkeletonBlock(120) + '</div>'
+    +   '<div id="dash-funfact" class="dash-funfact">&nbsp;</div>'
+    + '</div>';
 }
 
 // Welcome strip at the top of the dashboard. Echoes the "Welcome to
@@ -53,6 +61,136 @@ async function loadDashboardData() {
     renderDashboardError();
     if (root) root.removeAttribute('aria-busy');
   }
+  // Mosaic + fun fact load separately so the KPIs paint first. Fire
+  // this even if the stats request failed -- different endpoint,
+  // might still work.
+  loadFleetMosaic();
+}
+
+// Walks the paginated asset list and builds the Fleet-at-a-glance
+// mosaic. Caps at 10 pages (1,000 rows) which is comfortably more
+// than the council fleet.
+async function loadFleetMosaic() {
+  var mosaicEl = document.getElementById('dash-mosaic');
+  var factEl = document.getElementById('dash-funfact');
+  var legendEl = document.getElementById('dash-mosaic-legend');
+  if (!mosaicEl) return;
+  try {
+    var all = [];
+    var page = 1;
+    while (page <= 10) {
+      var res = await API.getAssets({ page: page, limit: 100, sort: 'a.asset_tag', dir: 'asc' });
+      all = all.concat(res.data || []);
+      if (!res.data || res.data.length < 100 || all.length >= (res.total || 0)) break;
+      page++;
+    }
+    if (!all.length) {
+      mosaicEl.innerHTML = '<div class="dash-empty-subtle">No assets yet. Once you register some, each one shows up as a tile here.</div>';
+      if (factEl) factEl.innerHTML = '';
+      return;
+    }
+    mosaicEl.innerHTML = renderMosaic(all);
+    if (legendEl) legendEl.innerHTML = renderMosaicLegend();
+    if (factEl) {
+      var fact = pickFunFact(all);
+      factEl.innerHTML = fact ? '<span class="dash-funfact-dot"></span> ' + fact : '';
+    }
+  } catch (e) {
+    mosaicEl.innerHTML = '<div class="dash-empty-subtle">Couldn\'t load the mosaic.</div>';
+  }
+}
+
+// Color per asset status. Deployed pops in the accent green, available
+// sits in a paler sage, warnings take amber/red. Disposed is omitted
+// from the mosaic entirely (out-of-fleet).
+var MOSAIC_COLORS = {
+  deployed:    '#2e5842',
+  available:   '#c6d5c8',
+  maintenance: '#d97706',
+  retired:     '#9ca3af',
+  lost:        '#dc2626'
+};
+var MOSAIC_LABELS = {
+  deployed: 'Deployed', available: 'Available',
+  maintenance: 'Maintenance', retired: 'Retired', lost: 'Lost'
+};
+
+function renderMosaic(assets) {
+  var visible = assets.filter(function(a) { return a.status !== 'disposed'; });
+  return '<div class="dash-mosaic-grid">' + visible.map(function(a) {
+    var color = MOSAIC_COLORS[a.status] || '#d1d5db';
+    var label = (a.asset_tag || '') + ' \u00b7 ' + (a.name || '') + ' \u00b7 ' + (MOSAIC_LABELS[a.status] || a.status || 'unknown');
+    return '<a class="dash-mosaic-tile" href="#/assets/' + esc(a.id) + '" '
+      + 'style="background:' + color + '" '
+      + 'title="' + esc(label) + '" aria-label="' + esc(label) + '"></a>';
+  }).join('') + '</div>';
+}
+
+function renderMosaicLegend() {
+  return Object.keys(MOSAIC_COLORS).map(function(k) {
+    return '<span class="dash-mosaic-leg">'
+      + '<span class="dash-mosaic-leg-dot" style="background:' + MOSAIC_COLORS[k] + '"></span>'
+      + (MOSAIC_LABELS[k] || k)
+      + '</span>';
+  }).join('');
+}
+
+// Build a pool of true statements about the fleet, pick one at random.
+// Short, factual, vaguely interesting. Only uses data we've already
+// fetched so no extra network.
+function pickFunFact(assets) {
+  var facts = [];
+  var now = Date.now();
+
+  // Oldest registered asset
+  var oldest = null;
+  assets.forEach(function(a) {
+    if (!a.created_at) return;
+    if (!oldest || a.created_at < oldest.created_at) oldest = a;
+  });
+  if (oldest) {
+    var days = Math.max(1, Math.floor((now - new Date(oldest.created_at).getTime()) / 86400000));
+    facts.push('Oldest record: <strong>' + esc(oldest.asset_tag) + '</strong>, on the register for ' + days + ' day' + (days === 1 ? '' : 's') + '.');
+  }
+
+  // Most common manufacturer
+  var mf = {};
+  assets.forEach(function(a) { if (a.manufacturer) mf[a.manufacturer] = (mf[a.manufacturer] || 0) + 1; });
+  var top = Object.keys(mf).map(function(k){return [k, mf[k]];}).sort(function(a,b){return b[1]-a[1];})[0];
+  if (top) facts.push('<strong>' + esc(top[0]) + '</strong> is the most common make, with ' + top[1] + ' device' + (top[1] === 1 ? '' : 's') + '.');
+
+  // Registered in the last 7 days
+  var weekAgo = now - 7 * 86400000;
+  var thisWeek = assets.filter(function(a) { return a.created_at && new Date(a.created_at).getTime() > weekAgo; }).length;
+  if (thisWeek > 0) facts.push('<strong>' + thisWeek + '</strong> asset' + (thisWeek === 1 ? '' : 's') + ' added in the last 7 days.');
+
+  // Deployment ratio
+  var deployed = assets.filter(function(a) { return a.status === 'deployed'; }).length;
+  if (assets.length && deployed > 0) {
+    var pct = Math.round((deployed / assets.length) * 100);
+    facts.push(pct + '% of the fleet is currently in staff hands.');
+  }
+
+  // Phones vs laptops
+  var phones = assets.filter(function(a) { return a.category_id === 'cat_phone'; }).length;
+  var laptops = assets.filter(function(a) { return a.category_id === 'cat_laptop'; }).length;
+  if (phones && laptops) {
+    if (phones > laptops) facts.push('Phones outnumber laptops right now, <strong>' + phones + '</strong> to ' + laptops + '.');
+    else if (laptops > phones) facts.push('Laptops outnumber phones, <strong>' + laptops + '</strong> to ' + phones + '.');
+    else facts.push('Phones and laptops are neck and neck, ' + phones + ' each.');
+  }
+
+  // Retiring in the next 6 months
+  var sixMo = now + 183 * 86400000;
+  var dueSoon = assets.filter(function(a) {
+    if (!a.retirement_date) return false;
+    var t = new Date(a.retirement_date).getTime();
+    return !isNaN(t) && t > now && t < sixMo;
+  }).length;
+  if (dueSoon > 0) facts.push('<strong>' + dueSoon + '</strong> device' + (dueSoon === 1 ? ' is' : 's are') + ' due for replacement in the next 6 months.');
+
+  if (!facts.length) return null;
+  return facts[Math.floor(Math.random() * facts.length)];
 }
 
 function renderDashboardError() {

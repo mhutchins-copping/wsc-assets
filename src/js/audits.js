@@ -232,7 +232,14 @@ async function doCompleteAudit(auditId) {
   if (!ok) return;
   try {
     var result = await API.completeAudit(auditId);
-    toast('Done — ' + result.total_found + ' found, ' + result.total_missing + ' missing', 'success');
+    var cleanSweep = result.total_found > 0 && result.total_missing === 0;
+    if (cleanSweep) {
+      toast('Clean sweep — all ' + result.total_found + ' assets accounted for', 'success');
+      // Rare, earned celebration: only fires on a perfect audit.
+      if (typeof confetti === 'function') confetti();
+    } else {
+      toast('Done — ' + result.total_found + ' found, ' + result.total_missing + ' missing', 'success');
+    }
     renderAuditDetail(auditId);
   } catch(e) { /* toasted */ }
 }

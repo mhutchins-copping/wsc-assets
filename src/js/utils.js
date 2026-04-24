@@ -9,6 +9,69 @@ function esc(str) {
 }
 window.esc = esc;
 
+// Short celebratory confetti burst. Dropped in for genuinely-rare "nice
+// moment" events (clean-sweep audit complete etc.) so it doesn't become
+// wallpaper. Council palette + gold, no dependencies.
+function confetti(opts) {
+  opts = opts || {};
+  var respectMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (respectMotion) return; // be kind on reduced-motion systems
+  var canvas = document.createElement('canvas');
+  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:9999';
+  document.body.appendChild(canvas);
+  var ctx = canvas.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+  var w = canvas.width = window.innerWidth * dpr;
+  var h = canvas.height = window.innerHeight * dpr;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.scale(dpr, dpr);
+  var colors = opts.colors || ['#2e5842', '#d4a017', '#c6d5c8', '#d97706', '#234433'];
+  var originX = (opts.originX || 0.5) * window.innerWidth;
+  var originY = (opts.originY || 0.5) * window.innerHeight;
+  var count = opts.count || 140;
+  var particles = [];
+  for (var i = 0; i < count; i++) {
+    var angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.7;
+    var speed = 8 + Math.random() * 12;
+    particles.push({
+      x: originX + (Math.random() - 0.5) * 40,
+      y: originY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      size: 5 + Math.random() * 6,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      rot: Math.random() * Math.PI * 2,
+      vr: (Math.random() - 0.5) * 0.25,
+      g: 0.35 + Math.random() * 0.25
+    });
+  }
+  var duration = opts.duration || 2600;
+  var start = performance.now();
+  function frame(t) {
+    var elapsed = t - start;
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    var fade = elapsed > duration - 600 ? Math.max(0, (duration - elapsed) / 600) : 1;
+    particles.forEach(function(p) {
+      p.vy += p.g;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.rot += p.vr;
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.size / 2, -p.size / 3, p.size, p.size / 1.5);
+      ctx.restore();
+    });
+    if (elapsed < duration) requestAnimationFrame(frame);
+    else canvas.remove();
+  }
+  requestAnimationFrame(frame);
+}
+window.confetti = confetti;
+
 // Toast notifications
 function toast(msg, type) {
   type = type || 'info';

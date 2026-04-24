@@ -1537,6 +1537,73 @@ tbody td.mono {
    feel at a smaller scale. Left-border accent in council green, the
    card itself sits on the cream body so the bordered interior feels
    warm rather than dropping a second heavy card on top. */
+/* ─── Fleet mosaic + fun fact (dashboard) ────── */
+.dash-mosaic-section { margin-top: 14px; }
+.dash-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.dash-section-head .dash-section-title { margin: 0; }
+.dash-mosaic-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text3);
+}
+.dash-mosaic-leg { display: inline-flex; align-items: center; gap: 5px; }
+.dash-mosaic-leg-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.dash-mosaic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16px, 1fr));
+  gap: 3px;
+  padding: 4px 0 6px;
+}
+.dash-mosaic-tile {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  transition: transform var(--transition-fast), outline-offset 120ms;
+  display: block;
+  outline: 0 solid transparent;
+}
+.dash-mosaic-tile:hover {
+  transform: scale(1.6);
+  z-index: 3;
+  position: relative;
+  outline: 2px solid var(--surface);
+  outline-offset: 1px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+}
+
+.dash-funfact {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  font-size: 13px;
+  color: var(--text2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 18px;
+}
+.dash-funfact-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
 .dash-welcome {
   background: var(--surface);
   border: 1px solid var(--border);
