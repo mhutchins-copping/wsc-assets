@@ -1028,36 +1028,84 @@ tbody td.mono {
   z-index: 300;
   display: flex;
   flex-direction: column-reverse;
-  gap: 6px;
+  gap: 8px;
+  max-width: calc(100vw - 40px);
+}
+@media (max-width: 480px) {
+  #toast-container {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    max-width: none;
+  }
 }
 
 .toast {
-  padding: 10px 16px;
-  font-size: 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 10px 12px 14px;
+  font-size: 13.5px;
   font-weight: 500;
-  background: var(--text);
-  color: white;
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-lg);
-  animation: toastIn 0.2s ease;
-  max-width: 340px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text2);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.04);
+  max-width: 360px;
+  min-width: 240px;
+  line-height: 1.4;
 }
-
-.toast.success { background: var(--green); }
-.toast.error { background: var(--red); }
-.toast.warning { background: var(--amber); color: var(--text); }
-
-@keyframes toastIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+.toast-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: var(--text2);
 }
-
-.toast.out {
-  animation: toastOut 0.15s ease forwards;
+.toast-msg { flex: 1; padding-top: 2px; word-break: break-word; }
+.toast-close {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin: -2px -2px 0 0;
+  background: transparent;
+  border: 0;
+  color: var(--text3);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+.toast-close:hover { background: var(--surface3); color: var(--text2); }
 
-@keyframes toastOut {
-  to { opacity: 0; transform: translateY(-6px); }
+/* Semantic variants tint the left border + icon, keep the card white
+   so dense stacks of toasts don't become a solid colour block. */
+.toast-success { border-left-color: var(--green); }
+.toast-success .toast-icon { color: var(--green); background: var(--green-l); }
+.toast-error { border-left-color: var(--red); }
+.toast-error .toast-icon { color: var(--red); background: var(--red-l); }
+.toast-warning { border-left-color: var(--amber); }
+.toast-warning .toast-icon { color: var(--amber); background: var(--amber-l); }
+.toast-info { border-left-color: var(--accent); }
+.toast-info .toast-icon { color: var(--accent); background: var(--accent-l); }
+
+.toast { animation: toast-slide-in 240ms var(--ease-out); }
+.toast.out { animation: toast-slide-out 180ms var(--ease) forwards; }
+@keyframes toast-slide-in {
+  from { opacity: 0; transform: translateX(14px) translateY(4px); }
+  to   { opacity: 1; transform: translateX(0) translateY(0); }
+}
+@keyframes toast-slide-out {
+  to { opacity: 0; transform: translateX(10px); }
 }
 
 /* ─── Empty / Placeholder Views ─────────────── */
@@ -1066,27 +1114,46 @@ tbody td.mono {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60px 20px;
+  padding: 56px 20px 48px;
   text-align: center;
+  background: var(--surface);
+  border: 1px dashed var(--border2);
+  border-radius: var(--radius-lg);
+  margin: 8px 0;
 }
 
 .view-placeholder-icon {
-  font-size: 40px;
-  margin-bottom: 12px;
-  opacity: 0.3;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--accent-l);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  margin-bottom: 16px;
+  opacity: 1;
 }
 
 .view-placeholder-title {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
   color: var(--text);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
 }
 
 .view-placeholder-sub {
-  font-size: 12px;
-  color: var(--text3);
-  max-width: 320px;
+  font-size: 13.5px;
+  color: var(--text2);
+  max-width: 360px;
+  line-height: 1.55;
+  margin: 0 0 14px;
+}
+
+.view-placeholder .btn {
+  margin-top: 4px;
 }
 
 /* ─── Loading Skeleton ──────────────────────── */
@@ -2014,13 +2081,8 @@ tbody td.mono {
 .nav-item { transition: background var(--transition-fast), color var(--transition-fast); }
 tbody tr { transition: background 150ms var(--ease-out); }
 
-.toast { animation: toast-in 280ms var(--ease-out); }
-@keyframes toast-in {
-  from { opacity: 0; transform: translateX(20px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-.toast.out { animation: toast-out 180ms var(--ease) forwards; }
-@keyframes toast-out { to { opacity: 0; transform: translateX(20px); } }
+/* Old toast-in/out keyframes removed -- the new card-style toast
+   owns its own slide-in animation above. */
 
 .dash-skeleton-block, .dash-skeleton-text {
   background: linear-gradient(90deg, var(--surface3) 0%, var(--surface2) 50%, var(--surface3) 100%);

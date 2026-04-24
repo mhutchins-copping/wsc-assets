@@ -72,17 +72,33 @@ function confetti(opts) {
 }
 window.confetti = confetti;
 
-// Toast notifications
+// Toast notifications. Polished card-style with a leading icon, colour
+// pulled from semantic state, and a dismiss button so long-lived toasts
+// don't block anything. Stacks in a fixed-position container and
+// auto-dismisses after 3.5s (or immediately on click of the close
+// button). Keeps the existing simple API: toast(msg, type).
 function toast(msg, type) {
   type = type || 'info';
+  var icons = {
+    success: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+    error:   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+    warning: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+    info:    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+  };
   var el = document.createElement('div');
-  el.className = 'toast ' + type;
-  el.textContent = msg;
-  document.getElementById('toast-container').appendChild(el);
-  setTimeout(function() {
+  el.className = 'toast toast-' + type;
+  el.innerHTML = '<span class="toast-icon">' + (icons[type] || icons.info) + '</span>'
+    + '<span class="toast-msg"></span>'
+    + '<button type="button" class="toast-close" aria-label="Dismiss">&times;</button>';
+  el.querySelector('.toast-msg').textContent = msg;
+  var dismiss = function() {
+    if (!el.parentNode) return;
     el.classList.add('out');
     setTimeout(function() { el.remove(); }, 200);
-  }, 3000);
+  };
+  el.querySelector('.toast-close').addEventListener('click', dismiss);
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(dismiss, 3500);
 }
 window.toast = toast;
 
