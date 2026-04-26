@@ -397,9 +397,16 @@ function renderAssetSelectionBar() {
   bar.style.border = '1px solid var(--border, #e5e5e5)';
   bar.style.borderRadius = '6px';
   bar.style.margin = '8px 0';
-  bar.innerHTML = '<span style="font-size:13px"><strong>' + n + '</strong> selected</span>'
-    + '<button class="btn primary sm" onclick="printSelectedLabels()">Print selected</button>'
+  var html = '<span style="font-size:13px"><strong>' + n + '</strong> selected</span>';
+  if (Auth.isAdmin()) {
+    html += '<button class="btn primary sm" onclick="openBulkCheckout()">Check out</button>'
+      + '<button class="btn sm" onclick="openBulkCheckin()">Check in</button>'
+      + '<button class="btn sm" onclick="openBulkStatusChange()">Change status</button>'
+      + '<button class="btn danger sm" onclick="bulkDisposeAssets()">Dispose</button>';
+  }
+  html += '<button class="btn sm" onclick="printSelectedLabels()">Print labels</button>'
     + '<button class="btn sm" onclick="clearAssetSelection()">Clear</button>';
+  bar.innerHTML = html;
 }
 window.renderAssetSelectionBar = renderAssetSelectionBar;
 
@@ -410,6 +417,65 @@ async function printSelectedLabels() {
   await renderLabelSheet(assets);
 }
 window.printSelectedLabels = printSelectedLabels;
+
+// ─── Bulk Status Change ────────────────────────
+
+function openBulkStatusChange() {
+  var ids = Array.from(assetSelection.keys());
+  if (!ids.length) return;
+  var html = '<div class="form-group"><label class="form-label">New Status</label>'
+    + '<select id="bulk-status" class="form-select">'
+    + '<option value="available">Available</option>'
+    + '<option value="deployed">Deployed</option>'
+    + '<option value="maintenance">Maintenance</option>'
+    + '<option value="retired">Retired</option>'
+    + '<option value="lost">Lost</option>'
+    + '</select></div>'
+    + '<button class="btn primary full" id="bulk-status-submit" onclick="doBulkStatusChange()">Update ' + ids.length + ' Assets</button>';
+  openModal('Change Status', html);
+}
+window.openBulkStatusChange = openBulkStatusChange;
+
+async function doBulkStatusChange() {
+  var ids = Array.from(assetSelection.keys());
+  var status = document.getElementById('bulk-status').value;
+  var submit = document.getElementById('bulk-status-submit');
+  if (submit) { submit.disabled = true; submit.textContent = 'Updating…'; }
+
+  var ok = 0, fail = 0;
+  await Promise.all(ids.map(function(id) {
+    return API.updateAsset(id, { status: status })
+      .then(function() { ok++; })
+      .catch(function() { fail++; });
+  }));
+
+  closeModal();
+  toast('Updated ' + ok + ' asset' + (ok === 1 ? '' : 's') + (fail ? ' · ' + fail + ' failed' : ''), fail ? 'error' : 'success');
+  loadAssets();
+  clearAssetSelection();
+}
+window.doBulkStatusChange = doBulkStatusChange;
+
+// ─── Bulk Dispose ──────────────────────────────
+
+async function bulkDisposeAssets() {
+  var ids = Array.from(assetSelection.keys());
+  if (!ids.length) return;
+  var confirmed = await confirmDialog('Dispose ' + ids.length + ' selected asset' + (ids.length === 1 ? '' : 's') + '? This cannot be undone from the list view.', 'Dispose Assets');
+  if (!confirmed) return;
+
+  var ok = 0, fail = 0;
+  await Promise.all(ids.map(function(id) {
+    return API.deleteAsset(id)
+      .then(function() { ok++; })
+      .catch(function() { fail++; });
+  }));
+
+  toast('Disposed ' + ok + ' asset' + (ok === 1 ? '' : 's') + (fail ? ' · ' + fail + ' failed' : ''), fail ? 'error' : 'success');
+  loadAssets();
+  clearAssetSelection();
+}
+window.bulkDisposeAssets = bulkDisposeAssets;
 
 async function exportAssetCSV() {
   if (!API.baseUrl) { toast('Configure API first', 'error'); return; }

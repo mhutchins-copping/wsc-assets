@@ -234,3 +234,108 @@ async function doCheckin(assetId) {
   }
 }
 window.doCheckin = doCheckin;
+
+// ─── Bulk Checkout ─────────────────────────────
+
+function openBulkCheckout() {
+  var ids = Array.from(assetSelection.keys());
+  if (!ids.length) return;
+  _checkoutAssetId = null;
+  _checkoutSelected = null;
+
+  try {
+    API.getPeople().then(function(pRes) {
+      _checkoutPeople = (pRes.data || []).filter(function(p) { return p.active !== 0; });
+    });
+  } catch(e) { _checkoutPeople = []; }
+
+  var html = '<div class="co-wrap">'
+    + '<div class="co-search-wrap">'
+    + '<svg class="co-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>'
+    + '<input type="text" id="co-search" class="co-search-input" placeholder="Search by name, department, or position…" autocomplete="off" oninput="renderCheckoutList()" onkeydown="handleCheckoutKey(event)">'
+    + '</div>'
+    + '<div class="co-list" id="co-list" role="listbox" tabindex="-1"></div>'
+    + '<div class="co-selected-wrap" id="co-selected-wrap" style="display:none">'
+    + '<span class="co-selected-label">Assigning to:</span>'
+    + '<span class="co-selected-name" id="co-selected-name"></span>'
+    + '<button type="button" class="co-selected-clear" onclick="clearCheckoutSelection()">Change</button>'
+    + '</div>'
+    + '<div class="form-group" style="margin-top:16px"><label class="form-label">Notes</label>'
+    + '<textarea id="co-notes" class="form-textarea" placeholder="Optional — handover context, expected return date, etc."></textarea></div>'
+    + '<button class="btn primary full co-submit" id="co-submit" onclick="doBulkCheckout()" disabled>Check Out ' + ids.length + ' Assets</button>'
+    + '</div>';
+
+  openModal('Check Out ' + ids.length + ' Assets', html);
+  renderCheckoutList();
+  setTimeout(function() { var s = document.getElementById('co-search'); if (s) s.focus(); }, 80);
+}
+window.openBulkCheckout = openBulkCheckout;
+
+async function doBulkCheckout() {
+  if (!_checkoutSelected) { toast('Select a person first', 'error'); return; }
+  var ids = Array.from(assetSelection.keys());
+  var submit = document.getElementById('co-submit');
+  if (submit) { submit.disabled = true; submit.textContent = 'Checking out…'; }
+
+  var ok = 0, fail = 0;
+  var notes = (document.getElementById('co-notes').value || '').trim() || undefined;
+
+  await Promise.all(ids.map(function(id) {
+    return API.checkoutAsset(id, { person_id: _checkoutSelected, notes: notes })
+      .then(function() { ok++; })
+      .catch(function() { fail++; });
+  }));
+
+  closeModal();
+  toast('Checked out ' + ok + ' asset' + (ok === 1 ? '' : 's') + (fail ? ' · ' + fail + ' failed' : ''), fail ? 'error' : 'success');
+  loadAssets();
+  clearAssetSelection();
+}
+window.doBulkCheckout = doBulkCheckout;
+
+// ─── Bulk Check In ─────────────────────────────
+
+function openBulkCheckin() {
+  var ids = Array.from(assetSelection.keys());
+  if (!ids.length) return;
+
+  var html = '<div class="ci-wrap">'
+    + '<div class="form-group"><label class="form-label">Condition</label>'
+    + '<div class="ci-condition-group">'
+    + '<label class="ci-radio"><input type="radio" name="ci-cond" value="good" checked>'
+    + '<div class="ci-radio-body"><div class="ci-radio-title">Good</div>'
+    + '<div class="ci-radio-sub">Ready for reassignment</div></div></label>'
+    + '<label class="ci-radio"><input type="radio" name="ci-cond" value="damaged">'
+    + '<div class="ci-radio-body"><div class="ci-radio-title">Damaged</div>'
+    + '<div class="ci-radio-sub">Will be set to Maintenance</div></div></label>'
+    + '</div></div>'
+    + '<div class="form-group"><label class="form-label">Notes</label>'
+    + '<textarea id="ci-notes" class="form-textarea" placeholder="Condition notes, return context, etc."></textarea></div>'
+    + '<button class="btn primary full" id="ci-submit" onclick="doBulkCheckin()">Check In ' + ids.length + ' Assets</button>'
+    + '</div>';
+
+  openModal('Check In ' + ids.length + ' Assets', html);
+}
+window.openBulkCheckin = openBulkCheckin;
+
+async function doBulkCheckin() {
+  var ids = Array.from(assetSelection.keys());
+  var submit = document.getElementById('ci-submit');
+  if (submit) { submit.disabled = true; submit.textContent = 'Checking in…'; }
+
+  var cond = document.querySelector('input[name="ci-cond"]:checked');
+  var notes = (document.getElementById('ci-notes').value || '').trim() || undefined;
+  var ok = 0, fail = 0;
+
+  await Promise.all(ids.map(function(id) {
+    return API.checkinAsset(id, { condition: cond ? cond.value : 'good', notes: notes })
+      .then(function() { ok++; })
+      .catch(function() { fail++; });
+  }));
+
+  closeModal();
+  toast('Checked in ' + ok + ' asset' + (ok === 1 ? '' : 's') + (fail ? ' · ' + fail + ' failed' : ''), fail ? 'error' : 'success');
+  loadAssets();
+  clearAssetSelection();
+}
+window.doBulkCheckin = doBulkCheckin;
