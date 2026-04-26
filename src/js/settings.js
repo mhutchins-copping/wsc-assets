@@ -1,16 +1,16 @@
 // ─── Settings View ─────────────────────────
+// Split into tabs: General, Users, Sync, Import-Export.
+// Active tab persists in sessionStorage so a refresh lands back where
+// the user was.
 
 Router.register('/settings', function() {
   var el = document.getElementById('view-settings');
   if (!el) return;
-  var isAdmin = Auth.isAdmin();
-
   try {
-    el.innerHTML = renderSettings();
-    if (isAdmin) {
-      loadUserList();
-      checkEntraStatus();
-    }
+    var activeTab = sessionStorage.getItem('wsc_settings_tab') || 'general';
+    el.innerHTML = renderSettings(activeTab);
+    if (activeTab === 'users') loadUserList();
+    if (activeTab === 'sync') checkEntraStatus();
   } catch(err) {
     console.error('[settings] render failed:', err);
     el.innerHTML = '<div class="settings-error" style="padding:16px">Settings failed to render: '
@@ -18,24 +18,40 @@ Router.register('/settings', function() {
   }
 });
 
-function renderSettings() {
+function renderSettings(activeTab) {
+  activeTab = activeTab || 'general';
   var tagPrefix = localStorage.getItem('wsc_tag_prefix') || 'WSC';
-  var isAdmin = Auth.isAdmin();
   var displayName = Auth.user ? Auth.user.display_name : '—';
   var role = Auth.user ? Auth.user.role : '—';
 
-  return '<div class="settings-page">'
+  var tabs = [
+    { id: 'general', label: 'General' },
+    { id: 'users', label: 'Users' },
+    { id: 'sync', label: 'Sync' },
+    { id: 'import-export', label: 'Import-Export' }
+  ];
 
-    // === Identity strip ===
-    + '<div class="settings-identity">'
+  var html = '<div class="settings-page">';
+
+  // Identity strip — always visible above the tabs
+  html += '<div class="settings-identity">'
     + '<div>'
     + '<strong>' + esc(displayName) + '</strong>'
     + '<span class="settings-identity-role">' + esc(role) + '</span>'
     + '</div>'
     + '<button class="btn danger sm" onclick="doLogout()">Sign Out</button>'
-    + '</div>'
+    + '</div>';
 
-    // === Preferences (all users) ===
+  // Tab bar
+  html += '<div class="tabs" id="settings-tabs">';
+  tabs.forEach(function(t) {
+    var isActive = t.id === activeTab;
+    html += '<button class="tab' + (isActive ? ' active' : '') + '" onclick="switchSettingsTab(this,\'settings-tab-' + t.id + '\')">' + esc(t.label) + '</button>';
+  });
+  html += '</div>';
+
+  // ── General ──
+  html += '<div id="settings-tab-general" class="settings-tab-content"' + (activeTab === 'general' ? '' : ' style="display:none"') + '>'
     + '<div class="settings-section">'
     + '<div class="settings-section-title">Preferences</div>'
     + '<div class="settings-card">'
@@ -49,17 +65,10 @@ function renderSettings() {
     + '</div></div>'
     + '</div>'
 
-    // === Admin ===
-    + (isAdmin ?
-    '<div class="settings-section settings-section-dev">'
-    + '<div class="settings-section-title">Admin <span class="settings-dev-badge">Admin</span></div>'
-
-    // Device Enrolment — two paths: PCs get the PowerShell one-liner
-    // behind the password-gated launcher; phones go through a
-    // mobile-first form that takes an IMEI (and, optionally, a
-    // camera-scanned barcode) and creates a phone asset.
+    + '<div class="settings-section">'
+    + '<div class="settings-section-title">Device Enrolment</div>'
     + '<div class="settings-card">'
-    + '<div class="settings-card-header">Device Enrolment</div>'
+    + '<div class="settings-card-header">Enrol a new device</div>'
     + '<div class="settings-card-body">'
     + '<div class="form-hint" style="margin-bottom:12px"><strong>PCs (Windows):</strong> on each council PC, open PowerShell and visit <a href="https://api.it-wsc.com/enrol" target="_blank" rel="noopener">api.it-wsc.com/enrol</a>. Enter the enrolment password; the page hands over a one-line command that registers the machine. Safe to re-run — dedupes on BIOS serial.</div>'
     + '<a class="btn primary" href="https://api.it-wsc.com/enrol" target="_blank" rel="noopener" style="margin-right:8px">PC enrolment page</a>'
@@ -67,13 +76,46 @@ function renderSettings() {
     + '<button class="btn primary" onclick="navigate(\'#/phone-enrol\')" style="margin-right:8px">Enrol a phone</button>'
     + '<button class="btn" onclick="navigate(\'#/phone-enrol-batch\')">Batch enrol phones</button>'
     + '</div></div>'
+    + '</div>'
+    + '</div>';
 
-    // CSV Import/Export
+  // ── Users ──
+  html += '<div id="settings-tab-users" class="settings-tab-content"' + (activeTab === 'users' ? '' : ' style="display:none"') + '>'
+    + '<div class="settings-section">'
     + '<div class="settings-card">'
-    + '<div class="settings-card-header">Import / Export</div>'
+    + '<div class="settings-card-header">User Management'
+    + '<button class="btn sm primary" style="margin-left:auto" onclick="openAddUserModal()">+ Add</button>'
+    + '</div>'
+    + '<div class="settings-card-body">'
+    + '<div id="user-list-container">Loading...</div>'
+    + '</div></div>'
+    + '</div>'
+    + '</div>';
+
+  // ── Sync ──
+  html += '<div id="settings-tab-sync" class="settings-tab-content"' + (activeTab === 'sync' ? '' : ' style="display:none"') + '>'
+    + '<div class="settings-section">'
+    + '<div class="settings-card">'
+    + '<div class="settings-card-header">Entra ID Sync</div>'
+    + '<div class="settings-card-body">'
+    + '<div class="form-hint" style="margin-bottom:12px">Pulls active council staff from Microsoft Entra into the People directory. Credentials live on the server as Wrangler secrets — set with <code>wrangler secret put ENTRA_TENANT_ID</code>, <code>ENTRA_CLIENT_ID</code>, and <code>ENTRA_CLIENT_SECRET</code>. The app only triggers the sync; it never holds the client secret in the browser.</div>'
+    + '<div id="entra-status" class="entra-status pending">Checking configuration…</div>'
+    + '<div style="display:flex;gap:8px;margin-top:12px">'
+    + '<button id="entra-sync-btn" class="btn primary sm" onclick="syncEntraUsers()" disabled>Sync Users</button>'
+    + '</div>'
+    + '<div id="entra-sync-result" style="margin-top:12px"></div>'
+    + '</div></div>'
+    + '</div>'
+    + '</div>';
+
+  // ── Import-Export ──
+  html += '<div id="settings-tab-import-export" class="settings-tab-content"' + (activeTab === 'import-export' ? '' : ' style="display:none"') + '>'
+    + '<div class="settings-section">'
+    + '<div class="settings-card">'
+    + '<div class="settings-card-header">Import from CSV</div>'
     + '<div class="settings-card-body">'
     + '<div class="form-group">'
-    + '<label class="form-label">Import from CSV</label>'
+    + '<label class="form-label">CSV file</label>'
     + '<input type="file" id="csv-import-file" accept=".csv" class="form-input" onchange="previewCSV(this)">'
     + '<div id="csv-preview" style="margin-top:8px"></div>'
     + '<div id="csv-mapping" style="display:none;margin-top:12px">'
@@ -86,38 +128,34 @@ function renderSettings() {
     + '</div>'
     + '<div id="csv-import-result"></div>'
     + '</div>'
-    + '<div style="display:flex;gap:8px;margin-top:16px">'
+    + '</div></div>'
+
+    + '<div class="settings-card" style="margin-top:16px">'
+    + '<div class="settings-card-header">Export</div>'
+    + '<div class="settings-card-body">'
+    + '<div style="display:flex;gap:8px">'
     + '<button class="btn sm" onclick="exportAssetCSV()">Export CSV</button>'
     + '<button class="btn sm" onclick="window.print()">Print PDF</button>'
     + '</div>'
     + '</div></div>'
-
-    // Entra ID
-    + '<div class="settings-card">'
-    + '<div class="settings-card-header">Entra ID Sync</div>'
-    + '<div class="settings-card-body">'
-    + '<div class="form-hint" style="margin-bottom:12px">Pulls active council staff from Microsoft Entra into the People directory. Credentials live on the server as Wrangler secrets — set with <code>wrangler secret put ENTRA_TENANT_ID</code>, <code>ENTRA_CLIENT_ID</code>, and <code>ENTRA_CLIENT_SECRET</code>. The app only triggers the sync; it never holds the client secret in the browser.</div>'
-    + '<div id="entra-status" class="entra-status pending">Checking configuration…</div>'
-    + '<div style="display:flex;gap:8px;margin-top:12px">'
-    + '<button id="entra-sync-btn" class="btn primary sm" onclick="syncEntraUsers()" disabled>Sync Users</button>'
     + '</div>'
-    + '<div id="entra-sync-result" style="margin-top:12px"></div>'
-    + '</div></div>'
-
-    // User Management
-    + '<div class="settings-card">'
-    + '<div class="settings-card-header">User Management'
-    + '<button class="btn sm primary" style="margin-left:auto" onclick="openAddUserModal()">+ Add</button>'
-    + '</div>'
-    + '<div class="settings-card-body">'
-    + '<div id="user-list-container">Loading...</div>'
-    + '</div></div>'
-
-    + '</div>'
-    : '')
-
     + '</div>';
+
+  html += '</div>';
+  return html;
 }
+
+function switchSettingsTab(btn, tabId) {
+  document.querySelectorAll('.settings-tab-content').forEach(function(t) { t.style.display = 'none'; });
+  document.querySelectorAll('#settings-tabs .tab').forEach(function(t) { t.classList.remove('active'); });
+  document.getElementById(tabId).style.display = 'block';
+  btn.classList.add('active');
+  var tabName = tabId.replace('settings-tab-', '');
+  sessionStorage.setItem('wsc_settings_tab', tabName);
+  if (tabName === 'users') loadUserList();
+  if (tabName === 'sync') checkEntraStatus();
+}
+window.switchSettingsTab = switchSettingsTab;
 
 function saveDefaults() {
   var prefix = document.getElementById('settings-tag-prefix').value.trim();
