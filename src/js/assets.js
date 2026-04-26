@@ -280,9 +280,9 @@ function retirementBadge(retirementDateStr) {
     label = 'Retires in ' + years + ' year' + (years === 1 ? '' : 's');
   }
   var colors = {
-    red: 'background:var(--red-l);color:#991b1b',
-    amber: 'background:var(--amber-l);color:#92400e',
-    'amber-l': 'background:var(--amber-l);color:#92400e;opacity:0.85',
+    red: 'background:var(--red-l);color:var(--red)',
+    amber: 'background:var(--amber-l);color:var(--amber)',
+    'amber-l': 'background:var(--amber-l);color:var(--amber);opacity:0.85',
     green: 'background:var(--accent-l);color:var(--accent)'
   };
   return '<span style="display:inline-block;' + colors[tone]

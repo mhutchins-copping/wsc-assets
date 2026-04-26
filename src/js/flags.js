@@ -115,25 +115,25 @@ function openFlagRow(flagId) {
 window.openFlagRow = openFlagRow;
 
 function flagCategoryBadge(category) {
-  var palette = {
-    damaged:   { bg: '#fee2e2', fg: '#991b1b', label: 'Damaged' },
-    slow:      { bg: '#fef3c7', fg: '#92400e', label: 'Slow' },
-    lost:      { bg: '#e0e7ff', fg: '#3730a3', label: 'Lost' },
-    other:     { bg: '#e5e7eb', fg: '#374151', label: 'Other' }
-  };
-  var p = palette[category] || palette.other;
-  return '<span class="badge" style="background:' + p.bg + ';color:' + p.fg + '">' + p.label + '</span>';
+  var cls = {
+    damaged: 'badge-flag-damaged',
+    slow:    'badge-flag-slow',
+    lost:    'badge-flag-lost',
+    other:   'badge-flag-other'
+  }[category] || 'badge-flag-other';
+  var label = { damaged: 'Damaged', slow: 'Slow', lost: 'Lost', other: 'Other' }[category] || 'Other';
+  return '<span class="badge ' + cls + '">' + label + '</span>';
 }
 window.flagCategoryBadge = flagCategoryBadge;
 
 function flagStatusBadge(status) {
-  var palette = {
-    open:      { bg: '#fef3c7', fg: '#92400e', label: 'Open' },
-    resolved:  { bg: '#d1fae5', fg: '#065f46', label: 'Resolved' },
-    dismissed: { bg: '#e5e7eb', fg: '#374151', label: 'Dismissed' }
-  };
-  var p = palette[status] || palette.open;
-  return '<span class="badge" style="background:' + p.bg + ';color:' + p.fg + '">' + p.label + '</span>';
+  var cls = {
+    open:      'badge-issue-pending',
+    resolved:  'badge-issue-signed',
+    dismissed: 'badge-issue-cancelled'
+  }[status] || 'badge-issue-pending';
+  var label = { open: 'Open', resolved: 'Resolved', dismissed: 'Dismissed' }[status] || 'Open';
+  return '<span class="badge ' + cls + '">' + label + '</span>';
 }
 window.flagStatusBadge = flagStatusBadge;
 

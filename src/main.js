@@ -1,6 +1,13 @@
 // WSC Assets — Entry Point
 import './css/app.css';
 
+function setTheme(mode) {
+  mode = mode || 'light';
+  document.documentElement.setAttribute('data-theme', mode);
+  localStorage.setItem('wsc_theme', mode);
+}
+window.setTheme = setTheme;
+
 import './js/utils.js';
 import './js/db.js';
 import './js/auth.js';

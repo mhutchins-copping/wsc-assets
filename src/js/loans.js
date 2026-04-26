@@ -73,9 +73,9 @@ async function loadLoans() {
       }},
       { key: 'due_date', label: 'Due', render: function(r) {
         var overdue = !r.returned_at && r.due_date && r.due_date < today;
-        return '<span style="font-family:var(--mono);font-size:12px;font-weight:' + (overdue ? '600' : '500') + ';color:' + (overdue ? '#dc2626' : 'inherit') + '">'
+        return '<span style="font-family:var(--mono);font-size:12px;font-weight:' + (overdue ? '600' : '500') + ';color:' + (overdue ? 'var(--red)' : 'inherit') + '">'
           + esc(fmtDate(r.due_date))
-          + (overdue ? ' <span class="badge" style="background:#fee2e2;color:#991b1b">Overdue</span>' : '')
+          + (overdue ? ' <span class="badge" style="background:var(--red-bg);color:var(--red)">Overdue</span>' : '')
           + '</span>';
       }},
       { key: 'returned_at', label: 'Returned', render: function(r) {

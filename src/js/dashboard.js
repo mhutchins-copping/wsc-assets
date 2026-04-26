@@ -104,11 +104,11 @@ async function loadFleetMosaic() {
 // sits in a paler sage, warnings take amber/red. Disposed is omitted
 // from the mosaic entirely (out-of-fleet).
 var MOSAIC_COLORS = {
-  deployed:    '#2e5842',
-  available:   '#c6d5c8',
-  maintenance: '#d97706',
-  retired:     '#9ca3af',
-  lost:        '#dc2626'
+  deployed:    'var(--status-deployed)',
+  available:   'var(--status-available)',
+  maintenance: 'var(--status-maintenance)',
+  retired:     'var(--status-retired)',
+  lost:        'var(--status-lost)'
 };
 var MOSAIC_LABELS = {
   deployed: 'Deployed', available: 'Available',
@@ -118,7 +118,7 @@ var MOSAIC_LABELS = {
 function renderMosaic(assets) {
   var visible = assets.filter(function(a) { return a.status !== 'disposed'; });
   return '<div class="dash-mosaic-grid">' + visible.map(function(a) {
-    var color = MOSAIC_COLORS[a.status] || '#d1d5db';
+    var color = MOSAIC_COLORS[a.status] || 'var(--gray)';
     var label = (a.asset_tag || '') + ' \u00b7 ' + (a.name || '') + ' \u00b7 ' + (MOSAIC_LABELS[a.status] || a.status || 'unknown');
     return '<a class="dash-mosaic-tile" href="#/assets/' + esc(a.id) + '" '
       + 'style="background:' + color + '" '

@@ -42,8 +42,14 @@
      council palette rather than the old saas blue. */
   --blue:     #2e5842;
   --blue-l:   #e5ece5;
+  --blue-bg:  rgba(46,88,66,0.08);
+  --indigo:   #3730a3;
+  --indigo-l: #e0e7ff;
+  --indigo-bg:#e0e7ff;
   --gray:     #6b7280;
   --gray-l:   #f3f4f6;
+  --gray-bg:  rgba(107,114,128,0.08);
+  --accent-bg:rgba(46,88,66,0.10);
 
   /* Text — tuned for legibility on white surfaces */
   --text:     #14181d;   /* darker than before for sharper body text */
@@ -82,6 +88,64 @@
   --transition: 180ms var(--ease);
   --transition-fast: 120ms var(--ease);
   --transition-slow: 280ms var(--ease-out);
+
+  /* Status colors for charts / mosaics */
+  --status-deployed:    #2e5842;
+  --status-available:   #c6d5c8;
+  --status-maintenance: #d97706;
+  --status-retired:     #9ca3af;
+  --status-lost:        #dc2626;
+}
+
+[data-theme="dark"] {
+  --bg:       #0f1812;
+  --surface:  #1a2420;
+  --surface2: #222e28;
+  --surface3: #2d3d35;
+  --border:   #3a4d42;
+  --border2:  #4a6054;
+
+  --accent:   #5a9e7a;
+  --accent-h: #4a8f6a;
+  --accent-l: #1a3328;
+  --accent-subtle: rgba(90,158,122,0.10);
+  --accent-bg:rgba(90,158,122,0.15);
+  --gold-l:   #3d2e08;
+
+  --green:    #5abf7a;
+  --green-l:  #1a3d28;
+  --green-bg: rgba(90,191,122,0.12);
+  --red:      #f87171;
+  --red-l:    #450a0a;
+  --red-bg:   rgba(248,113,113,0.12);
+  --amber:    #fbbf24;
+  --amber-l:  #451a03;
+  --amber-bg: rgba(251,191,36,0.12);
+  --blue:     #60a5fa;
+  --blue-l:   #172554;
+  --blue-bg:  rgba(96,165,250,0.12);
+  --indigo:   #a5b4fc;
+  --indigo-l: #1e1b4b;
+  --indigo-bg:#1e1b4b;
+  --gray:     #9ca3af;
+  --gray-l:   #374151;
+  --gray-bg:  rgba(156,163,175,0.12);
+
+  --text:     #e8ecea;
+  --text2:    #b8c4be;
+  --text3:    #8a9a90;
+
+  --shadow-xs:  0 1px 2px rgba(0,0,0,0.30);
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.40), 0 1px 2px rgba(0,0,0,0.30);
+  --shadow-md:  0 4px 8px rgba(0,0,0,0.50);
+  --shadow-lg:  0 8px 24px rgba(0,0,0,0.60);
+  --shadow-xl:  0 16px 48px rgba(0,0,0,0.70);
+
+  --status-deployed:    #5a9e7a;
+  --status-available:   #2d4a38;
+  --status-maintenance: #fbbf24;
+  --status-retired:     #6b7280;
+  --status-lost:        #f87171;
 }
 
 body {
@@ -803,7 +867,7 @@ body:not(.is-admin) .nav-item[data-view="settings"] {
 }
 
 .badge.available   { background: var(--green-bg); color: var(--green); }
-.badge.deployed    { background: rgba(46,88,66,0.10); color: var(--accent); }
+.badge.deployed    { background: var(--accent-bg); color: var(--accent); }
 .badge.maintenance { background: var(--amber-bg); color: var(--amber); }
 .badge.retired     { background: var(--gray-l); color: var(--gray); }
 .badge.lost        { background: var(--red-bg); color: var(--red); }
@@ -811,10 +875,29 @@ body:not(.is-admin) .nav-item[data-view="settings"] {
 
 /* Action badges for history */
 .badge.create      { background: var(--green-bg); color: var(--green); }
-.badge.checkout    { background: rgba(46,88,66,0.10); color: var(--accent); }
+.badge.checkout    { background: var(--accent-bg); color: var(--accent); }
 .badge.checkin     { background: var(--amber-bg); color: var(--amber); }
 .badge.update      { background: var(--gray-l); color: var(--text2); }
 .badge.dispose     { background: var(--red-bg); color: var(--red); }
+
+/* Flag badges */
+.badge-flag-damaged   { background: var(--red-bg); color: var(--red); }
+.badge-flag-slow      { background: var(--amber-bg); color: var(--amber); }
+.badge-flag-lost      { background: var(--indigo-bg); color: var(--indigo); }
+.badge-flag-other     { background: var(--gray-bg); color: var(--gray); }
+
+/* Issue / receipt badges */
+.badge-issue-pending   { background: var(--amber-bg); color: var(--amber); }
+.badge-issue-signed    { background: var(--green-bg); color: var(--green); }
+.badge-issue-expired   { background: var(--red-bg); color: var(--red); }
+.badge-issue-cancelled { background: var(--gray-bg); color: var(--gray); }
+
+/* Dashboard mosaic tiles */
+.mosaic-deployed    { background: var(--status-deployed); }
+.mosaic-available   { background: var(--status-available); }
+.mosaic-maintenance { background: var(--status-maintenance); }
+.mosaic-retired     { background: var(--status-retired); }
+.mosaic-lost        { background: var(--status-lost); }
 
 /* ─── Tables ────────────────────────────────── */
 .table-wrap {

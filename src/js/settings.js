@@ -50,6 +50,8 @@ function renderSettings(activeTab) {
   });
   html += '</div>';
 
+  var currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+
   // ── General ──
   html += '<div id="settings-tab-general" class="settings-tab-content"' + (activeTab === 'general' ? '' : ' style="display:none"') + '>'
     + '<div class="settings-section">'
@@ -60,6 +62,13 @@ function renderSettings(activeTab) {
     + '<label class="form-label">Asset Tag Prefix</label>'
     + '<input type="text" id="settings-tag-prefix" class="form-input" value="' + esc(tagPrefix) + '" placeholder="WSC" maxlength="10">'
     + '<div class="form-hint">Used for auto-generated tags (e.g. ' + esc(tagPrefix) + '-L-0001)</div>'
+    + '</div>'
+    + '<div class="form-group">'
+    + '<label class="form-label">Theme</label>'
+    + '<select id="settings-theme" class="form-select" onchange="saveTheme()">'
+    + '<option value="light"' + (currentTheme === 'light' ? ' selected' : '') + '>Light</option>'
+    + '<option value="dark"' + (currentTheme === 'dark' ? ' selected' : '') + '>Dark</option>'
+    + '</select>'
     + '</div>'
     + '<button class="btn primary" onclick="saveDefaults()">Save</button>'
     + '</div></div>'
@@ -163,6 +172,13 @@ function saveDefaults() {
   toast('Defaults saved', 'success');
 }
 window.saveDefaults = saveDefaults;
+
+function saveTheme() {
+  var mode = document.getElementById('settings-theme').value;
+  setTheme(mode);
+  toast('Theme updated', 'success');
+}
+window.saveTheme = saveTheme;
 
 function doLogout() { window.logout(); }
 window.doLogout = doLogout;

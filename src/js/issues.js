@@ -92,15 +92,13 @@ async function loadIssues() {
 window.loadIssues = loadIssues;
 
 function issueStatusBadge(status) {
-  var bg, color;
-  switch (status) {
-    case 'pending':   bg = '#fef3c7'; color = '#92400e'; break;
-    case 'signed':    bg = '#d1fae5'; color = '#065f46'; break;
-    case 'expired':   bg = '#fee2e2'; color = '#991b1b'; break;
-    case 'cancelled': bg = '#e5e7eb'; color = '#4b5563'; break;
-    default:          bg = '#e5e7eb'; color = '#4b5563';
-  }
-  return '<span style="background:' + bg + ';color:' + color + ';padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;text-transform:capitalize">' + esc(status || 'unknown') + '</span>';
+  var cls = {
+    pending:   'badge-issue-pending',
+    signed:    'badge-issue-signed',
+    expired:   'badge-issue-expired',
+    cancelled: 'badge-issue-cancelled'
+  }[status] || 'badge-issue-cancelled';
+  return '<span class="badge ' + cls + '">' + esc((status || 'unknown')) + '</span>';
 }
 window.issueStatusBadge = issueStatusBadge;
 
