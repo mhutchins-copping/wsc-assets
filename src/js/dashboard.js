@@ -19,6 +19,10 @@ function renderDashboardSkeleton() {
     + '<div class="dash-section"><div class="dash-section-title">Recent Activity</div><div id="dash-activity">' + renderSkeletonBlock(210) + '</div></div>'
     + '</div>'
     + '<div class="dash-section"><div class="dash-section-title">Top Categories</div><div id="dash-category" class="dash-minibar-area">' + renderSkeletonBlock(140) + '</div></div>'
+    + '<div class="dash-grid" style="margin-top:20px">'
+    + '<div class="dash-section"><div class="dash-section-title">Warranty Alerts</div><div id="dash-warranty">' + renderSkeletonBlock(120) + '</div></div>'
+    + '<div class="dash-section"><div class="dash-section-title">Recent Checkouts</div><div id="dash-checkouts">' + renderSkeletonBlock(120) + '</div></div>'
+    + '</div>'
     + '<div class="dash-section dash-mosaic-section">'
     +   '<div class="dash-section-head">'
     +     '<div class="dash-section-title">Fleet at a glance</div>'
@@ -300,6 +304,37 @@ function renderDashboard(stats) {
     setSection('dash-category', rows + more);
   } else {
     setSection('dash-category', '<div class="dash-empty-subtle">No categories with assets yet.</div>');
+  }
+
+  // ── Warranty Alerts ──
+  var alerts = stats.warranty_alerts || [];
+  if (alerts.length) {
+    var alertRows = alerts.slice(0, 6).map(function(a) {
+      var days = a.days_remaining;
+      var urgent = days <= 30;
+      return '<a class="dash-alert-row' + (urgent ? ' urgent' : '') + '" href="#/assets/' + esc(a.id) + '">'
+        + '<span class="dash-alert-tag">' + esc(a.asset_tag) + '</span>'
+        + '<span class="dash-alert-name">' + esc(a.name) + '</span>'
+        + '<span class="dash-alert-meta' + (urgent ? ' urgent' : '') + '">' + (days <= 0 ? 'Expires today' : days + 'd left') + '</span>'
+        + '</a>';
+    }).join('');
+    setSection('dash-warranty', alertRows);
+  } else {
+    setSection('dash-warranty', '<div class="dash-empty-subtle">No warranties expiring in the next 90 days.</div>');
+  }
+
+  // ── Recent Checkouts ──
+  var checkouts = (stats.recent_activity || []).filter(function(a) { return a.action === 'checkout'; }).slice(0, 6);
+  if (checkouts.length) {
+    setSection('dash-checkouts', checkouts.map(function(a) {
+      return '<a class="dash-alert-row" href="#/assets/' + esc(a.asset_id) + '">'
+        + '<span class="dash-alert-tag">' + esc(a.asset_tag || '—') + '</span>'
+        + '<span class="dash-alert-name">' + esc(a.person_name || 'Someone') + '</span>'
+        + '<span class="dash-alert-meta">' + esc(fmtRelative(a.created_at)) + '</span>'
+        + '</a>';
+    }).join(''));
+  } else {
+    setSection('dash-checkouts', '<div class="dash-empty-subtle">No recent checkouts.</div>');
   }
 }
 

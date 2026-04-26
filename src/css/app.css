@@ -1983,6 +1983,43 @@ tbody td.mono {
 .dash-empty { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--text2); padding: 20px 0; flex-wrap: wrap; }
 .dash-empty-subtle { font-size: 12px; color: var(--text3); padding: 16px 0; }
 .dash-error { font-size: 13px; color: var(--red); padding: 12px 0; }
+
+/* Alert / checkout rows used in dashboard widgets */
+.dash-alert-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  text-decoration: none;
+  color: inherit;
+  transition: background var(--transition-fast);
+}
+.dash-alert-row:hover { background: var(--surface2); }
+.dash-alert-row + .dash-alert-row { margin-top: 2px; }
+.dash-alert-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  min-width: 64px;
+  flex-shrink: 0;
+}
+.dash-alert-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dash-alert-meta {
+  font-size: 11px;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+.dash-alert-meta.urgent,
+.dash-alert-row.urgent .dash-alert-meta { color: var(--red); font-weight: 600; }
 .dash-error a { color: var(--accent); margin-left: 6px; text-decoration: underline; }
 
 .dash-skeleton-block { background: var(--surface3); border-radius: 4px; animation: dashShim 1.5s ease-in-out infinite; }
