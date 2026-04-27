@@ -19,6 +19,17 @@ database_id = "5e966e81-a2b2-4fe7-9b2b-ee29cb02d4e6"
 binding = "IMAGES"
 bucket_name = "wsc-assets-images"
 
+# KV namespace for Microsoft Graph access-token caching. Optional but
+# strongly recommended — without it every Graph call fetches a fresh
+# access token (slower; will trip AAD rate limits under heavy use).
+[[kv_namespaces]]
+binding = "KV_GRAPH"
+id = "a45f445d79ce4bd9ae19edcfd357bf8f"
+
+# Scheduled triggers — handover-row cleanup every 6 hours.
+[triggers]
+crons = ["0 */6 * * *"]
+
 # Environment variables (set API_KEY via: wrangler secret put API_KEY)
 [vars]
 ASSET_TAG_PREFIX = "WSC"

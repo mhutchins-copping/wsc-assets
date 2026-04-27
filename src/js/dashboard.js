@@ -30,7 +30,8 @@ function renderDashboardSkeleton() {
     +   '</div>'
     +   '<div id="dash-mosaic">' + renderSkeletonBlock(120) + '</div>'
     +   '<div id="dash-funfact" class="dash-funfact">&nbsp;</div>'
-    + '</div>';
+    + '</div>'
+    + (Auth && Auth.isAdmin && Auth.isAdmin() ? '<div class="dash-section" id="dash-intune-section"><div class="dash-section-title">Intune health</div><div id="dash-intune">' + renderSkeletonBlock(80) + '</div></div>' : '');
 }
 
 // Welcome strip at the top of the dashboard. Echoes the "Welcome to
@@ -69,6 +70,77 @@ async function loadDashboardData() {
   // this even if the stats request failed -- different endpoint,
   // might still work.
   loadFleetMosaic();
+  if (Auth && Auth.isAdmin && Auth.isAdmin()) loadIntuneHealth();
+}
+
+async function loadIntuneHealth() {
+  var target = document.getElementById('dash-intune');
+  if (!target) return;
+  try {
+    var data = await API.intuneHealth();
+    target.innerHTML = renderIntuneHealthHtml(data);
+  } catch (e) {
+    target.innerHTML = '<p style="color:var(--text2);font-size:13px;margin:0">Couldn\'t load Intune health: ' + esc(e.message) + '</p>';
+  }
+}
+
+function renderIntuneHealthHtml(data) {
+  var cards = [];
+  if (data.apns) {
+    cards.push(renderIntuneHealthCard({
+      label: 'APNs (Apple Push)',
+      detail: data.apns.appleIdentifier,
+      expiresIso: data.apns.expirationDateTime,
+      daysRemaining: data.apns.daysRemaining
+    }));
+  }
+  for (var i = 0; i < (data.vpp || []).length; i++) {
+    var v = data.vpp[i];
+    cards.push(renderIntuneHealthCard({
+      label: 'VPP (Apps & Books)',
+      detail: v.appleId,
+      expiresIso: v.expirationDateTime,
+      daysRemaining: v.daysRemaining,
+      extra: v.state && v.state !== 'valid' ? v.state : null
+    }));
+  }
+  for (var j = 0; j < (data.dep || []).length; j++) {
+    var d = data.dep[j];
+    cards.push(renderIntuneHealthCard({
+      label: 'ABM/DEP (' + (d.tokenName || 'token') + ')',
+      detail: d.appleIdentifier,
+      expiresIso: d.tokenExpirationDateTime,
+      daysRemaining: d.daysRemaining
+    }));
+  }
+  if (cards.length === 0) {
+    return '<p style="color:var(--text2);font-size:13px;margin:0">No Intune tokens visible. Either Graph permissions are missing or the tenant has no tokens configured.</p>';
+  }
+  return '<div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">' + cards.join('') + '</div>'
+    + '<p style="margin-top:10px;font-size:12px;color:var(--text3)">'
+    + '<a href="#/intune-enrol">Enrol a device →</a></p>';
+}
+
+function renderIntuneHealthCard(opts) {
+  var tone = '#10b981', badge = '✓';
+  if (opts.daysRemaining == null) { tone = '#6b7280'; badge = '?'; }
+  else if (opts.daysRemaining < 14) { tone = '#ef4444'; badge = '⚠'; }
+  else if (opts.daysRemaining < 30) { tone = '#f59e0b'; badge = '!'; }
+
+  var expiresHuman = opts.expiresIso ? new Date(opts.expiresIso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : 'unknown';
+  var daysText = opts.daysRemaining != null && opts.daysRemaining >= 0
+    ? opts.daysRemaining + ' days'
+    : (opts.daysRemaining < 0 ? 'expired ' + (-opts.daysRemaining) + 'd ago' : 'no expiry recorded');
+
+  return '<article style="background:var(--surface);border-radius:8px;padding:14px;border-left:4px solid ' + tone + '">'
+    + '<header style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+    + '<span style="display:inline-block;width:22px;height:22px;border-radius:50%;text-align:center;line-height:22px;font-weight:700;color:#fff;background:' + tone + ';font-size:13px">' + badge + '</span>'
+    + '<h3 style="font-size:13px;margin:0;color:var(--text);font-weight:600">' + esc(opts.label) + '</h3>'
+    + '</header>'
+    + '<p style="font-size:12px;color:var(--text2);margin:0 0 4px">' + esc(opts.detail || '') + '</p>'
+    + '<p style="font-size:13px;font-weight:600;margin:0">' + esc(daysText) + ' <span style="color:var(--text3);font-weight:400">· ' + esc(expiresHuman) + '</span></p>'
+    + (opts.extra ? '<p style="font-size:12px;color:var(--text3);margin:4px 0 0">' + esc(opts.extra) + '</p>' : '')
+    + '</article>';
 }
 
 // Walks the paginated asset list and builds the Assets-at-a-glance
