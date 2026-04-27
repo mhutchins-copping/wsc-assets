@@ -3896,21 +3896,14 @@ async function intunePeopleSearch(env, url) {
 //
 // Supports ?dry_run=1 — runs preflight + validation, returns the planned
 // writes as JSON without touching Graph or the database. Always safe.
-// All council mobile devices are consumer-bought (JB Hi-Fi, Officeworks)
-// rather than ABM-enrolled, so the actual enrolment path for every flow
-// is the same: install Intune Company Portal, sign in, install the
-// management profile (iOS) or set up the Work Profile (Android). No
-// Graph writes are needed at provision time — Intune picks the device
-// up when the user finishes the Company Portal flow on the device.
+// Council iPhones can be either ABM-bound (zero-touch enrolment via
+// Setup Assistant pre-binding) or not (Company Portal install). Most
+// other devices are Company Portal. This handler runs preflight to
+// figure out which mode applies, optionally calls ABM pre-bind, then
+// records the asset and mints a handover URL. Handover page reads
+// dep_token_id off the row to render the right walkthrough.
 //
-// What this handler does:
-//   1. Validate the person + OS choice.
-//   2. Create / update the asset register entry (idempotent on serial).
-//   3. Mint a 14-day handover URL with OS-specific Company Portal steps.
-//
-// `os` values stay as 'ios' | 'android' | 'aosp' | 'byod_ios' |
-// 'byod_android' for handover-page rendering; the council/personal split
-// only changes the asset tag + privacy framing, not the technical flow.
+// `os` values: 'ios' | 'android' | 'aosp' | 'byod_ios' | 'byod_android'.
 async function intuneProvision(request, env, url) {
   const dryRun = url.searchParams.get('dry_run') === '1';
   const data = await body(request).catch(() => ({}));
@@ -3931,32 +3924,56 @@ async function intuneProvision(request, env, url) {
   const person = await env.DB.prepare('SELECT id, name, email, department FROM people WHERE id = ? AND active = 1').bind(personId).first();
   if (!person) return json({ error: `Person ${personId} not found or inactive. Run the Entra sync if this is a new starter.` }, 400);
 
+  // Preflight: determines if this is ABM mode (council iOS, serial in
+  // ABM) or Company Portal mode (everything else).
+  let preflightResult;
+  try {
+    preflightResult = await intune.preflight(env, { serial, os });
+  } catch (err) {
+    return json({ error: `Preflight failed: ${err.message}` }, err.status || 502);
+  }
+  if (!preflightResult.ready) {
+    return json({ error: preflightResult.reason }, 400);
+  }
+  const isAbmFlow = preflightResult.mode === 'abm';
+
   const categoryId = data.category_id || 'cat_phone';
   const actor = request._user ? (request._user.display_name || request._user.email) : 'Intune Wizard';
   const actorEmail = request._user?.email || null;
 
   const plan = {
     os,
+    mode: preflightResult.mode,
     person: { id: person.id, name: person.name, email: person.email },
     serial: serial || null,
     actor,
-    steps: [
-      {
-        op: 'enrolDeviceImpl',
-        serial: serial || `(generated for asset ${person.id})`,
-        name: customName || `${person.name} — ${intuneOsLabel(os)}`,
-        category_id: categoryId,
-        phone_number: phoneNumber,
-        carrier,
-        assigned_to: person.id,
-        enrolled_user: person.email,
-      },
-      {
-        op: 'createHandoverRow',
-        expires_in_days: HANDOVER_EXPIRY_DAYS,
-      },
-    ],
+    steps: [],
   };
+
+  if (isAbmFlow) {
+    plan.steps.push({
+      op: 'assignUserToDepDevice',
+      depTokenId: preflightResult.depTokenId,
+      depTokenName: preflightResult.depTokenName,
+      serial,
+      upn: person.email,
+    });
+  }
+  plan.steps.push({
+    op: 'enrolDeviceImpl',
+    serial: serial || `(generated for asset ${person.id})`,
+    name: customName || `${person.name} — ${intuneOsLabel(os)}`,
+    category_id: categoryId,
+    phone_number: phoneNumber,
+    carrier,
+    assigned_to: person.id,
+    enrolled_user: person.email,
+  });
+  plan.steps.push({
+    op: 'createHandoverRow',
+    mode: preflightResult.mode,
+    expires_in_days: HANDOVER_EXPIRY_DAYS,
+  });
 
   if (dryRun) {
     return json({ dry_run: true, plan });
@@ -3964,9 +3981,36 @@ async function intuneProvision(request, env, url) {
 
   const result = { plan_executed: [] };
 
-  // Step 1: asset register write (in-process call to enrolDeviceImpl).
-  // If no serial is provided we mint a placeholder; once the device
-  // actually enrols, the Intune sync will fill in the real serial.
+  // Step 1 (ABM only): pre-bind the user to the device. On factory-reset
+  // boot, Setup Assistant pre-fills the council username — staff just
+  // type their password to enrol. Failures here are logged but don't
+  // abort: we fall back to Company Portal handover so the device still
+  // enrols, just with more clicks for the staff member.
+  let depTokenIdForRow = null;
+  let abmPreBindFailed = false;
+  if (isAbmFlow) {
+    try {
+      const profs = await intune.getAppleEnrolmentProfiles(env, preflightResult.depTokenId);
+      const def = profs.find(p => p.isDefault) || profs[0];
+      if (!def) throw new Error(`No Apple enrolment profile under token ${preflightResult.depTokenName}`);
+      await intune.assignUserToDepDevice(env, {
+        depTokenId: preflightResult.depTokenId,
+        profileId: def.id,
+        serial,
+        upn: person.email,
+        addressableUserName: person.name,
+      });
+      depTokenIdForRow = preflightResult.depTokenId;
+      result.plan_executed.push({ op: 'assignUserToDepDevice', ok: true, profileId: def.id });
+    } catch (err) {
+      console.warn('assignUserToDepDevice failed, falling back to Company Portal flow:', err.message);
+      abmPreBindFailed = true;
+      result.plan_executed.push({ op: 'assignUserToDepDevice', ok: false, error: err.message, fallback: 'company_portal' });
+    }
+  }
+
+  // Step 2: asset register write. If no serial provided, mint a
+  // PENDING-* placeholder so the row dedupes on the eventual real serial.
   let asset;
   try {
     asset = await enrolDeviceImpl(env, {
@@ -3986,7 +4030,9 @@ async function intuneProvision(request, env, url) {
     return json({ error: `Asset register write failed: ${err.message}`, partial_result: result }, err.status || 500);
   }
 
-  // Step 2: handover row
+  // Step 3: handover row. dep_token_id non-null = ABM flow → handover
+  // page renders the simple "power on, sign in" steps. null = Company
+  // Portal flow → handover page renders the full install walkthrough.
   const handoverToken = generateHandoverToken();
   const expiresAt = new Date(Date.now() + HANDOVER_EXPIRY_DAYS * 86400_000).toISOString();
   try {
@@ -4000,15 +4046,15 @@ async function intuneProvision(request, env, url) {
       person.id,
       serial || null,
       os,
-      null,        // profile_id — no longer used, Company Portal flow doesn't need it
-      null,        // profile_name
-      null,        // dep_token_id
-      null,        // qr_payload — no QR; Company Portal flow only
-      null,        // qr_expires_at
+      null,
+      null,
+      depTokenIdForRow,
+      null,
+      null,
       actorEmail,
       expiresAt,
     ).run();
-    result.plan_executed.push({ op: 'createHandoverRow', ok: true, token: handoverToken });
+    result.plan_executed.push({ op: 'createHandoverRow', ok: true, token: handoverToken, mode: depTokenIdForRow ? 'abm' : 'company_portal' });
   } catch (err) {
     return json({ error: `Handover row insert failed: ${err.message}`, partial_result: result }, 500);
   }
@@ -4016,18 +4062,20 @@ async function intuneProvision(request, env, url) {
   await logActivity(env, {
     asset_id: asset.id,
     action: 'intune_provision',
-    details: JSON.stringify({ os, serial: serial || null, person_id: person.id }),
+    details: JSON.stringify({ os, mode: depTokenIdForRow ? 'abm' : 'company_portal', serial: serial || null, person_id: person.id }),
     performed_by: actor,
     person_id: person.id,
   });
 
   return json({
     ok: true,
+    mode: depTokenIdForRow ? 'abm' : 'company_portal',
     asset_id: asset.id,
     asset_tag: asset.asset_tag,
     handover_token: handoverToken,
     handover_url: handoverPublicUrl(handoverToken),
     expires_at: expiresAt,
+    abm_prebind_failed: abmPreBindFailed,
     qr_available: false,
     plan_executed: result.plan_executed,
   }, 201);
@@ -4168,9 +4216,15 @@ function renderHandoverHtml(row, token) {
   const isIos = (os === 'ios' || os === 'byod_ios');
   const isAndroid = (os === 'android' || os === 'byod_android' || os === 'aosp');
   const isPersonal = (os === 'byod_ios' || os === 'byod_android');
+  // ABM-bound devices have dep_token_id set on the handover row
+  // (intuneProvision stores it after a successful pre-bind). For these
+  // the iPhone is supervised + enrols via Setup Assistant pre-fill,
+  // which is a much shorter walkthrough than Company Portal install.
+  const isAbmIos = (os === 'ios' && !!row.dep_token_id);
 
   let stepsHtml;
-  if (isIos) stepsHtml = handoverIosSteps(row, isPersonal);
+  if (isAbmIos) stepsHtml = handoverIosAbmSteps(row);
+  else if (isIos) stepsHtml = handoverIosSteps(row, isPersonal);
   else if (isAndroid) stepsHtml = handoverAndroidSteps(row, isPersonal);
   else stepsHtml = `<p class="error">Unknown device type: ${escapeHtml(os)}</p>`;
 
@@ -4230,9 +4284,56 @@ function handoverOsLabel(os) {
   }[os] || 'device';
 }
 
+// ABM iOS — zero-touch path. Device was pre-bound to the user via
+// assignUserToDepDevice during provision, so Setup Assistant pulls the
+// council org + username automatically and the staff member just signs
+// in once. Much shorter than the Company Portal walkthrough.
+function handoverIosAbmSteps(row) {
+  return `
+    <ol class="steps">
+      <li><h3>Make sure the iPhone is factory-reset</h3>
+        <p>It needs to be on the "Hello" / language picker / Setup Assistant welcome screen. If it's already set up, go to <strong>Settings → General → Transfer or Reset iPhone → Erase All Content and Settings</strong>.</p>
+      </li>
+      <li><h3>Power on, choose language &amp; region</h3>
+        <p>English (Australia).</p>
+      </li>
+      <li><h3>Connect to Wi-Fi</h3>
+        <p>Home Wi-Fi or a phone hotspot — anything with internet.</p>
+      </li>
+      <li><h3>"Remote Management" screen appears</h3>
+        <p>This means Walgett Shire Council is setting up your device. Tap <strong>Continue</strong>.</p>
+      </li>
+      <li><h3>Sign in with your council account</h3>
+        <p>Your username should pre-fill as <strong>${escapeHtml(row.person_email)}</strong> — just type your council password. MFA approval via Microsoft Authenticator on your other device.</p>
+      </li>
+      <li><h3>Finish Setup Assistant</h3>
+        <p>Set a passcode (6 digits or longer). Skip Apple ID if it asks — not needed for work apps.</p>
+      </li>
+      <li><h3>Wait ~10 minutes</h3>
+        <p>Apps install in the background — Outlook, Teams, Microsoft Authenticator, SharePoint, etc. They'll appear on your Home screen.</p>
+      </li>
+      <li><h3>Open Outlook → sign in</h3>
+        <p>Email pre-fills. Enter your password and you're done.</p>
+      </li>
+    </ol>
+    <div class="card help-card">
+      <h3>Stuck?</h3>
+      <ul>
+        <li><strong>No "Remote Management" screen</strong>: factory-reset and start again. Settings → General → Transfer or Reset iPhone → Erase All Content and Settings.</li>
+        <li><strong>"Sign-in failed"</strong>: check your email is <strong>${escapeHtml(row.person_email)}</strong>. If your password isn't working, IT can reset it.</li>
+        <li><strong>Apps not appearing after 30 min</strong>: open the App Store and leave it open for a few seconds, then go back to the Home screen — that nudges installs to start.</li>
+      </ul>
+    </div>
+    <div class="card help-card">
+      <h3>About this device</h3>
+      <p>This is a council-owned, fully-managed iPhone. IT can install/remove apps, push WiFi/email config, and (in extreme cases) wipe the device. IT does not read your messages or browse your photos. If you leave the role, the device returns to IT for re-issue.</p>
+    </div>
+  `;
+}
+
 // Single iOS template — Company Portal flow, used for both council-owned
-// consumer iPhones and staff-owned BYOD. Privacy note adapts to whether
-// the device is the user's own.
+// consumer iPhones (when not in ABM) and staff-owned BYOD. Privacy note
+// adapts to whether the device is the user's own.
 function handoverIosSteps(row, isPersonal) {
   const privacy = isPersonal
     ? `<p>This is your <strong>personal device</strong>. The council can't see your personal photos, messages, location, or browsing — only the work apps installed via Company Portal are managed. If you leave the role, IT removes only the work apps and the management profile; your personal stuff is untouched.</p>`

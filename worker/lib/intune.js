@@ -220,17 +220,45 @@ export async function getEnrolmentHealth(env) {
 //   { ready: true, ...context } when the wizard can proceed
 //   { ready: false, reason: string } with a human-readable explanation
 //
-// All current council devices are consumer-bought (JB Hi-Fi etc.), not
-// ABM-enrolled. So the practical iOS path is Company Portal install,
-// not Setup-Assistant pre-binding. Same for Android — Company Portal +
-// Work Profile, not factory-reset QR. Preflight is now mostly a no-op:
-// person validation already happens in intuneProvision; no Graph writes
-// hang off this. Kept as an extension point in case we later need a
-// real ABM/Knox check for some device class.
+// Council iPhones can be in ABM (added via Apple Configurator on a
+// phone, or bought through an ABM-enrolled reseller) OR not. ABM-bound
+// = zero-touch enrolment via Setup Assistant pre-binding. Not in ABM
+// = staff manually installs Company Portal. Both work; this preflight
+// figures out which mode applies for the given serial so the provision
+// flow can branch.
+//
+// For Android / BYOD / AOSP: always Company Portal — ABM doesn't apply.
+//
+// Returns one of:
+//   { ready: true, mode: 'abm', depTokenId, depTokenName }   council iOS, in ABM
+//   { ready: true, mode: 'company_portal' }                  everything else
+//   { ready: false, reason: string }                         unknown OS
 export async function preflight(env, { serial, os }) {
   const supported = ['ios', 'android', 'aosp', 'byod_ios', 'byod_android'];
   if (!supported.includes(os)) {
     return { ready: false, reason: `Unknown OS: ${os}` };
   }
+
+  // Only check ABM for council-owned iPhones with a serial supplied.
+  // ABM lookup via Graph DEP — if found, use the pre-bind flow.
+  if (os === 'ios' && serial) {
+    try {
+      const found = await findAppleDeviceInAbm(env, serial);
+      if (found) {
+        return {
+          ready: true,
+          mode: 'abm',
+          depTokenId: found.token.id,
+          depTokenName: found.token.tokenName,
+        };
+      }
+    } catch (err) {
+      // Graph lookup failed — log + fall through to Company Portal mode
+      // rather than blocking the whole provision. ABM is an optimisation,
+      // not a requirement.
+      console.warn('intune: ABM lookup failed, falling back to Company Portal:', err.message);
+    }
+  }
+
   return { ready: true, mode: 'company_portal' };
 }
