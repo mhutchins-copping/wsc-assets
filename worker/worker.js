@@ -3351,18 +3351,29 @@ async function importCSV(request, env) {
       const ts = now();
       const status = row.status || (personId ? 'deployed' : 'available');
 
+      // Parse metadata if provided
+      let metadata = '{}';
+      if (row.metadata) {
+        try {
+          const parsed = JSON.parse(row.metadata);
+          metadata = JSON.stringify(parsed);
+        } catch (e) {
+          metadata = '{}';
+        }
+      }
+
       await env.DB.prepare(`
         INSERT INTO assets (id, asset_tag, name, serial_number, category_id, manufacturer, model, status,
           purchase_date, purchase_cost, purchase_order, supplier, warranty_months, warranty_expiry,
-          notes, location_id, assigned_to, assigned_date, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          notes, metadata, location_id, assigned_to, assigned_date, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         id(), tag, row.name, row.serial_number || null, categoryId,
         row.manufacturer || null, row.model || null, status,
         row.purchase_date || null, row.purchase_cost ? parseFloat(row.purchase_cost) : null,
         row.purchase_order || null, row.supplier || null,
         row.warranty_months ? parseInt(row.warranty_months) : null, warrantyExpiry,
-        row.notes || null, locationId, personId, personId ? ts : null, ts, ts
+        row.notes || null, metadata, locationId, personId, personId ? ts : null, ts, ts
       ).run();
 
       results.created++;
@@ -3418,7 +3429,7 @@ async function exportCSV(env, url) {
   const result = await env.DB.prepare(`
     SELECT a.asset_tag, a.name, a.serial_number, c.name as category, a.manufacturer, a.model,
            a.status, a.purchase_date, a.purchase_cost, a.purchase_order, a.supplier,
-           a.warranty_months, a.warranty_expiry, l.name as location, p.name as assigned_to, a.notes
+           a.warranty_months, a.warranty_expiry, l.name as location, p.name as assigned_to, a.notes, a.metadata
     FROM assets a
     LEFT JOIN categories c ON a.category_id = c.id
     LEFT JOIN locations l ON a.location_id = l.id
@@ -3429,7 +3440,7 @@ async function exportCSV(env, url) {
 
   const headers = ['asset_tag', 'name', 'serial_number', 'category', 'manufacturer', 'model', 'status',
     'purchase_date', 'purchase_cost', 'purchase_order', 'supplier', 'warranty_months', 'warranty_expiry',
-    'location', 'assigned_to', 'notes'];
+    'location', 'assigned_to', 'notes', 'metadata'];
 
   let csv = headers.join(',') + '\n';
   for (const row of result.results) {
