@@ -5,7 +5,9 @@ hardware — laptops, desktops, phones, peripherals — with assignment,
 maintenance, audit, and reporting features.
 
 Live at **[assets.it-wsc.com](https://assets.it-wsc.com)** (access
-restricted to council staff).
+restricted to council staff). Public staff-facing handover pages for
+device enrolment live at **[enrol.it-wsc.com](https://enrol.it-wsc.com)**
+(token-gated, no SSO).
 
 ---
 
@@ -76,6 +78,18 @@ quick-reference.
   make from the user agent where it can. **Batch mode** at
   `#/phone-enrol-batch` for registering a box of new devices in one
   go: set make / model / OS / carrier once, then one row per device.
+- **Intune enrolment wizard** at `#/intune-enrol` (admin-only, sidebar
+  → Tools → Enrol device (Intune)) — pick a user, pick iPhone /
+  Android, pick council-owned / staff-owned, click Provision. Backend
+  records the device in the asset register and mints a 14-day handover
+  URL on `enrol.it-wsc.com/h/{token}` with OS-appropriate Company
+  Portal install steps. Public, token-gated (no SSO needed) so staff
+  can open the URL on the device itself. Supports `?dry_run=1` to
+  preview the planned writes without touching anything. Backed by
+  Microsoft Graph for token-health monitoring (APNs / VPP / ABM
+  expiry shows on the dashboard). Built around Company Portal install
+  rather than ABM / Zero-Touch — council buys consumer phones, not
+  procurement-bound corporate devices.
 - **PowerShell enrolment** for hardware specs. Two entry points:
   - **Password-gated web launcher** at `https://api.it-wsc.com/enrol` —
     visit the URL on the new PC, type the shared `ENROL_PASSWORD`, and
