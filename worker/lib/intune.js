@@ -220,52 +220,17 @@ export async function getEnrolmentHealth(env) {
 //   { ready: true, ...context } when the wizard can proceed
 //   { ready: false, reason: string } with a human-readable explanation
 //
-// For iOS this means: serial is registered in ABM under one of our DEP
-// tokens, and the token is not expired.
-// For Android Corporate this means: a valid enrolment profile exists
-// and the Android Enterprise binding is healthy. (Serial isn't checked
-// for Android — devices are enrolled by QR scan, not pre-binding.)
-// For BYOD: always ready (no Graph writes happen, just instructions).
+// All current council devices are consumer-bought (JB Hi-Fi etc.), not
+// ABM-enrolled. So the practical iOS path is Company Portal install,
+// not Setup-Assistant pre-binding. Same for Android — Company Portal +
+// Work Profile, not factory-reset QR. Preflight is now mostly a no-op:
+// person validation already happens in intuneProvision; no Graph writes
+// hang off this. Kept as an extension point in case we later need a
+// real ABM/Knox check for some device class.
 export async function preflight(env, { serial, os }) {
-  if (os === 'byod_android' || os === 'byod_ios') {
-    return { ready: true, mode: 'instructions_only' };
+  const supported = ['ios', 'android', 'aosp', 'byod_ios', 'byod_android'];
+  if (!supported.includes(os)) {
+    return { ready: false, reason: `Unknown OS: ${os}` };
   }
-
-  if (os === 'ios') {
-    if (!serial) return { ready: false, reason: 'serial is required for iOS enrolment' };
-    const found = await findAppleDeviceInAbm(env, serial);
-    if (!found) {
-      return {
-        ready: false,
-        reason: `Serial ${serial} not found in any ABM token. Either it wasn't bought through an ABM-enrolled reseller, or ABM/Intune sync hasn't run yet. Try the "Sync ABM" button or use Apple Configurator to add it manually.`,
-      };
-    }
-    const tokenExpiresInDays = (() => {
-      if (!found.token.tokenExpirationDateTime) return null;
-      return Math.floor((new Date(found.token.tokenExpirationDateTime).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    })();
-    if (tokenExpiresInDays !== null && tokenExpiresInDays < 0) {
-      return { ready: false, reason: `ABM token "${found.token.tokenName}" expired ${-tokenExpiresInDays} days ago. Renew it in Intune before enrolling.` };
-    }
-    return {
-      ready: true,
-      depTokenId: found.token.id,
-      depTokenName: found.token.tokenName,
-      identity: found.identity,
-    };
-  }
-
-  if (os === 'android' || os === 'aosp') {
-    const profiles = await getAndroidEnrolmentProfiles(env);
-    const usable = profiles.filter(p => {
-      if (!p.tokenExpirationDateTime) return true;
-      return new Date(p.tokenExpirationDateTime).getTime() > Date.now();
-    });
-    if (!usable.length) {
-      return { ready: false, reason: 'No usable Android enrolment profile found. Check Intune → Devices → Android → Enrollment.' };
-    }
-    return { ready: true, profiles: usable };
-  }
-
-  return { ready: false, reason: `Unknown OS: ${os}` };
+  return { ready: true, mode: 'company_portal' };
 }

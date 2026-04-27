@@ -3877,6 +3877,21 @@ async function intunePeopleSearch(env, url) {
 //
 // Supports ?dry_run=1 — runs preflight + validation, returns the planned
 // writes as JSON without touching Graph or the database. Always safe.
+// All council mobile devices are consumer-bought (JB Hi-Fi, Officeworks)
+// rather than ABM-enrolled, so the actual enrolment path for every flow
+// is the same: install Intune Company Portal, sign in, install the
+// management profile (iOS) or set up the Work Profile (Android). No
+// Graph writes are needed at provision time — Intune picks the device
+// up when the user finishes the Company Portal flow on the device.
+//
+// What this handler does:
+//   1. Validate the person + OS choice.
+//   2. Create / update the asset register entry (idempotent on serial).
+//   3. Mint a 14-day handover URL with OS-specific Company Portal steps.
+//
+// `os` values stay as 'ios' | 'android' | 'aosp' | 'byod_ios' |
+// 'byod_android' for handover-page rendering; the council/personal split
+// only changes the asset tag + privacy framing, not the technical flow.
 async function intuneProvision(request, env, url) {
   const dryRun = url.searchParams.get('dry_run') === '1';
   const data = await body(request).catch(() => ({}));
@@ -3894,23 +3909,8 @@ async function intuneProvision(request, env, url) {
   const validOs = ['ios', 'android', 'aosp', 'byod_android', 'byod_ios'];
   if (!validOs.includes(os)) return json({ error: `os must be one of: ${validOs.join(', ')}` }, 400);
 
-  if (!serial && os !== 'byod_android' && os !== 'byod_ios') {
-    return json({ error: 'serial_number required for non-BYOD enrolment' }, 400);
-  }
-
   const person = await env.DB.prepare('SELECT id, name, email, department FROM people WHERE id = ? AND active = 1').bind(personId).first();
   if (!person) return json({ error: `Person ${personId} not found or inactive. Run the Entra sync if this is a new starter.` }, 400);
-
-  // Preflight (read-only Graph)
-  let preflightResult;
-  try {
-    preflightResult = await intune.preflight(env, { serial, os });
-  } catch (err) {
-    return json({ error: `Preflight failed: ${err.message}` }, err.status || 502);
-  }
-  if (!preflightResult.ready) {
-    return json({ error: preflightResult.reason, preflight: preflightResult }, 400);
-  }
 
   const categoryId = data.category_id || 'cat_phone';
   const actor = request._user ? (request._user.display_name || request._user.email) : 'Intune Wizard';
@@ -3919,46 +3919,25 @@ async function intuneProvision(request, env, url) {
   const plan = {
     os,
     person: { id: person.id, name: person.name, email: person.email },
-    serial,
+    serial: serial || null,
     actor,
-    steps: [],
+    steps: [
+      {
+        op: 'enrolDeviceImpl',
+        serial: serial || `(generated for asset ${person.id})`,
+        name: customName || `${person.name} — ${intuneOsLabel(os)}`,
+        category_id: categoryId,
+        phone_number: phoneNumber,
+        carrier,
+        assigned_to: person.id,
+        enrolled_user: person.email,
+      },
+      {
+        op: 'createHandoverRow',
+        expires_in_days: HANDOVER_EXPIRY_DAYS,
+      },
+    ],
   };
-
-  if (os === 'ios') {
-    plan.steps.push({
-      op: 'assignUserToDepDevice',
-      depTokenId: preflightResult.depTokenId,
-      depTokenName: preflightResult.depTokenName,
-      profileId: data.profile_id || null,
-      serial,
-      upn: person.email,
-      addressableUserName: person.name,
-    });
-  } else if (os === 'android' || os === 'aosp') {
-    const profileId = data.profile_id || preflightResult.profiles?.[0]?.id;
-    if (!profileId) return json({ error: 'No Android enrolment profile available. Pass profile_id explicitly.' }, 400);
-    plan.steps.push({
-      op: 'createAndroidEnrolmentToken',
-      profileId,
-      validitySeconds: ANDROID_TOKEN_VALIDITY_SECONDS,
-    });
-  }
-
-  plan.steps.push({
-    op: 'enrolDeviceImpl',
-    serial,
-    name: customName || `${person.name} — ${intuneOsLabel(os)}`,
-    category_id: categoryId,
-    phone_number: phoneNumber,
-    carrier,
-    assigned_to: person.id,
-    enrolled_user: person.email,
-  });
-
-  plan.steps.push({
-    op: 'createHandoverRow',
-    expires_in_days: HANDOVER_EXPIRY_DAYS,
-  });
 
   if (dryRun) {
     return json({ dry_run: true, plan });
@@ -3966,54 +3945,13 @@ async function intuneProvision(request, env, url) {
 
   const result = { plan_executed: [] };
 
-  // Step 1: per-OS Graph write
-  if (os === 'ios') {
-    try {
-      let profileId = data.profile_id;
-      if (!profileId) {
-        const profs = await intune.getAppleEnrolmentProfiles(env, preflightResult.depTokenId);
-        const def = profs.find(p => p.isDefault) || profs[0];
-        if (!def) throw new Error(`No Apple enrolment profile under token ${preflightResult.depTokenName}`);
-        profileId = def.id;
-      }
-      await intune.assignUserToDepDevice(env, {
-        depTokenId: preflightResult.depTokenId,
-        profileId,
-        serial,
-        upn: person.email,
-        addressableUserName: person.name,
-      });
-      result.plan_executed.push({ op: 'assignUserToDepDevice', ok: true, profileId });
-      plan.profile_id = profileId;
-    } catch (err) {
-      return json({ error: `assignUserToDepDevice failed: ${err.message}`, partial_result: result }, err.status || 502);
-    }
-  }
-
-  let qrPayload = null;
-  let qrExpiresAt = null;
-  let chosenProfileId = null;
-  if (os === 'android' || os === 'aosp') {
-    try {
-      chosenProfileId = data.profile_id || preflightResult.profiles?.[0]?.id;
-      const tokenRes = await intune.createAndroidEnrolmentToken(env, {
-        profileId: chosenProfileId,
-        validitySeconds: ANDROID_TOKEN_VALIDITY_SECONDS,
-      });
-      qrPayload = tokenRes?.qrCodeContent || null;
-      const profile = await intune.getAndroidEnrolmentProfile(env, chosenProfileId);
-      qrExpiresAt = profile?.tokenExpirationDateTime || null;
-      result.plan_executed.push({ op: 'createAndroidEnrolmentToken', ok: true, profileId: chosenProfileId });
-    } catch (err) {
-      return json({ error: `createAndroidEnrolmentToken failed: ${err.message}`, partial_result: result }, err.status || 502);
-    }
-  }
-
-  // Step 2: asset register write (in-process call to enrolDeviceImpl)
+  // Step 1: asset register write (in-process call to enrolDeviceImpl).
+  // If no serial is provided we mint a placeholder; once the device
+  // actually enrols, the Intune sync will fill in the real serial.
   let asset;
   try {
     asset = await enrolDeviceImpl(env, {
-      serial_number: serial || `BYOD-${person.id}-${Date.now()}`,
+      serial_number: serial || `PENDING-${person.id}-${Date.now()}`,
       name: customName || `${person.name} — ${intuneOsLabel(os)}`,
       category_id: categoryId,
       manufacturer: data.manufacturer || null,
@@ -4029,7 +3967,7 @@ async function intuneProvision(request, env, url) {
     return json({ error: `Asset register write failed: ${err.message}`, partial_result: result }, err.status || 500);
   }
 
-  // Step 3: handover row
+  // Step 2: handover row
   const handoverToken = generateHandoverToken();
   const expiresAt = new Date(Date.now() + HANDOVER_EXPIRY_DAYS * 86400_000).toISOString();
   try {
@@ -4043,11 +3981,11 @@ async function intuneProvision(request, env, url) {
       person.id,
       serial || null,
       os,
-      plan.profile_id || chosenProfileId || null,
-      data.profile_name || null,
-      preflightResult.depTokenId || null,
-      qrPayload,
-      qrExpiresAt,
+      null,        // profile_id — no longer used, Company Portal flow doesn't need it
+      null,        // profile_name
+      null,        // dep_token_id
+      null,        // qr_payload — no QR; Company Portal flow only
+      null,        // qr_expires_at
       actorEmail,
       expiresAt,
     ).run();
@@ -4059,7 +3997,7 @@ async function intuneProvision(request, env, url) {
   await logActivity(env, {
     asset_id: asset.id,
     action: 'intune_provision',
-    details: JSON.stringify({ os, serial: serial || null, person_id: person.id, profile_id: plan.profile_id || chosenProfileId || null }),
+    details: JSON.stringify({ os, serial: serial || null, person_id: person.id }),
     performed_by: actor,
     person_id: person.id,
   });
@@ -4071,7 +4009,7 @@ async function intuneProvision(request, env, url) {
     handover_token: handoverToken,
     handover_url: handoverPublicUrl(handoverToken),
     expires_at: expiresAt,
-    qr_available: !!qrPayload,
+    qr_available: false,
     plan_executed: result.plan_executed,
   }, 201);
 }
@@ -4208,34 +4146,34 @@ function renderHandoverError(title, body) {
 function renderHandoverHtml(row, token) {
   const os = row.os;
   const personName = row.person_name;
-  let stepsHtml;
-  if (os === 'ios') stepsHtml = handoverIosSteps(row);
-  else if (os === 'android' || os === 'aosp') stepsHtml = handoverAndroidSteps(row);
-  else if (os === 'byod_ios') stepsHtml = handoverByodIosSteps(row);
-  else if (os === 'byod_android') stepsHtml = handoverByodAndroidSteps(row);
-  else stepsHtml = `<p class="error">Unknown device type: ${escapeHtml(os)}</p>`;
+  const isIos = (os === 'ios' || os === 'byod_ios');
+  const isAndroid = (os === 'android' || os === 'byod_android' || os === 'aosp');
+  const isPersonal = (os === 'byod_ios' || os === 'byod_android');
 
-  const isAndroid = os === 'android' || os === 'aosp';
+  let stepsHtml;
+  if (isIos) stepsHtml = handoverIosSteps(row, isPersonal);
+  else if (isAndroid) stepsHtml = handoverAndroidSteps(row, isPersonal);
+  else stepsHtml = `<p class="error">Unknown device type: ${escapeHtml(os)}</p>`;
 
   const body = `
     <div class="handover">
       <header class="handover-header">
         <img src="https://api.it-wsc.com/logo.png" alt="Walgett Shire Council" class="logo">
         <h1>Welcome, ${escapeHtml(personName.split(' ')[0])}</h1>
-        <p class="muted">Setting up your new ${escapeHtml(handoverOsLabel(os))}</p>
+        <p class="muted">Setting up your ${escapeHtml(handoverOsLabel(os))}</p>
       </header>
       <main>
         ${stepsHtml}
         <div class="card ack-card">
-          <h2>Done?</h2>
-          <p>Once your device is set up and you can see Outlook + Teams + Authenticator, tap below so we know you're sorted.</p>
+          <h2>All done?</h2>
+          <p>Once Outlook, Teams and Microsoft Authenticator are installed and signed in, tap below so IT knows you're sorted.</p>
           <button id="ack-btn" type="button">I'm all set up</button>
           <p id="ack-msg" class="muted"></p>
         </div>
       </main>
       <footer class="handover-footer">
         <p>Trouble with any step? Call WSC IT or send Matthew a Teams message.</p>
-        <p class="muted">Asset ${escapeHtml(row.asset_tag)} · ${escapeHtml(row.serial || 'no serial')}</p>
+        <p class="muted">Asset ${escapeHtml(row.asset_tag)}${row.serial ? ' · ' + escapeHtml(row.serial) : ''}</p>
       </footer>
     </div>
     <script>
@@ -4258,7 +4196,6 @@ function renderHandoverHtml(row, token) {
         });
       })();
     </script>
-    ${isAndroid && row.qr_payload ? handoverQrScript(row.qr_payload) : ''}
   `;
 
   return handoverBaseLayout(`Setting up your ${handoverOsLabel(os)}`, body);
@@ -4266,118 +4203,95 @@ function renderHandoverHtml(row, token) {
 
 function handoverOsLabel(os) {
   return {
-    ios: 'iPhone',
-    android: 'Android',
+    ios: 'council iPhone',
+    android: 'council Android',
     aosp: 'Android device',
-    byod_ios: 'personal iPhone',
-    byod_android: 'personal Android',
+    byod_ios: 'iPhone',
+    byod_android: 'Android',
   }[os] || 'device';
 }
 
-function handoverIosSteps(row) {
+// Single iOS template — Company Portal flow, used for both council-owned
+// consumer iPhones and staff-owned BYOD. Privacy note adapts to whether
+// the device is the user's own.
+function handoverIosSteps(row, isPersonal) {
+  const privacy = isPersonal
+    ? `<p>This is your <strong>personal device</strong>. The council can't see your personal photos, messages, location, or browsing — only the work apps installed via Company Portal are managed. If you leave the role, IT removes only the work apps and the management profile; your personal stuff is untouched.</p>`
+    : `<p>This is a <strong>council-owned device</strong>. IT can install/remove apps, push WiFi/email config, and (in extreme cases) wipe the device. IT does not read your messages or browse your photos. If you leave the role, the device returns to IT for re-issue.</p>`;
+
   return `
     <ol class="steps">
-      <li><h3>Power on your iPhone</h3><p>Press and hold the side button until you see the Apple logo.</p></li>
-      <li><h3>Choose language &amp; region</h3><p>English (Australia).</p></li>
-      <li><h3>Connect to Wi-Fi</h3><p>Use your home Wi-Fi or a phone hotspot — anything with internet.</p></li>
-      <li><h3>"Remote Management" screen appears</h3><p>This means Walgett Shire Council is setting up your device. Tap <strong>Continue</strong>.</p></li>
-      <li><h3>Sign in with your council account</h3>
+      <li><h3>Open the App Store on your iPhone</h3>
+        <p>Search for <strong>Intune Company Portal</strong> (made by Microsoft). Install it — it's free.</p>
+      </li>
+      <li><h3>Open Company Portal → Sign in</h3>
         <p>Use <strong>${escapeHtml(row.person_email)}</strong> and your council password.</p>
-        <p>You'll be asked to approve via Microsoft Authenticator on your old/other device. If you don't have Authenticator yet, IT can set it up.</p>
+        <p>You'll be asked to approve via Microsoft Authenticator. If you don't have Authenticator set up on a second device yet, contact IT first.</p>
       </li>
-      <li><h3>Finish Setup Assistant</h3><p>Set a passcode (6 digits or longer), set up Face ID if you want.</p></li>
-      <li><h3>Wait ~10 minutes</h3><p>Apps install in the background. You'll see Outlook, Teams, Microsoft Authenticator, SharePoint, and others appear on your Home screen.</p></li>
-      <li><h3>Open Outlook → sign in</h3><p>Email pre-fills. Just enter your password.</p></li>
+      <li><h3>Follow the on-screen prompts</h3>
+        <p>Company Portal walks you through installing the management profile. When prompted, tap <strong>Continue</strong>, then <strong>Install</strong>.</p>
+        <p>You'll be sent to <strong>Settings → General → VPN &amp; Device Management</strong> to confirm — tap the WSC profile and <strong>Install</strong>.</p>
+      </li>
+      <li><h3>Wait ~10 minutes</h3>
+        <p>Apps install in the background — Outlook, Teams, Microsoft Authenticator, SharePoint, etc. They'll appear on your Home screen.</p>
+      </li>
+      <li><h3>Open Outlook → sign in</h3>
+        <p>Email pre-fills. Enter your password and you're done.</p>
+      </li>
     </ol>
     <div class="card help-card">
       <h3>Stuck?</h3>
       <ul>
-        <li><strong>Can't see "Remote Management" screen</strong>: factory reset and restart Setup Assistant. Settings → General → Transfer or Reset iPhone → Erase All Content and Settings.</li>
-        <li><strong>Apps not appearing after 30 min</strong>: connect to Wi-Fi and leave the device for another 30 min. Open the App Store once to wake it up.</li>
-        <li><strong>"Couldn't sign in"</strong>: check the email address is exactly <strong>${escapeHtml(row.person_email)}</strong>. Contact IT if your password isn't working.</li>
+        <li><strong>Can't find Company Portal in the App Store</strong>: search exactly "Intune Company Portal" — make sure it's the one by <em>Microsoft Corporation</em>.</li>
+        <li><strong>"Sign-in failed"</strong>: check your email is <strong>${escapeHtml(row.person_email)}</strong>. If your password isn't working, IT can reset it.</li>
+        <li><strong>Apps not appearing after 30 min</strong>: open the App Store and leave it open for a few seconds, then go back to the Home screen — that nudges installs to start.</li>
       </ul>
+    </div>
+    <div class="card help-card">
+      <h3>Privacy</h3>
+      ${privacy}
     </div>
   `;
 }
 
-function handoverAndroidSteps(row) {
+// Single Android template — Company Portal + Work Profile, for council-
+// owned consumer Androids and personal BYOD alike.
+function handoverAndroidSteps(row, isPersonal) {
+  const privacy = isPersonal
+    ? `<p>This is your <strong>personal device</strong>. Work Profile keeps council and personal data fully separate — the council can't see your personal apps, photos, or browsing. If you leave the role, IT removes only the Work Profile; your personal stuff is untouched.</p>`
+    : `<p>This is a <strong>council-owned device</strong>. IT can install/remove apps, push WiFi/email config, and (in extreme cases) wipe the device. IT does not read your messages or browse your photos. If you leave the role, the device returns to IT for re-issue.</p>`;
+
   return `
     <ol class="steps">
-      <li><h3>Make sure your Android is factory new (or factory reset)</h3><p>If it has any setup already, hold the power button → restart → during boot, hold power + volume down to reset. Or ask IT.</p></li>
-      <li><h3>Power on, get to the welcome screen</h3><p>"Hi there" / "Welcome" screen — first thing you see.</p></li>
-      <li><h3>Tap the screen 6 times in the same spot</h3><p>Yes, really. The camera will open for a QR scan.</p></li>
-      <li><h3>Scan this QR code</h3>
-        <div id="qr-target" class="qr-box">Loading QR…</div>
-        <p class="muted">If the QR doesn't load, refresh this page or ask IT for a fresh link.</p>
+      <li><h3>Open the Play Store on your Android</h3>
+        <p>Search for <strong>Intune Company Portal</strong> (made by Microsoft). Install it — free.</p>
       </li>
-      <li><h3>Connect to Wi-Fi when prompted</h3><p>Home Wi-Fi or hotspot.</p></li>
-      <li><h3>Sign in with your council account</h3><p>Use <strong>${escapeHtml(row.person_email)}</strong> and your council password. MFA approval as usual.</p></li>
-      <li><h3>Wait ~5–10 minutes</h3><p>Apps install. You'll see Outlook, Teams, Microsoft Authenticator, etc.</p></li>
+      <li><h3>Open Company Portal → Sign in</h3>
+        <p>Use <strong>${escapeHtml(row.person_email)}</strong> and your council password. MFA approval via Microsoft Authenticator as usual.</p>
+      </li>
+      <li><h3>Tap "Set up Work Profile" when prompted</h3>
+        <p>Android creates a separate "Work" badge area on your phone — work apps live there, your personal apps stay where they are.</p>
+        <p>Follow the prompts; the system handles the rest.</p>
+      </li>
+      <li><h3>Wait ~5–10 minutes</h3>
+        <p>Outlook, Teams, Microsoft Authenticator, etc. install in the Work Profile. They appear with a small briefcase icon to mark them as the Work copy.</p>
+      </li>
+      <li><h3>Open Outlook (Work) → sign in</h3>
+        <p>Use the briefcase-marked Outlook. Email is pre-filled.</p>
+      </li>
     </ol>
     <div class="card help-card">
       <h3>Stuck?</h3>
       <ul>
-        <li><strong>6-tap doesn't open camera</strong>: try 7 taps, or tap exactly the same spot. Some Android brands need a different gesture — ask IT.</li>
-        <li><strong>QR scan failed</strong>: aim straight, get good light, try moving phone closer/further. The QR is on this page so you can show it on a laptop / second device.</li>
-        <li><strong>"Sign-in failed"</strong>: same as iOS — check your email/password.</li>
+        <li><strong>Can't find Company Portal in the Play Store</strong>: make sure it's the Microsoft one (icon: blue/white briefcase).</li>
+        <li><strong>"Sign-in failed"</strong>: check your email is <strong>${escapeHtml(row.person_email)}</strong>. If your password isn't working, IT can reset it.</li>
+        <li><strong>Two Outlooks now?</strong> Yes — the briefcase one is Work, the other is your personal copy. Check the icon before you send.</li>
       </ul>
     </div>
-  `;
-}
-
-function handoverByodIosSteps(row) {
-  return `
-    <ol class="steps">
-      <li><h3>Open the App Store on your iPhone</h3></li>
-      <li><h3>Search for "Intune Company Portal"</h3><p>It's free, made by Microsoft. Install it.</p></li>
-      <li><h3>Open Company Portal → Sign in</h3><p>Use <strong>${escapeHtml(row.person_email)}</strong> and your council password.</p></li>
-      <li><h3>Follow the on-screen prompts</h3><p>Company Portal will guide you through installing the council profile. Tap <strong>Continue</strong> on each screen.</p></li>
-      <li><h3>Install council apps</h3><p>From Company Portal you can install Outlook, Teams, etc. on your personal phone — they sit alongside your personal apps but the council manages just those work apps.</p></li>
-    </ol>
     <div class="card help-card">
       <h3>Privacy</h3>
-      <p>The council can't see your personal photos, messages, location, or browsing. Only the work apps you install via Company Portal are managed.</p>
+      ${privacy}
     </div>
-  `;
-}
-
-function handoverByodAndroidSteps(row) {
-  return `
-    <ol class="steps">
-      <li><h3>Open the Play Store on your Android</h3></li>
-      <li><h3>Search for "Intune Company Portal"</h3><p>Free, by Microsoft. Install it.</p></li>
-      <li><h3>Open Company Portal → Sign in</h3><p>Use <strong>${escapeHtml(row.person_email)}</strong> and your council password.</p></li>
-      <li><h3>Tap "Set up Work Profile"</h3><p>Android will create a separate "Work" badge area on your phone. Your personal stuff stays separate.</p></li>
-      <li><h3>Find the Work apps</h3><p>You'll see Outlook, Teams, Authenticator, etc. with a small briefcase icon — that's the Work copy.</p></li>
-    </ol>
-    <div class="card help-card">
-      <h3>Privacy</h3>
-      <p>Work Profile keeps council and personal data fully separate. The council can't see your personal apps, photos, or browsing. If you leave the role, IT removes only the Work Profile — your personal stuff is untouched.</p>
-    </div>
-  `;
-}
-
-function handoverQrScript(qrPayload) {
-  const escaped = qrPayload.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  return `
-    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-    <script>
-      (function() {
-        const target = document.getElementById('qr-target');
-        if (!target) return;
-        target.textContent = '';
-        try {
-          new QRCode(target, {
-            text: '${escaped}',
-            width: 280,
-            height: 280,
-            correctLevel: QRCode.CorrectLevel.M
-          });
-        } catch (e) {
-          target.innerHTML = '<p class="error">QR rendering failed: ' + e.message + '</p>';
-        }
-      })();
-    </script>
   `;
 }
 
