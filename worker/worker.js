@@ -23,6 +23,22 @@ async function dispatch(request, env) {
   // CORS preflight
   if (request.method === 'OPTIONS') return corsResponse();
 
+  // enrol.it-wsc.com is a public-only host. The only thing it should
+  // serve is /h/{token} (staff handover walkthroughs) and the matching
+  // /api/intune/handover/* endpoints. Everything else (including the
+  // SPA root) bounces to assets.it-wsc.com where CF Access SSO works.
+  // Without this, visiting https://enrol.it-wsc.com/ would load the
+  // SPA, which immediately 401s because no SSO header is injected
+  // (CF Access doesn't gate this hostname — by design, so the public
+  // /h/{token} path stays accessible to staff without SSO).
+  if (url.hostname === 'enrol.it-wsc.com') {
+    const isHandoverPath = url.pathname.startsWith('/h/');
+    const isHandoverApi = url.pathname.startsWith('/api/intune/handover/');
+    if (!isHandoverPath && !isHandoverApi) {
+      return Response.redirect('https://assets.it-wsc.com/#/intune-enrol', 302);
+    }
+  }
+
   // Auth identity endpoint — checks SSO email against internal users (no prior auth needed)
   if (url.pathname === '/api/auth/identify' && request.method === 'POST') {
     try { return await authIdentify(request, env); }
@@ -2518,6 +2534,9 @@ async function purgeAsset(request, env, assetId) {
     env.DB.prepare('DELETE FROM maintenance_log WHERE asset_id = ?').bind(assetId),
     env.DB.prepare('DELETE FROM audit_items WHERE asset_id = ?').bind(assetId),
     env.DB.prepare('DELETE FROM asset_issues WHERE asset_id = ?').bind(assetId),
+    env.DB.prepare('DELETE FROM asset_flags WHERE asset_id = ?').bind(assetId),
+    env.DB.prepare('DELETE FROM loans WHERE asset_id = ?').bind(assetId),
+    env.DB.prepare('DELETE FROM intune_handovers WHERE asset_id = ?').bind(assetId),
     env.DB.prepare('DELETE FROM assets WHERE id = ?').bind(assetId)
   ]);
 
