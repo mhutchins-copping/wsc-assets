@@ -19,17 +19,12 @@ database_id = "5e966e81-a2b2-4fe7-9b2b-ee29cb02d4e6"
 binding = "IMAGES"
 bucket_name = "wsc-assets-images"
 
-# KV namespace for Microsoft Graph access-token caching. Optional; if not
-# bound the worker still functions but fetches a fresh token on every
-# Graph call (slower; will hit AAD rate limits under heavy wizard use).
-#
-# To create:
-#   wrangler kv namespace create KV_GRAPH
-# then paste the returned id below and uncomment the block.
-#
-# [[kv_namespaces]]
-# binding = "KV_GRAPH"
-# id = "REPLACE_WITH_NAMESPACE_ID"
+# KV namespace for Microsoft Graph access-token caching. Optional but
+# strongly recommended — without it every Graph call fetches a fresh
+# access token (slower; will trip AAD rate limits under heavy use).
+[[kv_namespaces]]
+binding = "KV_GRAPH"
+id = "a45f445d79ce4bd9ae19edcfd357bf8f"
 
 # Scheduled triggers — handover-row cleanup every 6 hours.
 [triggers]
