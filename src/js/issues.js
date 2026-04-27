@@ -68,7 +68,7 @@ async function loadIssues() {
       }},
       { key: '__actions', label: 'Actions', render: function(r) {
         var btns = '';
-        if (r.status === 'pending' && Auth.isAdmin()) {
+        if (r.status === 'pending' && Auth.isManager()) {
           btns += '<button class="btn sm" onclick="event.stopPropagation();resendIssue(\'' + esc(r.id) + '\')">Resend</button>';
           btns += ' <button class="btn sm" onclick="event.stopPropagation();cancelIssueConfirm(\'' + esc(r.id) + '\')">Cancel</button>';
         }

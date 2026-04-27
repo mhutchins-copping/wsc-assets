@@ -85,7 +85,7 @@ function renderAssetList() {
     + '<div class="toolbar-right">'
     + '<button class="btn sm" onclick="printFilteredLabels()">Print labels</button>'
     + '<button class="btn sm" onclick="exportAssetCSV()">Export CSV</button>'
-    + (Auth.isAdmin() ? '<button class="btn primary sm" onclick="navigate(\'#/assets/new\')">+ New Asset</button>' : '')
+    + (Auth.isUser() ? '<button class="btn primary sm" onclick="navigate(\'#/assets/new\')">+ New Asset</button>' : '')
     + '</div></div>'
     + '<div id="asset-filters"></div>'
     + '<div id="asset-selection-bar" style="display:none"></div>'
@@ -428,11 +428,15 @@ function renderAssetSelectionBar() {
   bar.style.borderRadius = '6px';
   bar.style.margin = '8px 0';
   var html = '<span style="font-size:13px"><strong>' + n + '</strong> selected</span>';
-  if (Auth.isAdmin()) {
+  if (Auth.isUser()) {
     html += '<button class="btn primary sm" onclick="openBulkCheckout()">Check out</button>'
-      + '<button class="btn sm" onclick="openBulkCheckin()">Check in</button>'
-      + '<button class="btn sm" onclick="openBulkStatusChange()">Change status</button>'
-      + '<button class="btn danger sm" onclick="bulkDisposeAssets()">Dispose</button>';
+      + '<button class="btn sm" onclick="openBulkCheckin()">Check in</button>';
+  }
+  if (Auth.isManager()) {
+    html += '<button class="btn sm" onclick="openBulkStatusChange()">Change status</button>';
+  }
+  if (Auth.isAdmin()) {
+    html += '<button class="btn danger sm" onclick="bulkDisposeAssets()">Dispose</button>';
   }
   html += '<button class="btn sm" onclick="printSelectedLabels()">Print labels</button>'
     + '<button class="btn sm" onclick="clearAssetSelection()">Clear</button>';
@@ -570,11 +574,8 @@ async function renderAssetDetail(id, preloaded) {
       + '</div>'
       + '<div class="detail-header-actions">';
 
-    if (Auth.isAdmin()) {
+    if (Auth.isUser()) {
       if (asset.status === 'available') {
-        // Loaner-pool assets get their own Loan flow so the operator picks a
-        // due date up front; regular assets stick with the permanent-checkout
-        // button that doesn't carry a return expectation.
         if (asset.is_loaner) {
           html += '<button class="btn primary sm" onclick="openLoanModal(\'' + esc(asset.id) + '\')">Loan out</button>';
         } else {
@@ -588,8 +589,12 @@ async function renderAssetDetail(id, preloaded) {
           html += '<button class="btn sm" onclick="openCheckin(\'' + esc(asset.id) + '\')">Check In</button>';
         }
       }
-      html += '<button class="btn sm" onclick="navigate(\'#/assets/edit/' + esc(asset.id) + '\')">Edit</button>'
-        + '<button class="btn sm" onclick="openMaintenanceForm(\'' + esc(asset.id) + '\')">+ Maintenance</button>';
+    }
+    if (Auth.canEditAsset(asset)) {
+      html += '<button class="btn sm" onclick="navigate(\'#/assets/edit/' + esc(asset.id) + '\')">Edit</button>';
+    }
+    if (Auth.isUser()) {
+      html += '<button class="btn sm" onclick="openMaintenanceForm(\'' + esc(asset.id) + '\')">+ Maintenance</button>';
     }
     // Print is safe for any role — it's a read operation against the asset.
     html += '<button class="btn sm" onclick="printAssetLabel(\'' + esc(asset.id) + '\')">Print</button>';
@@ -598,7 +603,7 @@ async function renderAssetDetail(id, preloaded) {
     // asset is theirs. Admins keep the button so support staff can raise an internal
     // flag on behalf of a caller who can't sign in.
     html += '<button class="btn sm" onclick="openFlagModal(\'' + esc(asset.id) + '\')">Flag a problem</button>';
-    if (Auth.isAdmin()) {
+    if (Auth.canDeleteAsset(asset)) {
       html += '<button class="btn danger sm" onclick="permanentDeleteAsset(\'' + esc(asset.id) + '\')">Delete</button>';
     }
     html += '</div></div>';
@@ -762,9 +767,9 @@ async function renderAssetDetail(id, preloaded) {
     html += '<div id="asset-tab-receipts" class="asset-tab-content" style="display:none">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
       + '<div style="font-size:12px;color:var(--text3)">Signed receipts for this asset</div>';
-    if (Auth.isAdmin() && asset.assigned_to) {
+    if (Auth.isManager() && asset.assigned_to) {
       html += '<button class="btn primary sm" onclick="sendAssetIssue(\'' + esc(asset.id) + '\',\'' + esc(asset.assigned_to) + '\')">Email signing link to ' + esc(asset.assigned_to_name || 'recipient') + '</button>';
-    } else if (Auth.isAdmin()) {
+    } else if (Auth.isManager()) {
       html += '<span style="font-size:11px;color:var(--text3)">Assign the asset to someone to email them a receipt link.</span>';
     } else {
       html += '<span></span>';
@@ -988,7 +993,7 @@ async function loadAssetIssues(assetId) {
         + '<td class="mono">' + fmtDate(r.issued_at) + '</td>'
         + '<td class="mono">' + (r.signed_at ? fmtDate(r.signed_at) : '—') + '</td>'
         + '<td>';
-      if (r.status === 'pending' && Auth.isAdmin()) {
+      if (r.status === 'pending' && Auth.isManager()) {
         html += '<button class="btn sm" onclick="resendIssue(\'' + esc(r.id) + '\').then(function(){ loadAssetIssues(\'' + esc(assetId) + '\'); })">Resend</button> '
           + '<button class="btn sm" onclick="cancelIssueConfirm(\'' + esc(r.id) + '\').then(function(){ loadAssetIssues(\'' + esc(assetId) + '\'); })">Cancel</button>';
       } else if (r.status === 'signed') {
@@ -1043,14 +1048,33 @@ window.printFilteredLabels = printFilteredLabels;
 
 async function renderAssetForm(editId) {
   var el = document.getElementById('view-asset-form');
-  if (!Auth.isAdmin()) {
+  if (!Auth.isUser()) {
     el.innerHTML = '<div style="max-width:520px;margin:40px auto;padding:24px;background:var(--surface);border:1px solid var(--border);border-radius:12px;text-align:center">'
       + '<div style="font-size:40px;margin-bottom:12px">&#128274;</div>'
-      + '<h2 style="margin:0 0 8px;font-size:17px">Admin access required</h2>'
-      + '<p style="margin:0 0 16px;font-size:13px;color:var(--text2)">Creating and editing assets is restricted to administrators.</p>'
+      + '<h2 style="margin:0 0 8px;font-size:17px">Access required</h2>'
+      + '<p style="margin:0 0 16px;font-size:13px;color:var(--text2)">Creating and editing assets requires operator access.</p>'
       + '<button class="btn" onclick="history.back()">Back</button>'
       + '</div>';
     return;
+  }
+
+  // When editing, users can only edit their own assets
+  if (editId && !Auth.isManager()) {
+    try {
+      var checkAsset = await API.getAsset(editId);
+      if (!Auth.canEditAsset(checkAsset)) {
+        el.innerHTML = '<div style="max-width:520px;margin:40px auto;padding:24px;background:var(--surface);border:1px solid var(--border);border-radius:12px;text-align:center">'
+          + '<div style="font-size:40px;margin-bottom:12px">&#128274;</div>'
+          + '<h2 style="margin:0 0 8px;font-size:17px">Access required</h2>'
+          + '<p style="margin:0 0 16px;font-size:13px;color:var(--text2)">You can only edit assets you created.</p>'
+          + '<button class="btn" onclick="history.back()">Back</button>'
+          + '</div>';
+        return;
+      }
+    } catch(e) {
+      el.innerHTML = '<div class="table-empty">Asset not found</div>';
+      return;
+    }
   }
   el.innerHTML = skeleton(10);
 

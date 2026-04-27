@@ -19,7 +19,7 @@ function renderPeopleList() {
     + '<input type="text" placeholder="Search people..." value="' + esc(_peopleSearch) + '" oninput="peopleSearchDebounced(this.value)"></div>'
     + '</div>'
     + '<div class="toolbar-right">'
-    + (Auth.isAdmin() ? '<button class="btn primary sm" onclick="openPersonForm()">+ New Person</button>' : '')
+    + (Auth.isManager() ? '<button class="btn primary sm" onclick="openPersonForm()">+ New Person</button>' : '')
     + '</div></div>'
     + '<div id="people-filters"></div>'
     + '<div id="people-table">' + skeleton(6) + '</div>';
@@ -125,8 +125,8 @@ async function renderPersonDetail(id) {
     if (person.department) html += '<span>&middot; ' + esc(person.department) + '</span>';
     html += '</div></div>'
       + '<div class="detail-header-actions">'
-      + (Auth.isAdmin() ? '<button class="btn sm" onclick="openPersonForm(\'' + esc(person.id) + '\')">Edit</button>' : '')
-      + (Auth.isAdmin() ? '<button class="btn danger sm" onclick="deactivatePerson(\'' + esc(person.id) + '\')">Deactivate</button>' : '')
+      + (Auth.isManager() ? '<button class="btn sm" onclick="openPersonForm(\'' + esc(person.id) + '\')">Edit</button>' : '')
+      + (Auth.isManager() ? '<button class="btn danger sm" onclick="deactivatePerson(\'' + esc(person.id) + '\')">Deactivate</button>' : '')
       + '</div></div>';
 
     // Contact info card

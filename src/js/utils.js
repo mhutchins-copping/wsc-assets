@@ -224,14 +224,21 @@ document.addEventListener('keydown', function(e) {
 // asset results. Each entry declares its admin-ness so non-admins only
 // see actions they can actually take.
 function commandPaletteActions() {
-  var admin = Auth.isAdmin && Auth.isAdmin();
+  var isAdmin = Auth.isAdmin && Auth.isAdmin();
+  var isManager = Auth.isManager && Auth.isManager();
+  var isUser = Auth.isUser && Auth.isUser();
   var items = [
     { label: 'Go to Assets', hint: 'a', icon: 'assets', run: function() { navigate('#/assets'); } },
     { label: 'Your account', hint: 'me', icon: 'user', run: function() { navigate('#/account'); } }
   ];
-  if (admin) {
+  if (isUser) {
     items.unshift(
       { label: 'New asset', hint: 'ctrl+n', icon: 'plus', run: function() { navigate('#/assets/new'); } },
+      { label: 'Register a phone', icon: 'phone', run: function() { navigate('#/phone-enrol'); } }
+    );
+  }
+  if (isManager) {
+    items.unshift(
       { label: 'Go to Dashboard', hint: 'home', icon: 'grid', run: function() { navigate('#/'); } }
     );
     items.push(
@@ -240,8 +247,11 @@ function commandPaletteActions() {
       { label: 'Go to Audits', icon: 'check', run: function() { navigate('#/audits'); } },
       { label: 'Go to Reports', icon: 'chart', run: function() { navigate('#/reports'); } },
       { label: 'Go to Receipts', icon: 'file', run: function() { navigate('#/issues'); } },
-      { label: 'Go to Flags', icon: 'flag', run: function() { navigate('#/flags'); } },
-      { label: 'Register a phone', icon: 'phone', run: function() { navigate('#/phone-enrol'); } },
+      { label: 'Go to Flags', icon: 'flag', run: function() { navigate('#/flags'); } }
+    );
+  }
+  if (isAdmin) {
+    items.push(
       { label: 'Settings', icon: 'gear', run: function() { navigate('#/settings'); } },
       { label: 'Sync Entra users', hint: 'from Settings', icon: 'sync', run: function() {
         navigate('#/settings');

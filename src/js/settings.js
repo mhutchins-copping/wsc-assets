@@ -25,11 +25,19 @@ function renderSettings(activeTab) {
   var role = Auth.user ? Auth.user.role : '—';
 
   var tabs = [
-    { id: 'general', label: 'General' },
-    { id: 'users', label: 'Users' },
-    { id: 'sync', label: 'Sync' },
-    { id: 'import-export', label: 'Import-Export' }
+    { id: 'general', label: 'General' }
   ];
+  if (Auth.isAdmin()) {
+    tabs.push({ id: 'users', label: 'Users' });
+    tabs.push({ id: 'sync', label: 'Sync' });
+  }
+  if (Auth.isManager()) {
+    tabs.push({ id: 'import-export', label: 'Import-Export' });
+  }
+
+  // If the persisted active tab is no longer visible, fall back to general
+  var tabIds = tabs.map(function(t) { return t.id; });
+  if (tabIds.indexOf(activeTab) === -1) activeTab = 'general';
 
   var html = '<div class="settings-page">';
 
@@ -89,36 +97,41 @@ function renderSettings(activeTab) {
     + '</div>';
 
   // ── Users ──
-  html += '<div id="settings-tab-users" class="settings-tab-content"' + (activeTab === 'users' ? '' : ' style="display:none"') + '>'
-    + '<div class="settings-section">'
-    + '<div class="settings-card">'
-    + '<div class="settings-card-header">User Management'
-    + '<button class="btn sm primary" style="margin-left:auto" onclick="openAddUserModal()">+ Add</button>'
-    + '</div>'
-    + '<div class="settings-card-body">'
-    + '<div id="user-list-container">Loading...</div>'
-    + '</div></div>'
-    + '</div>'
-    + '</div>';
+  if (Auth.isAdmin()) {
+    html += '<div id="settings-tab-users" class="settings-tab-content"' + (activeTab === 'users' ? '' : ' style="display:none"') + '>'
+      + '<div class="settings-section">'
+      + '<div class="settings-card">'
+      + '<div class="settings-card-header">User Management'
+      + '<button class="btn sm primary" style="margin-left:auto" onclick="openAddUserModal()">+ Add</button>'
+      + '</div>'
+      + '<div class="settings-card-body">'
+      + '<div id="user-list-container">Loading...</div>'
+      + '</div></div>'
+      + '</div>'
+      + '</div>';
+  }
 
   // ── Sync ──
-  html += '<div id="settings-tab-sync" class="settings-tab-content"' + (activeTab === 'sync' ? '' : ' style="display:none"') + '>'
-    + '<div class="settings-section">'
-    + '<div class="settings-card">'
-    + '<div class="settings-card-header">Entra ID Sync</div>'
-    + '<div class="settings-card-body">'
-    + '<div class="form-hint" style="margin-bottom:12px">Pulls active council staff from Microsoft Entra into the People directory. Credentials live on the server as Wrangler secrets — set with <code>wrangler secret put ENTRA_TENANT_ID</code>, <code>ENTRA_CLIENT_ID</code>, and <code>ENTRA_CLIENT_SECRET</code>. The app only triggers the sync; it never holds the client secret in the browser.</div>'
-    + '<div id="entra-status" class="entra-status pending">Checking configuration…</div>'
-    + '<div style="display:flex;gap:8px;margin-top:12px">'
-    + '<button id="entra-sync-btn" class="btn primary sm" onclick="syncEntraUsers()" disabled>Sync Users</button>'
-    + '</div>'
-    + '<div id="entra-sync-result" style="margin-top:12px"></div>'
-    + '</div></div>'
-    + '</div>'
-    + '</div>';
+  if (Auth.isAdmin()) {
+    html += '<div id="settings-tab-sync" class="settings-tab-content"' + (activeTab === 'sync' ? '' : ' style="display:none"') + '>'
+      + '<div class="settings-section">'
+      + '<div class="settings-card">'
+      + '<div class="settings-card-header">Entra ID Sync</div>'
+      + '<div class="settings-card-body">'
+      + '<div class="form-hint" style="margin-bottom:12px">Pulls active council staff from Microsoft Entra into the People directory. Credentials live on the server as Wrangler secrets — set with <code>wrangler secret put ENTRA_TENANT_ID</code>, <code>ENTRA_CLIENT_ID</code>, and <code>ENTRA_CLIENT_SECRET</code>. The app only triggers the sync; it never holds the client secret in the browser.</div>'
+      + '<div id="entra-status" class="entra-status pending">Checking configuration…</div>'
+      + '<div style="display:flex;gap:8px;margin-top:12px">'
+      + '<button id="entra-sync-btn" class="btn primary sm" onclick="syncEntraUsers()" disabled>Sync Users</button>'
+      + '</div>'
+      + '<div id="entra-sync-result" style="margin-top:12px"></div>'
+      + '</div></div>'
+      + '</div>'
+      + '</div>';
+  }
 
   // ── Import-Export ──
-  html += '<div id="settings-tab-import-export" class="settings-tab-content"' + (activeTab === 'import-export' ? '' : ' style="display:none"') + '>'
+  if (Auth.isManager()) {
+    html += '<div id="settings-tab-import-export" class="settings-tab-content"' + (activeTab === 'import-export' ? '' : ' style="display:none"') + '>'
     + '<div class="settings-section">'
     + '<div class="settings-card">'
     + '<div class="settings-card-header">Import from CSV</div>'
@@ -149,6 +162,7 @@ function renderSettings(activeTab) {
     + '</div></div>'
     + '</div>'
     + '</div>';
+  }
 
   html += '</div>';
   return html;
@@ -301,7 +315,7 @@ function openAddUserModal() {
   openModal('Add User',
     '<div class="form-group"><label class="form-label">Email</label><input type="email" id="au-email" class="form-input" placeholder="user@walgett.nsw.gov.au"></div>' +
     '<div class="form-group"><label class="form-label">Display Name</label><input type="text" id="au-name" class="form-input" placeholder="Full name"></div>' +
-    '<div class="form-group"><label class="form-label">Role</label><select id="au-role" class="form-select"><option value="user">User</option><option value="admin">Admin</option></select></div>' +
+    '<div class="form-group"><label class="form-label">Role</label><select id="au-role" class="form-select"><option value="viewer">Viewer</option><option value="user">User</option><option value="manager">Manager</option><option value="admin">Admin</option></select></div>' +
     '<div class="form-group"><label class="co-ack-label" style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">' +
       '<input type="checkbox" id="au-notifications">' +
       '<span>Receive admin email notifications<div style="font-size:11px;color:var(--text3);font-weight:400">Off by default. Tick only for admins who should get every asset / user / security event.</div></span>' +
@@ -331,7 +345,7 @@ function openEditUser(id, email, name, role, active, notificationsEnabled) {
   openModal('Edit User',
     '<div class="form-group"><label class="form-label">Email</label><input type="email" id="eu-email" class="form-input" value="' + esc(email) + '"></div>' +
     '<div class="form-group"><label class="form-label">Name</label><input type="text" id="eu-name" class="form-input" value="' + esc(name) + '"></div>' +
-    '<div class="form-group"><label class="form-label">Role</label><select id="eu-role" class="form-select"><option value="user">User</option><option value="admin">Admin</option></select></div>' +
+    '<div class="form-group"><label class="form-label">Role</label><select id="eu-role" class="form-select"><option value="viewer">Viewer</option><option value="user">User</option><option value="manager">Manager</option><option value="admin">Admin</option></select></div>' +
     '<div class="form-group"><label class="form-label">Status</label><select id="eu-active" class="form-select"><option value="1">Active</option><option value="0">Disabled</option></select></div>' +
     '<div class="form-group"><label class="co-ack-label" style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">' +
       '<input type="checkbox" id="eu-notifications">' +

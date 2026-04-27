@@ -233,6 +233,28 @@ var Auth = {
     return this.user && this.user.role === 'admin';
   },
 
+  isManager: function() {
+    return this.user && (this.user.role === 'admin' || this.user.role === 'manager');
+  },
+
+  isUser: function() {
+    return this.user && (this.user.role === 'admin' || this.user.role === 'manager' || this.user.role === 'user');
+  },
+
+  canEditAsset: function(asset) {
+    if (!this.user || !asset) return false;
+    if (this.user.role === 'admin' || this.user.role === 'manager') return true;
+    // user role: can edit own assets
+    return asset.created_by === this.user.id;
+  },
+
+  canDeleteAsset: function(asset) {
+    if (!this.user || !asset) return false;
+    if (this.user.role === 'admin') return true;
+    // manager/user: can delete own assets
+    return asset.created_by === this.user.id;
+  },
+
   getEmail: function() {
     return this.user ? this.user.email : '';
   }
@@ -245,6 +267,19 @@ function showApp() {
   // "+ New Asset" button and similar) without each view having to
   // re-check Auth.isAdmin() every render.
   document.body.classList.toggle('is-admin', !!(Auth.user && Auth.user.role === 'admin'));
+  document.body.classList.toggle('is-manager', !!(Auth.user && (Auth.user.role === 'admin' || Auth.user.role === 'manager')));
+  document.body.classList.toggle('is-user', !!(Auth.user && (Auth.user.role === 'admin' || Auth.user.role === 'manager' || Auth.user.role === 'user')));
+
+  // Show/hide sidebar nav items based on role
+  document.querySelectorAll('.nav-item').forEach(function(el) {
+    var req = el.dataset.require || '';
+    var visible = false;
+    if (!req) visible = true;
+    else if (req === 'user') visible = Auth.user && (Auth.user.role === 'user' || Auth.user.role === 'manager' || Auth.user.role === 'admin');
+    else if (req === 'manager') visible = Auth.user && (Auth.user.role === 'manager' || Auth.user.role === 'admin');
+    else if (req === 'admin') visible = Auth.user && Auth.user.role === 'admin';
+    el.style.display = visible ? 'flex' : 'none';
+  });
   // Localise the Ctrl/Cmd keyboard hint on first show so Mac users
   // don't see the wrong shortcut glyph.
   var kbd = document.querySelector('.topbar-kbd');

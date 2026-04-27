@@ -172,7 +172,7 @@ window.submitResolveFlag = submitResolveFlag;
 async function updateFlagsBadge() {
   var badge = document.getElementById('flags-badge');
   if (!badge) return;
-  if (!Auth.isAdmin || !Auth.isAdmin()) { badge.style.display = 'none'; return; }
+  if (!Auth.isAdmin || !Auth.isManager()) { badge.style.display = 'none'; return; }
   try {
     var res = await API.getFlags({ status: 'open', limit: 200 });
     var n = (res.data || []).length;

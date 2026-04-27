@@ -16,13 +16,18 @@ var Router = {
     var route = '/' + (parts[0] || '');
     var param = parts.slice(1).join('/');
 
-    // Non-admins don't get dashboard/audits/receipts/etc — the sidebar
-    // hides those nav items, but someone could still land on them via a
-    // bookmark or typed hash. Bounce them back to the one view they can use.
-    var adminOnly = ['/', '/people', '/categories', '/audits', '/reports', '/issues', '/flags', '/loans', '/settings'];
-    if (Auth.user && Auth.user.role !== 'admin' && adminOnly.indexOf(route) !== -1) {
-      location.hash = '#/assets';
-      return;
+    // Role-based view gating. Matches the sidebar nav visibility.
+    var role = Auth.user ? Auth.user.role : '';
+    if (role !== 'admin') {
+      var blocked = [];
+      if (role === 'viewer' || role === 'user') {
+        blocked = ['/', '/people', '/categories', '/audits', '/reports', '/issues', '/flags', '/loans'];
+      }
+      // Settings is allowed for user+ but individual tabs are gated in renderSettings
+      if (blocked.indexOf(route) !== -1) {
+        location.hash = '#/assets';
+        return;
+      }
     }
 
     // Find the matching view

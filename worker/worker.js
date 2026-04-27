@@ -2388,7 +2388,6 @@ async function updateAsset(request, env, assetId) {
     }
   }
 
-  const user = request._user;
   const performed_by = user ? (user.display_name || user.email) : null;
   await logActivity(env, {
     asset_id: assetId,

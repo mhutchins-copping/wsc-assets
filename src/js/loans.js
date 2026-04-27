@@ -182,7 +182,7 @@ window.submitLoan = submitLoan;
 async function updateLoansBadge() {
   var badge = document.getElementById('loans-badge');
   if (!badge) return;
-  if (!Auth.isAdmin || !Auth.isAdmin()) { badge.style.display = 'none'; return; }
+  if (!Auth.isAdmin || !Auth.isManager()) { badge.style.display = 'none'; return; }
   try {
     var res = await API.getLoans({ filter: 'overdue', limit: 200 });
     var n = (res.data || []).length;
