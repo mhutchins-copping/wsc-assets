@@ -912,6 +912,18 @@ function now() {
   return new Date().toLocaleString('sv-SE', { timeZone: 'Australia/Sydney' }).replace('T', ' ').slice(0, 19);
 }
 
+function safeJsonStringify(value, fallback) {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === 'string') return value;
+  try { return JSON.stringify(value); } catch (e) { return fallback; }
+}
+
+function safeJsonParse(value, fallback) {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== 'string') return value;
+  try { return JSON.parse(value); } catch (e) { return fallback; }
+}
+
 async function body(request) {
   return request.json();
 }
@@ -1006,8 +1018,13 @@ async function listAssets(request, env, url) {
 
   const result = await env.DB.prepare(query).bind(...binds, limit, offset).all();
 
+  const rows = result.results.map(r => ({
+    ...r,
+    metadata: safeJsonParse(r.metadata, {})
+  }));
+
   return json({
-    data: result.results,
+    data: rows,
     total: countResult.total,
     page,
     limit,
@@ -1040,6 +1057,8 @@ async function getAsset(env, assetId, request) {
       return json({ error: 'Asset not found' }, 404);
     }
   }
+
+  asset.metadata = safeJsonParse(asset.metadata, {});
 
   // Get activity history
   const history = await env.DB.prepare(`
@@ -1107,8 +1126,8 @@ async function createAsset(request, env) {
       notes, image_url, hostname, os, cpu, ram_gb, disk_gb, mac_address, ip_address, enrolled_user,
       phone_number, carrier,
       is_loaner,
-      location_id, assigned_to, assigned_date, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      location_id, assigned_to, assigned_date, metadata, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     assetId, tag, data.name, data.serial_number || null, data.category_id || null,
     data.manufacturer || null, data.model || null, data.status || 'available',
@@ -1122,7 +1141,9 @@ async function createAsset(request, env) {
     data.phone_number || null, data.carrier || null,
     data.is_loaner ? 1 : 0,
     data.location_id || null,
-    data.assigned_to || null, data.assigned_to ? ts : null, ts, ts
+    data.assigned_to || null, data.assigned_to ? ts : null,
+    safeJsonStringify(data.metadata, '{}'),
+    ts, ts
   ).run();
 
   // If assigned on creation, set status to deployed
@@ -2286,7 +2307,7 @@ async function updateAsset(request, env, assetId) {
       phone_number = ?, carrier = ?,
       is_loaner = ?,
       location_id = ?,
-      assigned_to = ?, assigned_date = ?, updated_at = ?
+      assigned_to = ?, assigned_date = ?, metadata = ?, updated_at = ?
     WHERE id = ?
   `).bind(
     data.asset_tag !== undefined ? data.asset_tag : existing.asset_tag,
@@ -2319,6 +2340,7 @@ async function updateAsset(request, env, assetId) {
     data.location_id !== undefined ? data.location_id : existing.location_id,
     data.assigned_to !== undefined ? data.assigned_to : existing.assigned_to,
     data.assigned_to !== undefined && data.assigned_to !== existing.assigned_to ? ts : existing.assigned_date,
+    data.metadata !== undefined ? safeJsonStringify(data.metadata, '{}') : existing.metadata,
     ts,
     assetId
   ).run();
@@ -2468,6 +2490,7 @@ async function checkoutAsset(request, env, assetId) {
     WHERE a.id = ?
   `).bind(assetId).first();
 
+  if (updated) updated.metadata = safeJsonParse(updated.metadata, {});
   return json({ ok: true, asset: updated });
 }
 
@@ -2536,6 +2559,7 @@ async function checkinAsset(request, env, assetId) {
     WHERE a.id = ?
   `).bind(assetId).first();
 
+  if (updated) updated.metadata = safeJsonParse(updated.metadata, {});
   return json({ ok: true, status: newStatus, asset: updated });
 }
 
@@ -2666,7 +2690,11 @@ async function getPerson(env, personId) {
     ORDER BY a.asset_tag ASC
   `).bind(personId).all();
 
-  return json({ ...person, assets: assets.results });
+  const assetsWithMeta = (assets.results || []).map(a => ({
+    ...a,
+    metadata: safeJsonParse(a.metadata, {})
+  }));
+  return json({ ...person, assets: assetsWithMeta });
 }
 
 async function createPerson(request, env) {
@@ -2755,7 +2783,11 @@ async function getLocation(env, locationId) {
     ORDER BY a.asset_tag ASC
   `).bind(locationId).all();
 
-  return json({ ...location, assets: assets.results });
+  const assetsWithMeta = (assets.results || []).map(a => ({
+    ...a,
+    metadata: safeJsonParse(a.metadata, {})
+  }));
+  return json({ ...location, assets: assetsWithMeta });
 }
 
 async function createLocation(request, env) {
@@ -2826,15 +2858,20 @@ async function listCategories(env) {
   `).all();
 
   // Build hierarchy
-  const parents = result.results.filter(c => !c.parent_id);
-  const children = result.results.filter(c => c.parent_id);
+  const flat = result.results.map(c => ({
+    ...c,
+    field_profile: safeJsonParse(c.field_profile, null)
+  }));
+
+  const parents = flat.filter(c => !c.parent_id);
+  const children = flat.filter(c => c.parent_id);
 
   const tree = parents.map(p => ({
     ...p,
     children: children.filter(c => c.parent_id === p.id)
   }));
 
-  return json({ data: tree, flat: result.results });
+  return json({ data: tree, flat });
 }
 
 async function createCategory(request, env) {
@@ -2843,9 +2880,9 @@ async function createCategory(request, env) {
 
   const categoryId = id();
   await env.DB.prepare(`
-    INSERT INTO categories (id, name, prefix, parent_id, icon, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).bind(categoryId, data.name, data.prefix, data.parent_id || null, data.icon || null, now()).run();
+    INSERT INTO categories (id, name, prefix, parent_id, icon, field_profile, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).bind(categoryId, data.name, data.prefix, data.parent_id || null, data.icon || null, safeJsonStringify(data.field_profile, null), now()).run();
 
   return json({ id: categoryId }, 201);
 }
@@ -2856,12 +2893,13 @@ async function updateCategory(request, env, categoryId) {
 
   const data = await body(request);
   await env.DB.prepare(`
-    UPDATE categories SET name = ?, prefix = ?, parent_id = ?, icon = ? WHERE id = ?
+    UPDATE categories SET name = ?, prefix = ?, parent_id = ?, icon = ?, field_profile = ? WHERE id = ?
   `).bind(
     data.name !== undefined ? data.name : existing.name,
     data.prefix !== undefined ? data.prefix : existing.prefix,
     data.parent_id !== undefined ? data.parent_id : existing.parent_id,
     data.icon !== undefined ? data.icon : existing.icon,
+    data.field_profile !== undefined ? safeJsonStringify(data.field_profile, null) : existing.field_profile,
     categoryId
   ).run();
 

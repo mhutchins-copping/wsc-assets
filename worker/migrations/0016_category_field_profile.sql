@@ -1,0 +1,1 @@
+ALTER TABLE categories ADD COLUMN field_profile TEXT DEFAULT NULL;

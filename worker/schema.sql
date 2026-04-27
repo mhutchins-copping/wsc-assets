@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS categories (
   prefix TEXT NOT NULL,
   parent_id TEXT REFERENCES categories(id),
   icon TEXT,
+  field_profile TEXT DEFAULT NULL,
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS assets (
   warranty_expiry TEXT,
   retirement_date TEXT,
   notes TEXT,
+  metadata TEXT DEFAULT '{}',
   image_url TEXT,
   -- Hardware specs (auto-populated by enrollment script)
   hostname TEXT,
