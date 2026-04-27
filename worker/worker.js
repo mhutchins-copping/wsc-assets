@@ -4,11 +4,16 @@
 import { notify, sendMail } from './lib/notify.js';
 import { ENROL_SCRIPT } from './lib/enrol-script.js';
 import { LOGO_BYTES } from './lib/logo.js';
+import { getGraphTokenCached } from './lib/graph.js';
+import * as intune from './lib/intune.js';
 
 export default {
   async fetch(request, env) {
     const response = await dispatch(request, env);
     return applyCors(response, request, env);
+  },
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(cleanupHandovers(env).catch(err => console.error('cleanupHandovers failed:', err)));
   }
 };
 
@@ -89,6 +94,19 @@ async function dispatch(request, env) {
     if (request.method === 'POST') {
       try { return await submitSignature(request, env, token); }
       catch (err) { return json({ error: err.message }, 500); }
+    }
+    return new Response('Method not allowed', { status: 405 });
+  }
+
+  // Public Intune handover page. Token-gated, same model as /sign/. The
+  // staff member receives this URL by email when their device is
+  // provisioned; they open it on any browser, follow the OS-specific
+  // walkthrough, scan the QR (Android) or sign in to Setup Assistant (iOS).
+  if (url.pathname.startsWith('/h/')) {
+    const token = url.pathname.slice('/h/'.length);
+    if (request.method === 'GET') {
+      try { return await renderHandoverPage(env, token); }
+      catch (err) { return new Response('Server error', { status: 500 }); }
     }
     return new Response('Method not allowed', { status: 405 });
   }
@@ -843,6 +861,43 @@ async function route(request, env, url) {
     });
   }
 
+  // ── Intune Enrolment — admin only ──
+  // Backend for the MDM enrolment helper. All routes call into Microsoft
+  // Graph via lib/intune.js (KV-cached token from lib/graph.js).
+  if (path === '/api/intune/profiles' && method === 'GET') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
+    return intuneListProfiles(env);
+  }
+  if (path === '/api/intune/health' && method === 'GET') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
+    return intuneHealth(env);
+  }
+  if (path === '/api/intune/preflight' && method === 'GET') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
+    return intunePreflight(env, url);
+  }
+  if (path === '/api/intune/people/search' && method === 'GET') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
+    return intunePeopleSearch(env, url);
+  }
+  if (path === '/api/intune/provision' && method === 'POST') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
+    return intuneProvision(request, env, url);
+  }
+  if (path.match(/^\/api\/intune\/device\/([^/]+)\/status$/) && method === 'GET') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
+    return intuneDeviceStatus(env, decodeURIComponent(path.match(/^\/api\/intune\/device\/([^/]+)\/status$/)[1]));
+  }
+  // Public token-gated handover routes (no auth — token IS the auth).
+  // Mounted under /api/intune/handover/{token} for the JSON API the staff
+  // page hits; the HTML page itself is at /h/{token}, handled in dispatch().
+  if (path.match(/^\/api\/intune\/handover\/([^/]+)$/) && method === 'GET') {
+    return intuneHandoverGet(env, path.match(/^\/api\/intune\/handover\/([^/]+)$/)[1]);
+  }
+  if (path.match(/^\/api\/intune\/handover\/([^/]+)\/ack$/) && method === 'POST') {
+    return intuneHandoverAck(env, path.match(/^\/api\/intune\/handover\/([^/]+)\/ack$/)[1]);
+  }
+
   return null;
 }
 
@@ -1189,14 +1244,32 @@ async function createAsset(request, env) {
 // are preserved; only the auto-collected hardware specs get overwritten.
 async function enrolDevice(request, env) {
   const data = await body(request);
+  const user = request._user;
+  const actor = user ? (user.display_name || user.email) : 'Enrolment Script';
+  try {
+    const result = await enrolDeviceImpl(env, data, { actor, actorEmail: user?.email });
+    return json(result, result.created ? 201 : 200);
+  } catch (err) {
+    if (err.status) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
+// Direct-call form of enrolDevice. Used by the Intune provision handler
+// to write to the asset register without an HTTP self-RPC. Accepts an
+// already-parsed payload + actor metadata; returns the same shape the
+// HTTP wrapper does. Validation errors are thrown with `.status` set so
+// the wrapper can translate them back into JSON 4xx responses.
+async function enrolDeviceImpl(env, data, { actor = 'Enrolment Script', actorEmail = null } = {}) {
   const serial = (data.serial_number || '').trim();
-  if (!serial) return json({ error: 'serial_number is required' }, 400);
+  if (!serial) {
+    const err = new Error('serial_number is required');
+    err.status = 400;
+    throw err;
+  }
 
   const ramGb = data.ram_gb != null ? parseInt(data.ram_gb) : null;
   const diskGb = data.disk_gb != null ? parseInt(data.disk_gb) : null;
-
-  const user = request._user;
-  const performed_by = user ? (user.display_name || user.email) : 'Enrolment Script';
 
   const existing = await env.DB.prepare('SELECT * FROM assets WHERE serial_number = ?').bind(serial).first();
 
@@ -1208,12 +1281,16 @@ async function enrolDevice(request, env) {
         mac_address = ?, ip_address = ?, enrolled_user = ?,
         manufacturer = COALESCE(?, manufacturer),
         model = COALESCE(?, model),
+        phone_number = COALESCE(?, phone_number),
+        carrier = COALESCE(?, carrier),
+        assigned_to = COALESCE(?, assigned_to),
         updated_at = ?
       WHERE id = ?
     `).bind(
       data.hostname || null, data.os || null, data.cpu || null, ramGb, diskGb,
       data.mac_address || null, data.ip_address || null, data.enrolled_user || null,
       data.manufacturer || null, data.model || null,
+      data.phone_number || null, data.carrier || null, data.assigned_to || null,
       ts, existing.id
     ).run();
 
@@ -1221,14 +1298,14 @@ async function enrolDevice(request, env) {
       asset_id: existing.id,
       action: 'enrol',
       details: `Refreshed specs via enrolment script${data.hostname ? ` (${data.hostname})` : ''}`,
-      performed_by
+      performed_by: actor
     });
 
-    return json({
+    return {
       id: existing.id,
       asset_tag: existing.asset_tag,
       created: false
-    });
+    };
   }
 
   // New device. Default category = laptop unless the script says otherwise
@@ -1245,13 +1322,15 @@ async function enrolDevice(request, env) {
     INSERT INTO assets (
       id, asset_tag, name, serial_number, category_id, manufacturer, model, status,
       hostname, os, cpu, ram_gb, disk_gb, mac_address, ip_address, enrolled_user,
+      phone_number, carrier, assigned_to,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     assetId, tag, name, serial, categoryId,
     data.manufacturer || null, data.model || null, 'available',
     data.hostname || null, data.os || null, data.cpu || null, ramGb, diskGb,
     data.mac_address || null, data.ip_address || null, data.enrolled_user || null,
+    data.phone_number || null, data.carrier || null, data.assigned_to || null,
     ts, ts
   ).run();
 
@@ -1259,22 +1338,22 @@ async function enrolDevice(request, env) {
     asset_id: assetId,
     action: 'create',
     details: `Enrolled ${tag}: ${name} (serial ${serial})`,
-    performed_by
+    performed_by: actor
   });
 
   try {
     await notify(env, 'asset_created', {
       asset: { id: assetId, asset_tag: tag, name },
-      actor: performed_by,
-      actorEmail: user?.email
+      actor,
+      actorEmail
     });
   } catch (e) { console.error('notify error:', e); }
 
-  return json({
+  return {
     id: assetId,
     asset_tag: tag,
     created: true
-  }, 201);
+  };
 }
 
 // ─── Asset Issues ──────────────────────────────
@@ -3587,25 +3666,14 @@ async function syncEntraUsers(request, env) {
 
   const data = await body(request).catch(() => ({}));
 
-  // Get access token via client credentials flow
-  const tokenRes = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      scope: 'https://graph.microsoft.com/.default',
-      grant_type: 'client_credentials',
-    }),
-  });
-
-  if (!tokenRes.ok) {
-    const err = await tokenRes.json().catch(() => ({}));
-    return json({ error: 'Entra auth failed: ' + (err.error_description || err.error || tokenRes.statusText) }, 401);
+  // Get access token (cached in KV when bound; falls back to fresh fetch
+  // when KV_GRAPH isn't configured). Same Entra app as notify.js + Intune.
+  let accessToken;
+  try {
+    accessToken = await getGraphTokenCached(env);
+  } catch (err) {
+    return json({ error: err.message }, 401);
   }
-
-  const tokenData = await tokenRes.json();
-  const accessToken = tokenData.access_token;
 
   // Fetch users from Microsoft Graph (paginated)
   let allUsers = [];
@@ -3721,5 +3789,666 @@ async function syncEntraUsers(request, env) {
     deactivated,
     errors: errors.slice(0, 20),
   });
+}
+
+// ─── Intune Enrolment ────────────────────────────────
+// Wizard backend for the MDM enrolment helper. Reads ABM / Android
+// Enterprise / Intune state via Microsoft Graph (lib/intune.js →
+// lib/graph.js with KV-cached token), writes the asset record via
+// enrolDeviceImpl(). Public handover URL at /h/{token} is served
+// from dispatch() at the top of this file (renderHandoverPage below).
+
+const HANDOVER_EXPIRY_DAYS = 14;
+const ANDROID_TOKEN_VALIDITY_SECONDS = 7776000;  // 90 days
+
+function generateHandoverToken() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const b64 = btoa(String.fromCharCode.apply(null, bytes));
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function handoverPublicUrl(token) {
+  return `https://enrol.it-wsc.com/h/${token}`;
+}
+
+function intuneOsLabel(os) {
+  return {
+    ios: 'iPhone (Council)',
+    android: 'Android (Council)',
+    aosp: 'Android (AOSP / Teams Device)',
+    byod_ios: 'Personal iPhone (BYOD)',
+    byod_android: 'Personal Android (BYOD)',
+  }[os] || os;
+}
+
+async function intuneListProfiles(env) {
+  try {
+    const profiles = await intune.getProfiles(env);
+    return json(profiles);
+  } catch (err) {
+    return json({ error: err.message }, err.status || 502);
+  }
+}
+
+async function intuneHealth(env) {
+  try {
+    const health = await intune.getEnrolmentHealth(env);
+    return json(health);
+  } catch (err) {
+    return json({ error: err.message }, err.status || 502);
+  }
+}
+
+async function intunePreflight(env, url) {
+  const serial = (url.searchParams.get('serial') || '').trim();
+  const os = (url.searchParams.get('os') || '').trim().toLowerCase();
+  if (!os) return json({ ready: false, reason: 'os parameter required (ios|android|aosp|byod_android|byod_ios)' }, 400);
+  try {
+    const result = await intune.preflight(env, { serial, os });
+    return json(result);
+  } catch (err) {
+    return json({ ready: false, reason: err.message }, err.status || 502);
+  }
+}
+
+async function intunePeopleSearch(env, url) {
+  const q = (url.searchParams.get('q') || '').trim();
+  if (q.length < 2) return json({ results: [] });
+  const like = `%${q}%`;
+  const r = await env.DB.prepare(`
+    SELECT id, name, email, department, position
+    FROM people
+    WHERE active = 1
+      AND source_system = 'entra'
+      AND (name LIKE ? OR email LIKE ?)
+    ORDER BY name ASC
+    LIMIT 25
+  `).bind(like, like).all();
+  return json({ results: r.results || [] });
+}
+
+// Provisioning workflow per OS:
+//   ios          : preflight ABM → assignUserToDepDevice → asset register write → handover row
+//   android      : preflight Android Enterprise → mint enrolment token → asset register write → handover row (with QR)
+//   byod_android : asset register write → handover row (instructions only, no Graph write)
+//   byod_ios     : asset register write → handover row (instructions only, no Graph write)
+//   aosp         : preflight → asset register write → handover row (no user pre-binding)
+//
+// Supports ?dry_run=1 — runs preflight + validation, returns the planned
+// writes as JSON without touching Graph or the database. Always safe.
+async function intuneProvision(request, env, url) {
+  const dryRun = url.searchParams.get('dry_run') === '1';
+  const data = await body(request).catch(() => ({}));
+
+  const personId = (data.person_id || '').trim();
+  const os = (data.os || '').trim().toLowerCase();
+  const serial = (data.serial_number || '').trim();
+  const phoneNumber = data.phone_number ? String(data.phone_number).trim() : null;
+  const carrier = data.carrier ? String(data.carrier).trim() : null;
+  const customName = data.name ? String(data.name).trim() : null;
+
+  if (!personId) return json({ error: 'person_id required' }, 400);
+  if (!os) return json({ error: 'os required' }, 400);
+
+  const validOs = ['ios', 'android', 'aosp', 'byod_android', 'byod_ios'];
+  if (!validOs.includes(os)) return json({ error: `os must be one of: ${validOs.join(', ')}` }, 400);
+
+  if (!serial && os !== 'byod_android' && os !== 'byod_ios') {
+    return json({ error: 'serial_number required for non-BYOD enrolment' }, 400);
+  }
+
+  const person = await env.DB.prepare('SELECT id, name, email, department FROM people WHERE id = ? AND active = 1').bind(personId).first();
+  if (!person) return json({ error: `Person ${personId} not found or inactive. Run the Entra sync if this is a new starter.` }, 400);
+
+  // Preflight (read-only Graph)
+  let preflightResult;
+  try {
+    preflightResult = await intune.preflight(env, { serial, os });
+  } catch (err) {
+    return json({ error: `Preflight failed: ${err.message}` }, err.status || 502);
+  }
+  if (!preflightResult.ready) {
+    return json({ error: preflightResult.reason, preflight: preflightResult }, 400);
+  }
+
+  const categoryId = data.category_id || 'cat_phone';
+  const actor = request._user ? (request._user.display_name || request._user.email) : 'Intune Wizard';
+  const actorEmail = request._user?.email || null;
+
+  const plan = {
+    os,
+    person: { id: person.id, name: person.name, email: person.email },
+    serial,
+    actor,
+    steps: [],
+  };
+
+  if (os === 'ios') {
+    plan.steps.push({
+      op: 'assignUserToDepDevice',
+      depTokenId: preflightResult.depTokenId,
+      depTokenName: preflightResult.depTokenName,
+      profileId: data.profile_id || null,
+      serial,
+      upn: person.email,
+      addressableUserName: person.name,
+    });
+  } else if (os === 'android' || os === 'aosp') {
+    const profileId = data.profile_id || preflightResult.profiles?.[0]?.id;
+    if (!profileId) return json({ error: 'No Android enrolment profile available. Pass profile_id explicitly.' }, 400);
+    plan.steps.push({
+      op: 'createAndroidEnrolmentToken',
+      profileId,
+      validitySeconds: ANDROID_TOKEN_VALIDITY_SECONDS,
+    });
+  }
+
+  plan.steps.push({
+    op: 'enrolDeviceImpl',
+    serial,
+    name: customName || `${person.name} — ${intuneOsLabel(os)}`,
+    category_id: categoryId,
+    phone_number: phoneNumber,
+    carrier,
+    assigned_to: person.id,
+    enrolled_user: person.email,
+  });
+
+  plan.steps.push({
+    op: 'createHandoverRow',
+    expires_in_days: HANDOVER_EXPIRY_DAYS,
+  });
+
+  if (dryRun) {
+    return json({ dry_run: true, plan });
+  }
+
+  const result = { plan_executed: [] };
+
+  // Step 1: per-OS Graph write
+  if (os === 'ios') {
+    try {
+      let profileId = data.profile_id;
+      if (!profileId) {
+        const profs = await intune.getAppleEnrolmentProfiles(env, preflightResult.depTokenId);
+        const def = profs.find(p => p.isDefault) || profs[0];
+        if (!def) throw new Error(`No Apple enrolment profile under token ${preflightResult.depTokenName}`);
+        profileId = def.id;
+      }
+      await intune.assignUserToDepDevice(env, {
+        depTokenId: preflightResult.depTokenId,
+        profileId,
+        serial,
+        upn: person.email,
+        addressableUserName: person.name,
+      });
+      result.plan_executed.push({ op: 'assignUserToDepDevice', ok: true, profileId });
+      plan.profile_id = profileId;
+    } catch (err) {
+      return json({ error: `assignUserToDepDevice failed: ${err.message}`, partial_result: result }, err.status || 502);
+    }
+  }
+
+  let qrPayload = null;
+  let qrExpiresAt = null;
+  let chosenProfileId = null;
+  if (os === 'android' || os === 'aosp') {
+    try {
+      chosenProfileId = data.profile_id || preflightResult.profiles?.[0]?.id;
+      const tokenRes = await intune.createAndroidEnrolmentToken(env, {
+        profileId: chosenProfileId,
+        validitySeconds: ANDROID_TOKEN_VALIDITY_SECONDS,
+      });
+      qrPayload = tokenRes?.qrCodeContent || null;
+      const profile = await intune.getAndroidEnrolmentProfile(env, chosenProfileId);
+      qrExpiresAt = profile?.tokenExpirationDateTime || null;
+      result.plan_executed.push({ op: 'createAndroidEnrolmentToken', ok: true, profileId: chosenProfileId });
+    } catch (err) {
+      return json({ error: `createAndroidEnrolmentToken failed: ${err.message}`, partial_result: result }, err.status || 502);
+    }
+  }
+
+  // Step 2: asset register write (in-process call to enrolDeviceImpl)
+  let asset;
+  try {
+    asset = await enrolDeviceImpl(env, {
+      serial_number: serial || `BYOD-${person.id}-${Date.now()}`,
+      name: customName || `${person.name} — ${intuneOsLabel(os)}`,
+      category_id: categoryId,
+      manufacturer: data.manufacturer || null,
+      model: data.model || null,
+      phone_number: phoneNumber,
+      carrier,
+      assigned_to: person.id,
+      enrolled_user: person.email,
+      os: intuneOsLabel(os),
+    }, { actor, actorEmail });
+    result.plan_executed.push({ op: 'enrolDeviceImpl', ok: true, asset_id: asset.id, asset_tag: asset.asset_tag, created: asset.created });
+  } catch (err) {
+    return json({ error: `Asset register write failed: ${err.message}`, partial_result: result }, err.status || 500);
+  }
+
+  // Step 3: handover row
+  const handoverToken = generateHandoverToken();
+  const expiresAt = new Date(Date.now() + HANDOVER_EXPIRY_DAYS * 86400_000).toISOString();
+  try {
+    await env.DB.prepare(`
+      INSERT INTO intune_handovers
+        (token, asset_id, person_id, serial, os, profile_id, profile_name, dep_token_id, qr_payload, qr_expires_at, created_by_email, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      handoverToken,
+      asset.id,
+      person.id,
+      serial || null,
+      os,
+      plan.profile_id || chosenProfileId || null,
+      data.profile_name || null,
+      preflightResult.depTokenId || null,
+      qrPayload,
+      qrExpiresAt,
+      actorEmail,
+      expiresAt,
+    ).run();
+    result.plan_executed.push({ op: 'createHandoverRow', ok: true, token: handoverToken });
+  } catch (err) {
+    return json({ error: `Handover row insert failed: ${err.message}`, partial_result: result }, 500);
+  }
+
+  await logActivity(env, {
+    asset_id: asset.id,
+    action: 'intune_provision',
+    details: JSON.stringify({ os, serial: serial || null, person_id: person.id, profile_id: plan.profile_id || chosenProfileId || null }),
+    performed_by: actor,
+    person_id: person.id,
+  });
+
+  return json({
+    ok: true,
+    asset_id: asset.id,
+    asset_tag: asset.asset_tag,
+    handover_token: handoverToken,
+    handover_url: handoverPublicUrl(handoverToken),
+    expires_at: expiresAt,
+    qr_available: !!qrPayload,
+    plan_executed: result.plan_executed,
+  }, 201);
+}
+
+async function intuneDeviceStatus(env, serial) {
+  if (!serial) return json({ error: 'serial required' }, 400);
+  try {
+    const md = await intune.getManagedDeviceBySerial(env, serial);
+    if (!md) return json({ enrolled: false });
+    return json({
+      enrolled: true,
+      managedDeviceId: md.id,
+      deviceName: md.deviceName,
+      operatingSystem: md.operatingSystem,
+      osVersion: md.osVersion,
+      complianceState: md.complianceState,
+      enrolledDateTime: md.enrolledDateTime,
+      lastSyncDateTime: md.lastSyncDateTime,
+      userPrincipalName: md.userPrincipalName,
+      managedDeviceOwnerType: md.managedDeviceOwnerType,
+    });
+  } catch (err) {
+    return json({ error: err.message }, err.status || 502);
+  }
+}
+
+async function intuneHandoverGet(env, token) {
+  const row = await env.DB.prepare(`
+    SELECT h.*, p.name AS person_name, p.email AS person_email,
+           a.asset_tag, a.name AS asset_name
+      FROM intune_handovers h
+      JOIN people p ON p.id = h.person_id
+      JOIN assets a ON a.id = h.asset_id
+     WHERE h.token = ?
+  `).bind(token).first();
+
+  if (!row) return json({ error: 'Not found' }, 404);
+
+  if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) {
+    if (row.status !== 'expired') {
+      await env.DB.prepare("UPDATE intune_handovers SET status = 'expired' WHERE token = ?").bind(token).run();
+    }
+    return json({ error: 'Handover link has expired. Ask IT for a fresh one.' }, 410);
+  }
+
+  if (!row.opened_at) {
+    const ts = now();
+    await env.DB.prepare("UPDATE intune_handovers SET opened_at = ?, status = CASE WHEN status = 'pending' THEN 'opened' ELSE status END WHERE token = ?").bind(ts, token).run();
+  }
+
+  return json({
+    token,
+    os: row.os,
+    person: { name: row.person_name, email: row.person_email },
+    asset: { tag: row.asset_tag, name: row.asset_name, serial: row.serial },
+    qr_payload: row.qr_payload,
+    qr_expires_at: row.qr_expires_at,
+    profile_name: row.profile_name,
+    expires_at: row.expires_at,
+    status: row.status,
+  });
+}
+
+async function intuneHandoverAck(env, token) {
+  const row = await env.DB.prepare("SELECT status FROM intune_handovers WHERE token = ?").bind(token).first();
+  if (!row) return json({ error: 'Not found' }, 404);
+  await env.DB.prepare("UPDATE intune_handovers SET enrolled_at = ?, status = 'enrolled' WHERE token = ?").bind(now(), token).run();
+  return json({ ok: true });
+}
+
+// ─── Intune handover HTML page (Phase 3) ─────────────
+// Server-rendered, no auth. Token IS the auth. Same model as
+// renderSigningPage. Triggered from dispatch() on /h/:token.
+
+function intuneHtmlResponse(html, status = 200) {
+  return new Response(html, {
+    status,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'no-referrer',
+    },
+  });
+}
+
+async function renderHandoverPage(env, token) {
+  const row = await env.DB.prepare(`
+    SELECT h.*, p.name AS person_name, p.email AS person_email,
+           a.asset_tag, a.name AS asset_name
+      FROM intune_handovers h
+      JOIN people p ON p.id = h.person_id
+      JOIN assets a ON a.id = h.asset_id
+     WHERE h.token = ?
+  `).bind(token).first();
+
+  if (!row) {
+    return intuneHtmlResponse(renderHandoverError('Link not found',
+      'This handover link doesn\'t exist or has been removed. Ask IT for a fresh one.'), 404);
+  }
+
+  if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) {
+    if (row.status !== 'expired') {
+      try {
+        await env.DB.prepare("UPDATE intune_handovers SET status = 'expired' WHERE token = ?").bind(token).run();
+      } catch {}
+    }
+    return intuneHtmlResponse(renderHandoverError('Link expired',
+      'This handover link has expired. Ask IT to send you a new one.'), 410);
+  }
+
+  if (!row.opened_at) {
+    try {
+      await env.DB.prepare(
+        "UPDATE intune_handovers SET opened_at = ?, status = CASE WHEN status = 'pending' THEN 'opened' ELSE status END WHERE token = ?"
+      ).bind(now(), token).run();
+    } catch {}
+  }
+
+  return intuneHtmlResponse(renderHandoverHtml(row, token));
+}
+
+function renderHandoverError(title, body) {
+  return handoverBaseLayout(title, `
+    <div class="card error-card">
+      <h1>${escapeHtml(title)}</h1>
+      <p>${escapeHtml(body)}</p>
+      <p class="muted">If you need help, contact Walgett Shire Council IT.</p>
+    </div>
+  `);
+}
+
+function renderHandoverHtml(row, token) {
+  const os = row.os;
+  const personName = row.person_name;
+  let stepsHtml;
+  if (os === 'ios') stepsHtml = handoverIosSteps(row);
+  else if (os === 'android' || os === 'aosp') stepsHtml = handoverAndroidSteps(row);
+  else if (os === 'byod_ios') stepsHtml = handoverByodIosSteps(row);
+  else if (os === 'byod_android') stepsHtml = handoverByodAndroidSteps(row);
+  else stepsHtml = `<p class="error">Unknown device type: ${escapeHtml(os)}</p>`;
+
+  const isAndroid = os === 'android' || os === 'aosp';
+
+  const body = `
+    <div class="handover">
+      <header class="handover-header">
+        <img src="https://api.it-wsc.com/logo.png" alt="Walgett Shire Council" class="logo">
+        <h1>Welcome, ${escapeHtml(personName.split(' ')[0])}</h1>
+        <p class="muted">Setting up your new ${escapeHtml(handoverOsLabel(os))}</p>
+      </header>
+      <main>
+        ${stepsHtml}
+        <div class="card ack-card">
+          <h2>Done?</h2>
+          <p>Once your device is set up and you can see Outlook + Teams + Authenticator, tap below so we know you're sorted.</p>
+          <button id="ack-btn" type="button">I'm all set up</button>
+          <p id="ack-msg" class="muted"></p>
+        </div>
+      </main>
+      <footer class="handover-footer">
+        <p>Trouble with any step? Call WSC IT or send Matthew a Teams message.</p>
+        <p class="muted">Asset ${escapeHtml(row.asset_tag)} · ${escapeHtml(row.serial || 'no serial')}</p>
+      </footer>
+    </div>
+    <script>
+      (function() {
+        const btn = document.getElementById('ack-btn');
+        const msg = document.getElementById('ack-msg');
+        btn?.addEventListener('click', async () => {
+          btn.disabled = true;
+          btn.textContent = 'Sending…';
+          try {
+            const res = await fetch('/api/intune/handover/${encodeURIComponent(token)}/ack', { method: 'POST' });
+            if (!res.ok) throw new Error('failed');
+            btn.textContent = '✓ Thanks!';
+            msg.textContent = 'IT has been notified. You can close this page.';
+          } catch (e) {
+            btn.disabled = false;
+            btn.textContent = "I'm all set up";
+            msg.textContent = "Couldn't reach IT — try again, or just close the page.";
+          }
+        });
+      })();
+    </script>
+    ${isAndroid && row.qr_payload ? handoverQrScript(row.qr_payload) : ''}
+  `;
+
+  return handoverBaseLayout(`Setting up your ${handoverOsLabel(os)}`, body);
+}
+
+function handoverOsLabel(os) {
+  return {
+    ios: 'iPhone',
+    android: 'Android',
+    aosp: 'Android device',
+    byod_ios: 'personal iPhone',
+    byod_android: 'personal Android',
+  }[os] || 'device';
+}
+
+function handoverIosSteps(row) {
+  return `
+    <ol class="steps">
+      <li><h3>Power on your iPhone</h3><p>Press and hold the side button until you see the Apple logo.</p></li>
+      <li><h3>Choose language &amp; region</h3><p>English (Australia).</p></li>
+      <li><h3>Connect to Wi-Fi</h3><p>Use your home Wi-Fi or a phone hotspot — anything with internet.</p></li>
+      <li><h3>"Remote Management" screen appears</h3><p>This means Walgett Shire Council is setting up your device. Tap <strong>Continue</strong>.</p></li>
+      <li><h3>Sign in with your council account</h3>
+        <p>Use <strong>${escapeHtml(row.person_email)}</strong> and your council password.</p>
+        <p>You'll be asked to approve via Microsoft Authenticator on your old/other device. If you don't have Authenticator yet, IT can set it up.</p>
+      </li>
+      <li><h3>Finish Setup Assistant</h3><p>Set a passcode (6 digits or longer), set up Face ID if you want.</p></li>
+      <li><h3>Wait ~10 minutes</h3><p>Apps install in the background. You'll see Outlook, Teams, Microsoft Authenticator, SharePoint, and others appear on your Home screen.</p></li>
+      <li><h3>Open Outlook → sign in</h3><p>Email pre-fills. Just enter your password.</p></li>
+    </ol>
+    <div class="card help-card">
+      <h3>Stuck?</h3>
+      <ul>
+        <li><strong>Can't see "Remote Management" screen</strong>: factory reset and restart Setup Assistant. Settings → General → Transfer or Reset iPhone → Erase All Content and Settings.</li>
+        <li><strong>Apps not appearing after 30 min</strong>: connect to Wi-Fi and leave the device for another 30 min. Open the App Store once to wake it up.</li>
+        <li><strong>"Couldn't sign in"</strong>: check the email address is exactly <strong>${escapeHtml(row.person_email)}</strong>. Contact IT if your password isn't working.</li>
+      </ul>
+    </div>
+  `;
+}
+
+function handoverAndroidSteps(row) {
+  return `
+    <ol class="steps">
+      <li><h3>Make sure your Android is factory new (or factory reset)</h3><p>If it has any setup already, hold the power button → restart → during boot, hold power + volume down to reset. Or ask IT.</p></li>
+      <li><h3>Power on, get to the welcome screen</h3><p>"Hi there" / "Welcome" screen — first thing you see.</p></li>
+      <li><h3>Tap the screen 6 times in the same spot</h3><p>Yes, really. The camera will open for a QR scan.</p></li>
+      <li><h3>Scan this QR code</h3>
+        <div id="qr-target" class="qr-box">Loading QR…</div>
+        <p class="muted">If the QR doesn't load, refresh this page or ask IT for a fresh link.</p>
+      </li>
+      <li><h3>Connect to Wi-Fi when prompted</h3><p>Home Wi-Fi or hotspot.</p></li>
+      <li><h3>Sign in with your council account</h3><p>Use <strong>${escapeHtml(row.person_email)}</strong> and your council password. MFA approval as usual.</p></li>
+      <li><h3>Wait ~5–10 minutes</h3><p>Apps install. You'll see Outlook, Teams, Microsoft Authenticator, etc.</p></li>
+    </ol>
+    <div class="card help-card">
+      <h3>Stuck?</h3>
+      <ul>
+        <li><strong>6-tap doesn't open camera</strong>: try 7 taps, or tap exactly the same spot. Some Android brands need a different gesture — ask IT.</li>
+        <li><strong>QR scan failed</strong>: aim straight, get good light, try moving phone closer/further. The QR is on this page so you can show it on a laptop / second device.</li>
+        <li><strong>"Sign-in failed"</strong>: same as iOS — check your email/password.</li>
+      </ul>
+    </div>
+  `;
+}
+
+function handoverByodIosSteps(row) {
+  return `
+    <ol class="steps">
+      <li><h3>Open the App Store on your iPhone</h3></li>
+      <li><h3>Search for "Intune Company Portal"</h3><p>It's free, made by Microsoft. Install it.</p></li>
+      <li><h3>Open Company Portal → Sign in</h3><p>Use <strong>${escapeHtml(row.person_email)}</strong> and your council password.</p></li>
+      <li><h3>Follow the on-screen prompts</h3><p>Company Portal will guide you through installing the council profile. Tap <strong>Continue</strong> on each screen.</p></li>
+      <li><h3>Install council apps</h3><p>From Company Portal you can install Outlook, Teams, etc. on your personal phone — they sit alongside your personal apps but the council manages just those work apps.</p></li>
+    </ol>
+    <div class="card help-card">
+      <h3>Privacy</h3>
+      <p>The council can't see your personal photos, messages, location, or browsing. Only the work apps you install via Company Portal are managed.</p>
+    </div>
+  `;
+}
+
+function handoverByodAndroidSteps(row) {
+  return `
+    <ol class="steps">
+      <li><h3>Open the Play Store on your Android</h3></li>
+      <li><h3>Search for "Intune Company Portal"</h3><p>Free, by Microsoft. Install it.</p></li>
+      <li><h3>Open Company Portal → Sign in</h3><p>Use <strong>${escapeHtml(row.person_email)}</strong> and your council password.</p></li>
+      <li><h3>Tap "Set up Work Profile"</h3><p>Android will create a separate "Work" badge area on your phone. Your personal stuff stays separate.</p></li>
+      <li><h3>Find the Work apps</h3><p>You'll see Outlook, Teams, Authenticator, etc. with a small briefcase icon — that's the Work copy.</p></li>
+    </ol>
+    <div class="card help-card">
+      <h3>Privacy</h3>
+      <p>Work Profile keeps council and personal data fully separate. The council can't see your personal apps, photos, or browsing. If you leave the role, IT removes only the Work Profile — your personal stuff is untouched.</p>
+    </div>
+  `;
+}
+
+function handoverQrScript(qrPayload) {
+  const escaped = qrPayload.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return `
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script>
+      (function() {
+        const target = document.getElementById('qr-target');
+        if (!target) return;
+        target.textContent = '';
+        try {
+          new QRCode(target, {
+            text: '${escaped}',
+            width: 280,
+            height: 280,
+            correctLevel: QRCode.CorrectLevel.M
+          });
+        } catch (e) {
+          target.innerHTML = '<p class="error">QR rendering failed: ' + e.message + '</p>';
+        }
+      })();
+    </script>
+  `;
+}
+
+function handoverBaseLayout(title, body) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>${escapeHtml(title)} — Walgett Shire Council IT</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; padding: 16px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f3f4f6; color: #111827; line-height: 1.5; }
+.handover { max-width: 720px; margin: 0 auto; }
+.handover-header { text-align: center; padding: 24px 16px; }
+.logo { max-width: 220px; height: auto; }
+h1 { font-size: 28px; margin: 12px 0 4px; }
+h2 { font-size: 22px; margin: 24px 0 8px; }
+h3 { font-size: 17px; margin: 0 0 6px; color: #2e5842; }
+.muted { color: #6b7280; font-size: 14px; }
+.error { color: #b91c1c; }
+.card { background: #fff; border-radius: 12px; padding: 20px; margin: 16px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.error-card { border-left: 4px solid #ef4444; }
+.help-card { border-left: 4px solid #3b82f6; }
+.ack-card { border-left: 4px solid #10b981; text-align: center; }
+.ack-card button { background: #2e5842; color: #fff; border: 0; padding: 14px 28px; font-size: 16px; font-weight: 600; border-radius: 8px; cursor: pointer; margin: 12px 0; }
+.ack-card button:disabled { opacity: 0.6; cursor: default; }
+.steps { padding: 0; margin: 0; counter-reset: step; list-style: none; }
+.steps > li { background: #fff; border-radius: 12px; padding: 18px 18px 18px 64px; margin: 12px 0; position: relative; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.steps > li::before { counter-increment: step; content: counter(step); position: absolute; left: 18px; top: 18px; width: 32px; height: 32px; background: #2e5842; color: #fff; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 700; }
+.steps p { margin: 4px 0; }
+.qr-box { background: #fff; padding: 16px; display: flex; align-items: center; justify-content: center; margin: 8px 0; border-radius: 8px; min-height: 280px; min-width: 280px; color: #6b7280; }
+.handover-footer { text-align: center; padding: 24px 16px; color: #6b7280; font-size: 14px; }
+@media (max-width: 480px) {
+  h1 { font-size: 22px; }
+  h2 { font-size: 18px; }
+  .steps > li { padding: 14px 14px 14px 56px; }
+}
+</style>
+</head>
+<body>
+${body}
+</body>
+</html>`;
+}
+
+// ─── Intune handover cleanup cron (Phase 4) ──────────
+// Runs every 6 hours via the [triggers] crons in wrangler.toml.
+// Marks expired handover links as expired (so /h/:token returns 410)
+// and prunes rows older than 30 days.
+async function cleanupHandovers(env) {
+  const nowIso = new Date().toISOString();
+
+  const expired = await env.DB.prepare(`
+    UPDATE intune_handovers
+       SET status = 'expired'
+     WHERE expires_at < ?
+       AND status NOT IN ('expired', 'enrolled')
+  `).bind(nowIso).run();
+
+  const cutoff = new Date(Date.now() - 30 * 86400_000).toISOString();
+  const pruned = await env.DB.prepare(`
+    DELETE FROM intune_handovers
+     WHERE created_at < ?
+  `).bind(cutoff).run();
+
+  console.log(`cleanupHandovers: expired=${expired.meta?.changes || 0} pruned=${pruned.meta?.changes || 0}`);
+  return {
+    expired: expired.meta?.changes || 0,
+    pruned: pruned.meta?.changes || 0,
+  };
 }
 

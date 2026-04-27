@@ -1,33 +1,6 @@
 // ─── Email Notifications via Microsoft Graph ────────────
 
-async function getGraphToken(env) {
-  const tenantId = env.ENTRA_TENANT_ID;
-  const clientId = env.ENTRA_CLIENT_ID;
-  const clientSecret = env.ENTRA_CLIENT_SECRET;
-
-  if (!tenantId || !clientId || !clientSecret) {
-    throw new Error('Missing Entra config (ENTRA_TENANT_ID, ENTRA_CLIENT_ID, ENTRA_CLIENT_SECRET)');
-  }
-
-  const tokenRes = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      scope: 'https://graph.microsoft.com/.default',
-      grant_type: 'client_credentials',
-    }),
-  });
-
-  if (!tokenRes.ok) {
-    const err = await tokenRes.json().catch(() => ({}));
-    throw new Error('Entra auth failed: ' + (err.error_description || err.error || tokenRes.statusText));
-  }
-
-  const tokenData = await tokenRes.json();
-  return tokenData.access_token;
-}
+import { getGraphTokenCached as getGraphToken } from './graph.js';
 
 function formatTimestamp(date = new Date()) {
   return date.toLocaleString('en-AU', {
