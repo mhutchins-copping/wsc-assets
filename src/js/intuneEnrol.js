@@ -10,19 +10,28 @@
 var _intuneState = {
   step: 'person',          // 'person' | 'device' | 'confirm' | 'provisioning' | 'done'
   person: null,            // { id, name, email, department }
-  os: null,                // 'ios' | 'android' | 'aosp' | 'byod_android' | 'byod_ios'
+  deviceType: null,        // 'iphone' | 'android'
+  ownership: 'council',    // 'council' | 'personal'  (default to council; user can switch)
   serial: '',
-  profile: null,           // chosen enrolment profile
-  profiles: null,          // cache of /api/intune/profiles
   phoneNumber: '',
   carrier: '',
   assetName: '',
-  preflight: null,         // result of /api/intune/preflight
   provisionResult: null,
   pollTimer: null,
   pollAttempts: 0,
   searchDebounce: null
 };
+
+// Derive the backend `os` enum from deviceType + ownership. The wizard
+// stores the human-readable choices; the API takes the legacy enum.
+function intuneOsEnum() {
+  var t = _intuneState.deviceType, o = _intuneState.ownership;
+  if (t === 'iphone'  && o === 'council')  return 'ios';
+  if (t === 'iphone'  && o === 'personal') return 'byod_ios';
+  if (t === 'android' && o === 'council')  return 'android';
+  if (t === 'android' && o === 'personal') return 'byod_android';
+  return null;
+}
 
 Router.register('/intune-enrol', renderIntuneEnrol);
 
@@ -38,10 +47,10 @@ async function renderIntuneEnrol() {
   // Reset state on entry
   if (_intuneState.pollTimer) { clearTimeout(_intuneState.pollTimer); }
   _intuneState = {
-    step: 'person', person: null, os: null, serial: '',
-    profile: null, profiles: null,
+    step: 'person', person: null,
+    deviceType: null, ownership: 'council', serial: '',
     phoneNumber: '', carrier: '', assetName: '',
-    preflight: null, provisionResult: null,
+    provisionResult: null,
     pollTimer: null, pollAttempts: 0, searchDebounce: null
   };
 
@@ -181,103 +190,75 @@ window.intunePickPerson = intunePickPerson;
 
 function intuneNext(step) {
   _intuneState.step = step;
-  if (step === 'device' && !_intuneState.profiles) {
-    intuneLoadProfiles();
-  }
   intuneRender();
 }
 window.intuneNext = intuneNext;
 
-async function intuneLoadProfiles() {
-  try {
-    _intuneState.profiles = await API.intuneProfiles();
-    if (_intuneState.step === 'device') intuneRender();
-  } catch (e) {
-    toast('Failed to load enrolment profiles: ' + e.message, 'error');
-  }
-}
-
 // ─── Step 2: Device ───
+// Council buys consumer iPhones/Androids (no ABM). Every flow ends up
+// being "install Company Portal, sign in, install management profile /
+// set up Work Profile". So the picker is just iPhone vs Android, then a
+// "council-owned vs personal" radio for asset-register tagging + the
+// privacy framing on the staff handover page.
 function intuneStepDeviceHtml() {
-  var osOptions = [
-    { value: 'ios',          label: 'iPhone (Council)',           help: 'Corporate-owned, comes through ABM.' },
-    { value: 'android',      label: 'Android (Council)',          help: 'Corporate-owned, fully managed.' },
-    { value: 'aosp',         label: 'Android (AOSP / Teams)',     help: 'Teams Rooms / signage / shared device.' },
-    { value: 'byod_ios',     label: 'Personal iPhone (BYOD)',     help: 'Staff member\'s own device, work apps only.' },
-    { value: 'byod_android', label: 'Personal Android (BYOD)',    help: 'Staff member\'s own device, work profile.' }
-  ];
-
-  var isByod = _intuneState.os === 'byod_ios' || _intuneState.os === 'byod_android';
-  var showSerial = _intuneState.os && !isByod;
-  var showOptional = _intuneState.os && (_intuneState.os === 'ios' || _intuneState.os === 'android' || isByod);
-
-  var profilesForOs = intuneProfilesForCurrentOs();
-
   var html = '<div class="card"><div class="card-header"><span class="card-title">What kind of device?</span></div><div class="card-body">';
 
-  // OS picker (radio cards)
-  html += '<fieldset style="border:0;padding:0;margin:0 0 16px;display:grid;gap:8px">';
-  html += '<legend class="form-label" style="margin-bottom:6px">Device type</legend>';
-  for (var i = 0; i < osOptions.length; i++) {
-    var o = osOptions[i];
-    var selected = _intuneState.os === o.value;
+  // Device type — 2 options
+  var deviceOptions = [
+    { value: 'iphone',  label: 'iPhone',  emoji: '📱' },
+    { value: 'android', label: 'Android', emoji: '🤖' }
+  ];
+  html += '<fieldset style="border:0;padding:0;margin:0 0 16px;display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  html += '<legend class="form-label" style="margin-bottom:6px;grid-column:1/-1">Device type</legend>';
+  for (var i = 0; i < deviceOptions.length; i++) {
+    var d = deviceOptions[i];
+    var selected = _intuneState.deviceType === d.value;
     var bordCol = selected ? '#2e5842' : 'var(--border)';
     var bg = selected ? '#2e584210' : 'var(--surface)';
-    html += '<label style="display:block;padding:14px 16px;border:2px solid ' + bordCol + ';border-radius:8px;cursor:pointer;background:' + bg + '">'
-      + '<input type="radio" name="intune-os" value="' + esc(o.value) + '"' + (selected ? ' checked' : '') + ' onchange="intunePickOs(\'' + esc(o.value) + '\')" style="margin-right:10px">'
-      + '<strong>' + esc(o.label) + '</strong>'
-      + '<div style="color:var(--text2);font-size:13px;margin-top:2px;margin-left:24px">' + esc(o.help) + '</div>'
+    html += '<label style="display:block;padding:18px 16px;border:2px solid ' + bordCol + ';border-radius:8px;cursor:pointer;background:' + bg + ';text-align:center">'
+      + '<input type="radio" name="intune-device-type" value="' + esc(d.value) + '"' + (selected ? ' checked' : '') + ' onchange="intunePickDeviceType(\'' + esc(d.value) + '\')" style="display:none">'
+      + '<div style="font-size:32px;line-height:1;margin-bottom:6px">' + d.emoji + '</div>'
+      + '<strong>' + esc(d.label) + '</strong>'
       + '</label>';
   }
   html += '</fieldset>';
 
-  // Serial input
-  if (showSerial) {
-    html += '<div class="form-group">'
-      + '<label class="form-label">Serial number</label>'
-      + '<input id="intune-serial" type="text" autocomplete="off" class="form-input" '
-      + 'placeholder="' + (_intuneState.os === 'ios' ? 'e.g. F2LZ1234XYZ' : 'IMEI / serial') + '" '
-      + 'value="' + esc(_intuneState.serial) + '">';
-    if (_intuneState.preflight) {
-      if (_intuneState.preflight.ready) {
-        html += '<p style="color:#2e5842;margin:8px 0 0;font-size:13px">✓ '
-          + esc(_intuneState.preflight.depTokenName || 'Ready to enrol')
-          + '</p>';
-      } else {
-        html += '<p style="color:var(--red);margin:8px 0 0;font-size:13px">'
-          + esc(_intuneState.preflight.reason || 'Not ready')
-          + '</p>';
-      }
+  // Ownership — 2 options
+  if (_intuneState.deviceType) {
+    var ownershipOptions = [
+      { value: 'council',  label: 'Council-owned',     help: 'Council bought it (JB Hi-Fi etc.). Staff member uses it for work.' },
+      { value: 'personal', label: 'Staff-owned (BYOD)', help: 'Staff member\'s own device. Council manages just the work apps.' }
+    ];
+    html += '<fieldset style="border:0;padding:0;margin:0 0 16px;display:grid;gap:8px">';
+    html += '<legend class="form-label" style="margin-bottom:6px">Ownership</legend>';
+    for (var j = 0; j < ownershipOptions.length; j++) {
+      var ow = ownershipOptions[j];
+      var owSelected = _intuneState.ownership === ow.value;
+      var owBord = owSelected ? '#2e5842' : 'var(--border)';
+      var owBg = owSelected ? '#2e584210' : 'var(--surface)';
+      html += '<label style="display:block;padding:14px 16px;border:2px solid ' + owBord + ';border-radius:8px;cursor:pointer;background:' + owBg + '">'
+        + '<input type="radio" name="intune-ownership" value="' + esc(ow.value) + '"' + (owSelected ? ' checked' : '') + ' onchange="intunePickOwnership(\'' + esc(ow.value) + '\')" style="margin-right:10px">'
+        + '<strong>' + esc(ow.label) + '</strong>'
+        + '<div style="color:var(--text2);font-size:13px;margin-top:2px;margin-left:24px">' + esc(ow.help) + '</div>'
+        + '</label>';
     }
-    html += '</div>';
+    html += '</fieldset>';
   }
 
-  // Profile picker (only when multiple options)
-  if (_intuneState.os && profilesForOs && profilesForOs.length > 1) {
-    html += '<div class="form-group">'
-      + '<label class="form-label">Enrolment profile</label>'
-      + '<select id="intune-profile" class="form-select" onchange="intunePickProfile(this.value)">';
-    for (var k = 0; k < profilesForOs.length; k++) {
-      var p = profilesForOs[k];
-      var sel = (_intuneState.profile && _intuneState.profile.id === p.id) ? ' selected' : '';
-      html += '<option value="' + esc(p.id) + '"' + sel + '>'
-        + esc(p.displayName) + (p.isDefault ? ' (default)' : '')
-        + '</option>';
-    }
-    html += '</select></div>';
-  }
-
-  // Optional fields (collapsed)
-  if (showOptional) {
-    html += '<details style="margin:16px 0;padding:12px 16px;background:var(--surface-alt,#f9fafb);border-radius:6px">'
+  // Optional details
+  if (_intuneState.deviceType) {
+    html += '<details style="margin:16px 0;padding:12px 16px;background:var(--surface-alt,#f9fafb);border-radius:6px"' + (_intuneState.serial || _intuneState.phoneNumber ? ' open' : '') + '>'
       + '<summary style="cursor:pointer;font-weight:500;font-size:14px;color:var(--text2)">Optional details</summary>'
       + '<div style="margin-top:12px">'
+      + '<div class="form-group"><label class="form-label">Serial number / IMEI</label>'
+      + '<input id="intune-serial" type="text" autocomplete="off" class="form-input" placeholder="' + (_intuneState.deviceType === 'iphone' ? 'e.g. F2LZHQ7HRPL2' : 'IMEI (15 digits) or serial') + '" value="' + esc(_intuneState.serial) + '" oninput="_intuneState.serial=this.value.trim()">'
+      + '<div style="font-size:12px;color:var(--text3);margin-top:4px">Skip if you don\'t have it on hand. Will populate later when the device enrols.</div></div>'
       + '<div class="form-group"><label class="form-label">Phone number</label>'
       + '<input id="intune-phone-number" type="tel" class="form-input" value="' + esc(_intuneState.phoneNumber) + '" placeholder="04xx xxx xxx" oninput="_intuneState.phoneNumber=this.value"></div>'
       + '<div class="form-group"><label class="form-label">Carrier</label>'
       + '<input id="intune-carrier" type="text" class="form-input" value="' + esc(_intuneState.carrier) + '" placeholder="Telstra / Optus / Vodafone" oninput="_intuneState.carrier=this.value"></div>'
-      + '<div class="form-group"><label class="form-label">Asset name (optional override)</label>'
-      + '<input id="intune-asset-name" type="text" class="form-input" value="' + esc(_intuneState.assetName) + '" placeholder="Auto: ' + esc((_intuneState.person ? _intuneState.person.name : 'User') + ' — Device') + '" oninput="_intuneState.assetName=this.value"></div>'
+      + '<div class="form-group"><label class="form-label">Asset name (override)</label>'
+      + '<input id="intune-asset-name" type="text" class="form-input" value="' + esc(_intuneState.assetName) + '" placeholder="Auto: ' + esc((_intuneState.person ? _intuneState.person.name : 'User') + ' — ' + (_intuneState.deviceType === 'iphone' ? 'iPhone' : 'Android')) + '" oninput="_intuneState.assetName=this.value"></div>'
       + '</div></details>';
   }
 
@@ -290,89 +271,37 @@ function intuneStepDeviceHtml() {
   return html;
 }
 
-function intuneProfilesForCurrentOs() {
-  if (!_intuneState.profiles) return null;
-  if (_intuneState.os === 'ios' || _intuneState.os === 'byod_ios') return _intuneState.profiles.apple;
-  if (_intuneState.os === 'android' || _intuneState.os === 'aosp' || _intuneState.os === 'byod_android') return _intuneState.profiles.android;
-  return [];
-}
-
 function intuneCanAdvanceFromDevice() {
-  if (!_intuneState.os) return false;
-  var isByod = _intuneState.os === 'byod_ios' || _intuneState.os === 'byod_android';
-  if (isByod) return true;
-  if (!_intuneState.serial) return false;
-  if (!_intuneState.preflight || !_intuneState.preflight.ready) return false;
-  return true;
+  return !!(_intuneState.deviceType && _intuneState.ownership);
 }
 
-function intuneBindStepDevice() {
-  var serial = document.getElementById('intune-serial');
-  if (serial) {
-    var serialDebounce;
-    serial.addEventListener('input', function(e) {
-      _intuneState.serial = e.target.value.trim();
-      if (serialDebounce) clearTimeout(serialDebounce);
-      serialDebounce = setTimeout(intuneRunPreflight, 350);
-    });
-  }
-}
+function intuneBindStepDevice() { /* nothing — inline oninput handlers */ }
 
-function intunePickOs(os) {
-  _intuneState.os = os;
-  _intuneState.preflight = null;
-  _intuneState.profile = null;
-  intuneRunPreflight();
+function intunePickDeviceType(t) {
+  _intuneState.deviceType = t;
   intuneRender();
 }
-window.intunePickOs = intunePickOs;
+window.intunePickDeviceType = intunePickDeviceType;
 
-function intunePickProfile(profileId) {
-  var profs = intuneProfilesForCurrentOs() || [];
-  for (var i = 0; i < profs.length; i++) {
-    if (profs[i].id === profileId) { _intuneState.profile = profs[i]; break; }
-  }
+function intunePickOwnership(o) {
+  _intuneState.ownership = o;
   intuneRender();
 }
-window.intunePickProfile = intunePickProfile;
-
-async function intuneRunPreflight() {
-  var os = _intuneState.os;
-  if (!os) return;
-  var isByod = os === 'byod_ios' || os === 'byod_android';
-  if (!isByod && !_intuneState.serial) return;
-  try {
-    _intuneState.preflight = await API.intunePreflight(os, _intuneState.serial);
-    intuneRender();
-    // Restore focus + cursor on serial input after re-render
-    var serial = document.getElementById('intune-serial');
-    if (serial) {
-      serial.focus();
-      var v = serial.value; serial.value = ''; serial.value = v;
-    }
-  } catch (err) {
-    _intuneState.preflight = { ready: false, reason: err.message };
-    intuneRender();
-  }
-}
+window.intunePickOwnership = intunePickOwnership;
 
 // ─── Step 3: Confirm ───
 function intuneStepConfirmHtml() {
-  var isByod = _intuneState.os === 'byod_ios' || _intuneState.os === 'byod_android';
+  var label = intuneOsLabel(intuneOsEnum());
   var html = '<div class="card"><div class="card-header"><span class="card-title">Review — ready to provision?</span></div><div class="card-body">';
 
   html += '<dl style="display:grid;grid-template-columns:max-content 1fr;gap:8px 16px;margin:0 0 20px">';
   html += '<dt style="font-weight:600;color:var(--text2);font-size:13px">User</dt>'
     + '<dd style="margin:0"><strong>' + esc(_intuneState.person.name) + '</strong> <small style="color:var(--text2)">' + esc(_intuneState.person.email) + '</small></dd>';
-  html += '<dt style="font-weight:600;color:var(--text2);font-size:13px">Device type</dt>'
-    + '<dd style="margin:0">' + esc(intuneOsLabel(_intuneState.os)) + '</dd>';
-  if (!isByod) {
-    html += '<dt style="font-weight:600;color:var(--text2);font-size:13px">Serial</dt>'
+  html += '<dt style="font-weight:600;color:var(--text2);font-size:13px">Device</dt>'
+    + '<dd style="margin:0">' + esc(label) + '</dd>';
+  if (_intuneState.serial) {
+    html += '<dt style="font-weight:600;color:var(--text2);font-size:13px">Serial / IMEI</dt>'
       + '<dd style="margin:0"><code>' + esc(_intuneState.serial) + '</code></dd>';
-  }
-  if (_intuneState.profile) {
-    html += '<dt style="font-weight:600;color:var(--text2);font-size:13px">Profile</dt>'
-      + '<dd style="margin:0">' + esc(_intuneState.profile.displayName) + '</dd>';
   }
   if (_intuneState.phoneNumber) {
     html += '<dt style="font-weight:600;color:var(--text2);font-size:13px">Phone</dt>'
@@ -382,17 +311,9 @@ function intuneStepConfirmHtml() {
 
   html += '<div style="margin:16px 0;padding:14px;background:#3b82f610;border-left:3px solid #3b82f6;border-radius:4px">';
   html += '<strong style="font-size:14px">What will happen</strong><ul style="margin:6px 0 0;padding-left:20px;font-size:14px;line-height:1.7">';
-  if (_intuneState.os === 'ios') {
-    html += '<li>Pre-bind the user to this serial in ABM (Setup Assistant pre-fills the council username).</li>';
-  }
-  if (_intuneState.os === 'android' || _intuneState.os === 'aosp') {
-    html += '<li>Generate an Android enrolment QR code valid for 90 days.</li>';
-  }
-  if (isByod) {
-    html += '<li>No Graph writes — generates instructions for the staff member to install Company Portal on their personal device.</li>';
-  }
-  html += '<li>Create / update the asset register entry' + (_intuneState.serial ? ' (serial <code>' + esc(_intuneState.serial) + '</code>)' : '') + '.</li>';
-  html += '<li>Mint a 14-day handover URL for the staff member.</li>';
+  html += '<li>Create / update the asset register entry for this device.</li>';
+  html += '<li>Mint a 14-day handover URL for ' + esc(_intuneState.person.name) + ' with the right Company Portal install steps.</li>';
+  html += '<li>Email or text them the handover URL — they install Company Portal on the device, sign in, follow prompts.</li>';
   html += '</ul></div>';
 
   html += '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;margin-top:18px">'
@@ -412,21 +333,20 @@ function intuneBindStepConfirm() { /* nothing — all bindings inline via onclic
 
 function intuneOsLabel(os) {
   return ({
-    ios: 'iPhone (Council)',
-    android: 'Android (Council)',
+    ios: 'iPhone (council-owned)',
+    android: 'Android (council-owned)',
     aosp: 'Android (AOSP / Teams)',
-    byod_ios: 'Personal iPhone (BYOD)',
-    byod_android: 'Personal Android (BYOD)'
-  })[os] || os;
+    byod_ios: 'iPhone (staff-owned)',
+    byod_android: 'Android (staff-owned)'
+  })[os] || os || 'device';
 }
 window.intuneOsLabel = intuneOsLabel;
 
 async function intuneRunProvision(dryRun) {
   var payload = {
     person_id: _intuneState.person.id,
-    os: _intuneState.os,
+    os: intuneOsEnum(),
     serial_number: _intuneState.serial || undefined,
-    profile_id: _intuneState.profile ? _intuneState.profile.id : undefined,
     phone_number: _intuneState.phoneNumber || undefined,
     carrier: _intuneState.carrier || undefined,
     name: _intuneState.assetName || undefined
@@ -477,9 +397,7 @@ function intuneStepProvisioningHtml() {
 function intuneStepDoneHtml() {
   var r = _intuneState.provisionResult || {};
   var handoverUrl = r.handover_url || '';
-  var isAndroid = _intuneState.os === 'android' || _intuneState.os === 'aosp';
-  var isIos = _intuneState.os === 'ios';
-  var isByod = _intuneState.os === 'byod_ios' || _intuneState.os === 'byod_android';
+  var isIphone = _intuneState.deviceType === 'iphone';
 
   var html = '<div class="card"><div class="card-body">';
 
@@ -492,39 +410,32 @@ function intuneStepDoneHtml() {
   // Handover card
   html += '<div style="background:var(--surface-alt,#f9fafb);padding:18px;border-radius:8px;margin-bottom:16px">';
   html += '<h3 style="margin:0 0 8px;font-size:16px">Hand-over instructions for ' + esc(_intuneState.person.name) + '</h3>';
-  html += '<p style="margin:0 0 12px;font-size:14px">Send them this URL — opens to a step-by-step walkthrough for their device:</p>';
-  html += '<div style="display:flex;gap:6px;align-items:stretch;margin-bottom:6px">'
-    + '<input id="intune-handover-url" type="text" readonly value="' + esc(handoverUrl) + '" class="form-input" style="font-family:ui-monospace,SF Mono,Menlo,Monaco,monospace;font-size:13px">'
+  html += '<p style="margin:0 0 12px;font-size:14px">Send them this URL — opens a step-by-step walkthrough on their device:</p>';
+  html += '<div style="display:flex;gap:6px;align-items:stretch;margin-bottom:6px;flex-wrap:wrap">'
+    + '<input id="intune-handover-url" type="text" readonly value="' + esc(handoverUrl) + '" class="form-input" style="font-family:ui-monospace,SF Mono,Menlo,Monaco,monospace;font-size:13px;min-width:200px;flex:1">'
     + '<button class="btn" onclick="intuneCopyHandoverUrl()">Copy</button>'
     + '<button class="btn primary" onclick="intuneEmailHandover()">Email it</button>'
     + '</div>';
   html += '<p style="margin:8px 0 0;color:var(--text2);font-size:13px">Expires in 14 days.</p>';
 
-  if (isAndroid && r.qr_available) {
-    html += '<div style="margin:14px 0 0;padding:12px;background:#fff;border-radius:6px;border:1px solid var(--border)">'
-      + '<p style="margin:0;font-size:13px;color:var(--text2)">QR is rendered on the handover page itself — open the link above to view it.</p>'
-      + '</div>';
-  }
-
-  if (isIos) {
-    html += '<div style="margin:14px 0 0;padding:14px;background:#fff;border-radius:6px;border:1px solid var(--border)">'
-      + '<p style="margin:0 0 6px;font-size:14px"><strong>iPhone next steps:</strong></p>'
-      + '<ol style="margin:0;padding-left:22px;font-size:14px;line-height:1.7">'
-      + '<li>Hand the device to ' + esc(_intuneState.person.name) + ' (factory reset state).</li>'
-      + '<li>They power on, follow Setup Assistant — username will pre-fill.</li>'
-      + '<li>They sign in with their council M365 password + MFA.</li>'
-      + '<li>Apps install in the background (~10 min).</li>'
-      + '</ol></div>';
-  }
+  html += '<div style="margin:14px 0 0;padding:14px;background:#fff;border-radius:6px;border:1px solid var(--border)">'
+    + '<p style="margin:0 0 6px;font-size:14px"><strong>What ' + esc(_intuneState.person.name.split(' ')[0]) + ' does:</strong></p>'
+    + '<ol style="margin:0;padding-left:22px;font-size:14px;line-height:1.7">'
+    + '<li>Open the link on the ' + (isIphone ? 'iPhone' : 'Android') + '.</li>'
+    + '<li>Tap through to install <strong>Intune Company Portal</strong> from the ' + (isIphone ? 'App Store' : 'Play Store') + '.</li>'
+    + '<li>Sign in with <code>' + esc(_intuneState.person.email) + '</code> + MFA.</li>'
+    + '<li>Follow the prompts — Company Portal handles ' + (isIphone ? 'the management profile install' : 'the Work Profile setup') + '.</li>'
+    + '<li>Wait ~10 minutes for Outlook / Teams / Authenticator to install.</li>'
+    + '</ol></div>';
 
   html += '</div>';
 
-  // Status watch
+  // Status watch — poll by serial if we have one, otherwise show a hint
   html += '<div style="margin:0 0 16px;padding:14px;background:var(--surface-alt,#f9fafb);border-radius:8px">';
   html += '<h3 style="margin:0 0 10px;font-size:15px">Live enrolment status</h3>';
   html += '<div id="intune-status-pane" style="font-size:14px">';
-  if (_intuneState.serial) html += '<p style="color:var(--text2);margin:0">Polling Intune every 30s…</p>';
-  else html += '<p style="color:var(--text2);margin:0">No serial — nothing to poll.</p>';
+  if (_intuneState.serial) html += '<p style="color:var(--text2);margin:0">Polling Intune every 30s for serial <code>' + esc(_intuneState.serial) + '</code>…</p>';
+  else html += '<p style="color:var(--text2);margin:0">No serial provided up front — check Intune directly to confirm enrolment, or come back to update the asset record once the device shows up.</p>';
   html += '</div></div>';
 
   html += '<div style="display:flex;justify-content:flex-end;margin-top:18px">'
@@ -551,12 +462,14 @@ window.intuneCopyHandoverUrl = intuneCopyHandoverUrl;
 
 function intuneEmailHandover() {
   var r = _intuneState.provisionResult || {};
-  var subject = encodeURIComponent('Your new ' + intuneOsLabel(_intuneState.os) + ' from WSC IT');
+  var label = intuneOsLabel(intuneOsEnum());
+  var subject = encodeURIComponent('Setting up your ' + label + ' — WSC IT');
   var body = encodeURIComponent(
     'Hi ' + _intuneState.person.name + ',\n\n'
-    + 'Your new device is ready. Open this link for setup steps:\n\n'
+    + 'Your device is ready to set up. Open this link on the device for step-by-step instructions:\n\n'
     + (r.handover_url || '')
-    + '\n\nLink expires in 14 days. Let me know if you hit any snags.\n\n'
+    + '\n\nThe link walks you through installing Intune Company Portal and signing in. Takes about 10-15 minutes including app installs.\n\n'
+    + 'Link expires in 14 days. Let me know if you hit any snags.\n\n'
     + 'Walgett Shire Council IT'
   );
   window.location.href = 'mailto:' + (_intuneState.person.email || '') + '?subject=' + subject + '&body=' + body;
@@ -567,10 +480,10 @@ function intuneEnrolAnother() {
   var keepPerson = _intuneState.person;
   if (_intuneState.pollTimer) { clearTimeout(_intuneState.pollTimer); }
   _intuneState = {
-    step: 'device', person: keepPerson, os: null, serial: '',
-    profile: null, profiles: _intuneState.profiles,
+    step: 'device', person: keepPerson,
+    deviceType: null, ownership: 'council', serial: '',
     phoneNumber: '', carrier: '', assetName: '',
-    preflight: null, provisionResult: null,
+    provisionResult: null,
     pollTimer: null, pollAttempts: 0, searchDebounce: null
   };
   intuneRender();
