@@ -48,7 +48,7 @@ function renderAccount() {
     + '<div class="card-body acct-actions">'
     + (isAdmin
         ? '<button class="btn" onclick="navigate(\'#/settings\')">Open Settings</button>'
-        : '<div class="acct-hint">To request a change to your role or to be removed from the system, contact IT.</div>')
+        : '<div class="acct-hint">To request a change to your role or to be removed from the system, contact your administrator.</div>')
     + '<button class="btn danger" onclick="accountSignOut()">Sign Out</button>'
     + '</div>'
     + '</div>'

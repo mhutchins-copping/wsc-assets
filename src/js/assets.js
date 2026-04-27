@@ -14,6 +14,36 @@ var _categories = null;
 var _people = null;
 var _manufacturers = [];
 var _models = [];
+var _categoryProfiles = {};
+var _assetFormAsset = null;
+
+async function getCategoryProfile(catId) {
+  if (!catId) return { show_specs: true, show_phone: false, custom_fields: [] };
+  if (_categoryProfiles[catId]) return _categoryProfiles[catId];
+  var cats = _categories;
+  if (!cats) {
+    try {
+      var res = await API.getCategories();
+      cats = res.data || res.tree || [];
+      _categories = cats;
+    } catch (e) { cats = []; }
+  }
+  var profile = null;
+  (cats || []).forEach(function(parent) {
+    if (parent.children && parent.children.length) {
+      parent.children.forEach(function(child) {
+        if (child.id === catId) {
+          profile = child.field_profile || null;
+        }
+      });
+    } else if (parent.id === catId) {
+      profile = parent.field_profile || null;
+    }
+  });
+  profile = profile || { show_specs: true, show_phone: false, custom_fields: [] };
+  _categoryProfiles[catId] = profile;
+  return profile;
+}
 
 // Multi-select for batch label printing. Keyed by asset id; value keeps
 // just the fields the label-sheet renderer needs so switching pages or
@@ -528,6 +558,8 @@ async function renderAssetDetail(id, preloaded) {
       asset = await API.getAsset(id);
     }
 
+    var profile = await getCategoryProfile(asset.category_id);
+
     var html = '<div style="margin-bottom:12px"><button class="btn sm" onclick="navigate(\'#/assets\')">&larr; Back</button></div>';
 
     html += '<div class="detail-header">'
@@ -563,7 +595,7 @@ async function renderAssetDetail(id, preloaded) {
     html += '<button class="btn sm" onclick="printAssetLabel(\'' + esc(asset.id) + '\')">Print</button>';
     // Flag a problem: owner-or-admin. For non-admins this is the main
     // self-service action — the backend accepts the request because the
-    // asset is theirs. Admins keep the button so IT can raise an internal
+    // asset is theirs. Admins keep the button so support staff can raise an internal
     // flag on behalf of a caller who can't sign in.
     html += '<button class="btn sm" onclick="openFlagModal(\'' + esc(asset.id) + '\')">Flag a problem</button>';
     if (Auth.isAdmin()) {
@@ -626,18 +658,22 @@ async function renderAssetDetail(id, preloaded) {
 
     // Specs — unified PC + phone fields. Render only populated rows so
     // a phone asset doesn't show a grid of PC-specific em-dashes.
-    var specRows = [
-      ['Hostname', asset.hostname],
-      ['Operating System', asset.os],
-      ['CPU', asset.cpu],
-      ['RAM', asset.ram_gb ? asset.ram_gb + ' GB' : null],
-      ['Disk', asset.disk_gb ? asset.disk_gb + ' GB' : null],
-      ['MAC Address', asset.mac_address],
-      ['IP Address', asset.ip_address],
-      ['Enrolled User', asset.enrolled_user],
-      ['Phone Number', asset.phone_number],
-      ['Carrier', asset.carrier]
-    ].filter(function(row) { return row[1]; });
+    var specRows = [];
+    if (profile.show_specs !== false) {
+      specRows.push(['Hostname', asset.hostname]);
+      specRows.push(['Operating System', asset.os]);
+      specRows.push(['CPU', asset.cpu]);
+      specRows.push(['RAM', asset.ram_gb ? asset.ram_gb + ' GB' : null]);
+      specRows.push(['Disk', asset.disk_gb ? asset.disk_gb + ' GB' : null]);
+      specRows.push(['MAC Address', asset.mac_address]);
+      specRows.push(['IP Address', asset.ip_address]);
+      specRows.push(['Enrolled User', asset.enrolled_user]);
+    }
+    if (profile.show_phone !== false) {
+      specRows.push(['Phone Number', asset.phone_number]);
+      specRows.push(['Carrier', asset.carrier]);
+    }
+    specRows = specRows.filter(function(row) { return row[1]; });
 
     if (specRows.length) {
       html += '<div class="card" style="margin-bottom:12px"><div class="card-header"><span class="card-title">Specs</span></div>'
@@ -646,6 +682,24 @@ async function renderAssetDetail(id, preloaded) {
         html += detailField(row[0], row[1]);
       });
       html += '</div></div></div>';
+    }
+
+    // Additional Information — custom metadata from category profile
+    if (profile.custom_fields && profile.custom_fields.length && asset.metadata) {
+      var customRows = [];
+      profile.custom_fields.forEach(function(field) {
+        if (asset.metadata[field.key] != null) {
+          customRows.push([field.label, asset.metadata[field.key]]);
+        }
+      });
+      if (customRows.length) {
+        html += '<div class="card" style="margin-bottom:12px"><div class="card-header"><span class="card-title">Additional Information</span></div>'
+          + '<div class="card-body"><div class="detail-grid" style="grid-template-columns:1fr 1fr 1fr 1fr">';
+        customRows.forEach(function(row) {
+          html += detailField(row[0], row[1]);
+        });
+        html += '</div></div></div>';
+      }
     }
 
     // Notes
@@ -1021,7 +1075,7 @@ async function renderAssetForm(editId) {
 
   // Category + Auto-tag
   html += '<div class="form-row"><div class="form-group"><label class="form-label">Category</label>'
-    + '<select id="af-category" class="form-select" onchange="onAssetCategoryChange()">'
+    + '<select id="af-category" class="form-select" onchange="onAssetCategoryChange(this.value)">'
     + '<option value="">Select category...</option>';
   (_categories || []).forEach(function(c) {
     if (c.children) {
@@ -1081,12 +1135,12 @@ async function renderAssetForm(editId) {
     + '</div>';
 
   // Loaner pool flag — toggling this puts the asset into the short-term
-  // lending pool (visitor laptops etc.) instead of permanent allocation.
+  // lending pool (visitor devices etc.) instead of permanent allocation.
   var isLoaner = asset && asset.is_loaner ? 'checked' : '';
   html += '<div class="form-group" style="display:flex;align-items:center;gap:8px">'
     + '<input type="checkbox" id="af-is-loaner" ' + isLoaner + ' style="width:auto;margin:0">'
     + '<label class="form-label" for="af-is-loaner" style="margin:0">In loaner pool</label>'
-    + '<span class="form-hint" style="margin:0">Short-term lends with a due date (visitor laptops, spare phones).</span>'
+    + '<span class="form-hint" style="margin:0">Short-term lends with a due date (visitor devices, spare units).</span>'
     + '</div>';
 
   // Notes
@@ -1095,7 +1149,7 @@ async function renderAssetForm(editId) {
 
   // Hardware Specs (collapsible)
   var hasSpecs = asset && (asset.hostname || asset.os || asset.cpu || asset.ram_gb || asset.disk_gb || asset.mac_address);
-  html += '<details' + (hasSpecs ? ' open' : '') + ' style="margin-bottom:16px">'
+  html += '<details id="af-specs-details"' + (hasSpecs ? ' open' : '') + ' style="margin-bottom:16px">'
     + '<summary style="cursor:pointer;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text2);margin-bottom:12px">Hardware Specs</summary>'
     + '<div class="form-row">'
     + '<div class="form-group"><label class="form-label">Hostname</label>'
@@ -1117,12 +1171,19 @@ async function renderAssetForm(editId) {
     + '<input type="text" id="af-ip" class="form-input" value="' + esc(asset ? asset.ip_address : '') + '" placeholder="192.168.1.100"></div>'
     + '<div class="form-group"><label class="form-label">Enrolled User</label>'
     + '<input type="text" id="af-enrolled-user" class="form-input" value="' + esc(asset ? asset.enrolled_user : '') + '" placeholder="DOMAIN\\username"></div></div>'
+    + '</details>';
+
+  // Phone fields (toggled independently of IT specs)
+  html += '<div id="af-phone-fields" style="margin-bottom:16px">'
     + '<div class="form-row">'
     + '<div class="form-group"><label class="form-label">Phone Number</label>'
     + '<input type="tel" id="af-phone-number" class="form-input" value="' + esc(asset ? asset.phone_number : '') + '" placeholder="04XX XXX XXX"></div>'
     + '<div class="form-group"><label class="form-label">Carrier</label>'
     + '<input type="text" id="af-carrier" class="form-input" value="' + esc(asset ? asset.carrier : '') + '" placeholder="Telstra / Optus / Vodafone"></div></div>'
-    + '</details>';
+    + '</div>';
+
+  // Custom fields container
+  html += '<div id="af-additional-fields"></div>';
 
   // Image
   html += '<div class="form-group"><label class="form-label">Photo</label>'
@@ -1139,8 +1200,11 @@ async function renderAssetForm(editId) {
   html += '</div></div>';
   el.innerHTML = html;
 
-  // Trigger auto-tag if new
-  if (!editId) onAssetCategoryChange();
+  // Keep a reference so onAssetCategoryChange can pre-fill custom fields
+  _assetFormAsset = asset || null;
+
+  // Adjust field visibility based on category profile
+  onAssetCategoryChange(asset && asset.category_id ? asset.category_id : '');
 }
 window.renderAssetForm = renderAssetForm;
 
@@ -1169,21 +1233,65 @@ async function loadFormDropdowns() {
   } catch(e) { /* proceed with empty */ }
 }
 
-async function onAssetCategoryChange() {
+window.onAssetCategoryChange = async function(catId) {
   var sel = document.getElementById('af-category');
   var tagInput = document.getElementById('af-tag');
-  if (!sel || !tagInput) return;
-  var opt = sel.selectedOptions[0];
-  if (!opt || !opt.value) return;
-  var prefix = opt.dataset.prefix;
-  if (prefix && API.baseUrl && !tagInput.value) {
-    try {
-      var result = await API.getNextTag(prefix);
-      tagInput.value = result.tag;
-    } catch(e) { /* keep empty */ }
+  if (sel && tagInput) {
+    var opt;
+    if (catId) {
+      opt = sel.querySelector('option[value="' + catId + '"]');
+    } else {
+      opt = sel.selectedOptions[0];
+    }
+    if (opt && opt.value && opt.dataset.prefix && API.baseUrl && !tagInput.value) {
+      try {
+        var result = await API.getNextTag(opt.dataset.prefix);
+        tagInput.value = result.tag;
+      } catch(e) { /* keep empty */ }
+    }
   }
-}
-window.onAssetCategoryChange = onAssetCategoryChange;
+
+  var profile;
+  if (!catId) {
+    profile = { show_specs: true, show_phone: true, custom_fields: [] };
+  } else {
+    profile = await getCategoryProfile(catId);
+    if (!profile) profile = { show_specs: true, show_phone: false, custom_fields: [] };
+  }
+
+  var specsDetails = document.getElementById('af-specs-details');
+  if (specsDetails) {
+    specsDetails.style.display = profile.show_specs !== false ? '' : 'none';
+  }
+
+  var phoneFields = document.getElementById('af-phone-fields');
+  if (phoneFields) {
+    phoneFields.style.display = profile.show_phone !== false ? '' : 'none';
+  }
+
+  var customContainer = document.getElementById('af-additional-fields');
+  if (!customContainer) return;
+  customContainer.innerHTML = '';
+  if (profile.custom_fields && profile.custom_fields.length) {
+    var html = '<div style="margin-bottom:16px"><div style="font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text2);margin-bottom:12px">Additional Fields</div>';
+    profile.custom_fields.forEach(function(field) {
+      var val = '';
+      if (_assetFormAsset && _assetFormAsset.metadata && _assetFormAsset.metadata[field.key] != null) {
+        val = String(_assetFormAsset.metadata[field.key]);
+      }
+      var inputId = 'af-custom-' + field.key;
+      if (field.type === 'number') {
+        html += '<div class="form-group"><label class="form-label">' + esc(field.label) + '</label>'
+          + '<input type="number" id="' + inputId + '" class="form-input" value="' + esc(val) + '" placeholder="' + esc(field.label) + '"></div>';
+      } else {
+        html += '<div class="form-group"><label class="form-label">' + esc(field.label) + '</label>'
+          + '<input type="text" id="' + inputId + '" class="form-input" value="' + esc(val) + '" placeholder="' + esc(field.label) + '"></div>';
+      }
+    });
+    html += '</div>';
+    customContainer.innerHTML = html;
+  }
+};
 
 
 async function saveAsset(editId) {
@@ -1214,6 +1322,24 @@ async function saveAsset(editId) {
     carrier: (document.getElementById('af-carrier') ? document.getElementById('af-carrier').value.trim() : '') || null,
     is_loaner: document.getElementById('af-is-loaner') && document.getElementById('af-is-loaner').checked ? 1 : 0
   };
+
+  // Collect custom metadata
+  var metadata = {};
+  var customContainer = document.getElementById('af-additional-fields');
+  if (customContainer) {
+    var inputs = customContainer.querySelectorAll('input');
+    inputs.forEach(function(input) {
+      if (input.id.indexOf('af-custom-') === 0) {
+        var key = input.id.replace('af-custom-', '');
+        if (input.value !== '') {
+          metadata[key] = input.type === 'number' ? (parseFloat(input.value) || input.value) : input.value.trim();
+        }
+      }
+    });
+  }
+  if (Object.keys(metadata).length) {
+    data.metadata = metadata;
+  }
 
   // Handle image upload
   var imageFile = document.getElementById('af-image').files[0];
@@ -1246,7 +1372,7 @@ window.saveAsset = saveAsset;
 function openFlagModal(assetId) {
   openModal('Flag a problem',
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'
-    + 'Tell IT what\u2019s wrong with this asset. An email goes to the team right away.'
+    + 'Tell the team what\u2019s wrong with this asset. An email goes to the team right away.'
     + '</div>'
     + '<div class="form-group"><label class="form-label">Category</label>'
     + '<select id="flag-category" class="form-select">'
@@ -1257,7 +1383,7 @@ function openFlagModal(assetId) {
     + '</select></div>'
     + '<div class="form-group"><label class="form-label">What\u2019s happening?</label>'
     + '<textarea id="flag-desc" class="form-textarea" rows="4" placeholder="e.g. Screen cracked after it fell off the desk yesterday"></textarea></div>'
-    + '<button class="btn primary" onclick="submitFlag(\'' + esc(assetId) + '\')">Send to IT</button>'
+    + '<button class="btn primary" onclick="submitFlag(\'' + esc(assetId) + '\')">Send to Support</button>'
   );
 }
 window.openFlagModal = openFlagModal;
@@ -1268,7 +1394,7 @@ async function submitFlag(assetId) {
   try {
     await API.flagAsset(assetId, { category: category, description: description });
     closeModal();
-    toast('Thanks \u2014 IT has been notified', 'success');
+    toast('Thanks \u2014 the team has been notified', 'success');
     renderAssetDetail(assetId);
   } catch(e) { /* toasted */ }
 }

@@ -1,4 +1,4 @@
-// ─── Phone Enrolment ───────────────────────────────
+// ─── Phone Registration ───────────────────────────────
 // Mobile-first form for registering a phone in the asset register.
 // Works on iOS Safari and Android Chrome without a native app.
 //
@@ -57,7 +57,7 @@ function adminOnlyHtml() {
   return '<div style="max-width:520px;margin:40px auto;padding:24px;background:var(--surface);border:1px solid var(--border);border-radius:12px;text-align:center">'
     + '<div style="font-size:40px;margin-bottom:12px">&#128274;</div>'
     + '<h2 style="margin:0 0 8px;font-size:17px">Admin access required</h2>'
-    + '<p style="margin:0 0 16px;font-size:13px;color:var(--text2)">Phone enrolment is restricted to administrators. If you need to register a device, ask an admin to do it for you.</p>'
+    + '<p style="margin:0 0 16px;font-size:13px;color:var(--text2)">Phone registration is restricted to administrators. If you need to register an asset, ask an admin to do it for you.</p>'
     + '<button class="btn" onclick="history.back()">Back</button>'
     + '</div>';
 }
@@ -67,11 +67,11 @@ function phoneEnrolFormHtml() {
   return '<div style="max-width:560px;margin:0 auto">'
     + '<div style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:center">'
     + '<button class="btn sm" onclick="history.back()">&larr; Back</button>'
-    + '<a class="btn sm" href="#/phone-enrol-batch">Enrol multiple →</a>'
+    + '<a class="btn sm" href="#/phone-enrol-batch">Register multiple →</a>'
     + '</div>'
-    + '<div class="card"><div class="card-header"><span class="card-title">Enrol a phone</span></div>'
+    + '<div class="card"><div class="card-header"><span class="card-title">Register a phone</span></div>'
     + '<div class="card-body">'
-    + '<p style="font-size:13px;color:var(--text2);margin:0 0 16px">Register an iPhone or Android device in the asset register. The IMEI is the phone\'s unique serial.</p>'
+    + '<p style="font-size:13px;color:var(--text2);margin:0 0 16px">Register an iPhone or Android asset in the asset register. The IMEI is the phone\'s unique serial.</p>'
 
     + '<div class="form-group">'
     + '<label class="form-label">IMEI <span style="color:var(--red)">*</span></label>'
@@ -133,7 +133,7 @@ function phoneEnrolFormHtml() {
     + '<textarea id="phone-notes" class="form-textarea" rows="2" placeholder="Optional — condition, accessories, etc."></textarea>'
     + '</div>'
 
-    + '<button class="btn primary full" onclick="savePhone()" id="phone-save-btn">Enrol phone</button>'
+    + '<button class="btn primary full" onclick="savePhone()" id="phone-save-btn">Register phone</button>'
     + '<div id="phone-save-result" style="margin-top:10px"></div>'
     + '</div></div></div>';
 }
@@ -235,7 +235,7 @@ function stopBarcodeScan() {
 }
 window.stopBarcodeScan = stopBarcodeScan;
 
-// ─── Batch enrolment ─────────────────────────────
+// ─── Batch registration ─────────────────────────────
 // Shared (Make / Model / OS / Carrier) set once, per-unit rows (IMEI /
 // phone number / assignee) repeated. Submits sequentially so the
 // auto-tag generator (which reads the latest tag and increments) can't
@@ -261,11 +261,11 @@ function batchFormHtml() {
   return '<div style="max-width:820px;margin:0 auto">'
     + '<div style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:center">'
     + '<button class="btn sm" onclick="history.back()">&larr; Back</button>'
-    + '<a class="btn sm" href="#/phone-enrol">Single enrol</a>'
+    + '<a class="btn sm" href="#/phone-enrol">Single register</a>'
     + '</div>'
-    + '<div class="card"><div class="card-header"><span class="card-title">Enrol multiple phones</span></div>'
+    + '<div class="card"><div class="card-header"><span class="card-title">Register multiple phones</span></div>'
     + '<div class="card-body">'
-    + '<p style="font-size:13px;color:var(--text2);margin:0 0 16px">Set the shared details once, then add a row per device. IMEI is required per device; everything else is optional. Click <strong>Enrol all</strong> at the bottom when ready.</p>'
+    + '<p style="font-size:13px;color:var(--text2);margin:0 0 16px">Set the shared details once, then add a row per asset. IMEI is required per device; everything else is optional. Click <strong>Register all</strong> at the bottom when ready.</p>'
 
     // Shared fields.
     + '<div style="background:var(--surface2);padding:14px;border-radius:8px;margin-bottom:16px">'
@@ -304,7 +304,7 @@ function batchFormHtml() {
 
     // Submit + progress.
     + '<div style="margin-top:20px">'
-    + '<button class="btn primary full" id="batch-submit" onclick="submitBatch()">Enrol all</button>'
+    + '<button class="btn primary full" id="batch-submit" onclick="submitBatch()">Register all</button>'
     + '<div id="batch-progress" style="margin-top:12px"></div>'
     + '<div id="batch-summary" style="margin-top:12px"></div>'
     + '</div>'
@@ -347,7 +347,7 @@ function updateBatchSubmitLabel() {
   var btn = document.getElementById('batch-submit');
   if (!btn) return;
   var count = document.querySelectorAll('#batch-rows .batch-row').length;
-  btn.textContent = count ? 'Enrol all ' + count + ' phone' + (count === 1 ? '' : 's') : 'Enrol all';
+  btn.textContent = count ? 'Register all ' + count + ' phone' + (count === 1 ? '' : 's') : 'Register all';
 }
 
 // Barcode scan for a specific row. Reuses the module-level stream/timer
@@ -453,7 +453,7 @@ async function submitBatch() {
   var succeeded = [];
   var failed = [];
   for (var i2 = 0; i2 < payloads.length; i2++) {
-    if (progress) progress.innerHTML = '<div style="font-size:13px;color:var(--text2)">Enrolling ' + (i2 + 1) + ' of ' + payloads.length + '…</div>';
+    if (progress) progress.innerHTML = '<div style="font-size:13px;color:var(--text2)">Registering ' + (i2 + 1) + ' of ' + payloads.length + '…</div>';
     try {
       var result = await API.createAsset(payloads[i2].body);
       succeeded.push({ tag: result.asset_tag, id: result.id, row: payloads[i2].rowEl });
@@ -468,7 +468,7 @@ async function submitBatch() {
   if (btn) btn.disabled = false;
 
   var summaryHtml = '<div style="padding:14px;background:var(--surface2);border-radius:8px">'
-    + '<div style="font-weight:600;margin-bottom:6px">Enrolled ' + succeeded.length + ' of ' + payloads.length + '</div>';
+    + '<div style="font-weight:600;margin-bottom:6px">Registered ' + succeeded.length + ' of ' + payloads.length + '</div>';
   if (succeeded.length) {
     summaryHtml += '<div style="font-size:12px;color:var(--text3);margin:6px 0 2px">Tags:</div>'
       + '<div style="font-family:var(--mono);font-size:12px">'
@@ -484,7 +484,7 @@ async function submitBatch() {
   summaryHtml += '</div>';
   summary.innerHTML = summaryHtml;
 
-  if (succeeded.length) toast('Enrolled ' + succeeded.length + ' phone' + (succeeded.length === 1 ? '' : 's'), 'success');
+  if (succeeded.length) toast('Registered ' + succeeded.length + ' phone' + (succeeded.length === 1 ? '' : 's'), 'success');
 }
 window.submitBatch = submitBatch;
 
@@ -525,10 +525,10 @@ async function savePhone() {
       assigned_to: assignedTo,
       notes: notes || null
     });
-    toast('Enrolled ' + (result.asset_tag || 'phone'), 'success');
+    toast('Registered ' + (result.asset_tag || 'phone'), 'success');
     navigate('#/assets/' + result.id);
   } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = 'Enrol phone'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Register phone'; }
     /* toasted */
   }
 }

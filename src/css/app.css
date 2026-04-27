@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════
-   WSC IT Asset Management — Stylesheet
-   Enterprise ITSM Design System
+   WSC Asset Management — Stylesheet
+   Enterprise Asset Management Design System
    ═══════════════════════════════════════════════ */
 
 /* ─── Reset ─────────────────────────────────── */
@@ -1838,7 +1838,7 @@ tbody td.mono {
    feel at a smaller scale. Left-border accent in council green, the
    card itself sits on the cream body so the bordered interior feels
    warm rather than dropping a second heavy card on top. */
-/* ─── Fleet mosaic + fun fact (dashboard) ────── */
+/* ─── Asset pool mosaic + fun fact (dashboard) ────── */
 .dash-mosaic-section { margin-top: 14px; }
 .dash-section-head {
   display: flex;

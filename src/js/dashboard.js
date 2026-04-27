@@ -25,7 +25,7 @@ function renderDashboardSkeleton() {
     + '</div>'
     + '<div class="dash-section dash-mosaic-section">'
     +   '<div class="dash-section-head">'
-    +     '<div class="dash-section-title">Fleet at a glance</div>'
+    +     '<div class="dash-section-title">Assets at a glance</div>'
     +     '<div id="dash-mosaic-legend" class="dash-mosaic-legend"></div>'
     +   '</div>'
     +   '<div id="dash-mosaic">' + renderSkeletonBlock(120) + '</div>'
@@ -43,9 +43,9 @@ function renderDashWelcome() {
   var greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   var title = first ? greet + ', ' + esc(first) : 'Welcome';
   return '<div class="dash-welcome">'
-    + '<div class="dash-welcome-eyebrow">IT Asset Register</div>'
+    + '<div class="dash-welcome-eyebrow">Asset Register</div>'
     + '<h1 class="dash-welcome-title">' + title + '</h1>'
-    + '<p class="dash-welcome-sub">Here\'s how the council hardware fleet is tracking right now.</p>'
+    + '<p class="dash-welcome-sub">Here\'s how the council asset pool is tracking right now.</p>'
     + '</div>';
 }
 
@@ -71,9 +71,9 @@ async function loadDashboardData() {
   loadFleetMosaic();
 }
 
-// Walks the paginated asset list and builds the Fleet-at-a-glance
+// Walks the paginated asset list and builds the Assets-at-a-glance
 // mosaic. Caps at 10 pages (1,000 rows) which is comfortably more
-// than the council fleet.
+// than the council asset pool.
 async function loadFleetMosaic() {
   var mosaicEl = document.getElementById('dash-mosaic');
   var factEl = document.getElementById('dash-funfact');
@@ -106,7 +106,7 @@ async function loadFleetMosaic() {
 
 // Color per asset status. Deployed pops in the accent green, available
 // sits in a paler sage, warnings take amber/red. Disposed is omitted
-// from the mosaic entirely (out-of-fleet).
+// from the mosaic entirely (out of pool).
 var MOSAIC_COLORS = {
   deployed:    'var(--status-deployed)',
   available:   'var(--status-available)',
@@ -139,7 +139,7 @@ function renderMosaicLegend() {
   }).join('');
 }
 
-// Build a pool of true statements about the fleet, pick one at random.
+// Build a pool of true statements about the asset pool, pick one at random.
 // Short, factual, vaguely interesting. Only uses data we've already
 // fetched so no extra network.
 function pickFunFact(assets) {
@@ -161,7 +161,7 @@ function pickFunFact(assets) {
   var mf = {};
   assets.forEach(function(a) { if (a.manufacturer) mf[a.manufacturer] = (mf[a.manufacturer] || 0) + 1; });
   var top = Object.keys(mf).map(function(k){return [k, mf[k]];}).sort(function(a,b){return b[1]-a[1];})[0];
-  if (top) facts.push('<strong>' + esc(top[0]) + '</strong> is the most common make, with ' + top[1] + ' device' + (top[1] === 1 ? '' : 's') + '.');
+  if (top) facts.push('<strong>' + esc(top[0]) + '</strong> is the most common make, with ' + top[1] + ' asset' + (top[1] === 1 ? '' : 's') + '.');
 
   // Registered in the last 7 days
   var weekAgo = now - 7 * 86400000;
@@ -172,16 +172,7 @@ function pickFunFact(assets) {
   var deployed = assets.filter(function(a) { return a.status === 'deployed'; }).length;
   if (assets.length && deployed > 0) {
     var pct = Math.round((deployed / assets.length) * 100);
-    facts.push(pct + '% of the fleet is currently in staff hands.');
-  }
-
-  // Phones vs laptops
-  var phones = assets.filter(function(a) { return a.category_id === 'cat_phone'; }).length;
-  var laptops = assets.filter(function(a) { return a.category_id === 'cat_laptop'; }).length;
-  if (phones && laptops) {
-    if (phones > laptops) facts.push('Phones outnumber laptops right now, <strong>' + phones + '</strong> to ' + laptops + '.');
-    else if (laptops > phones) facts.push('Laptops outnumber phones, <strong>' + laptops + '</strong> to ' + phones + '.');
-    else facts.push('Phones and laptops are neck and neck, ' + phones + ' each.');
+    facts.push(pct + '% of assets are currently assigned.');
   }
 
   // Retiring in the next 6 months
@@ -191,7 +182,7 @@ function pickFunFact(assets) {
     var t = new Date(a.retirement_date).getTime();
     return !isNaN(t) && t > now && t < sixMo;
   }).length;
-  if (dueSoon > 0) facts.push('<strong>' + dueSoon + '</strong> device' + (dueSoon === 1 ? ' is' : 's are') + ' due for replacement in the next 6 months.');
+  if (dueSoon > 0) facts.push('<strong>' + dueSoon + '</strong> asset' + (dueSoon === 1 ? ' is' : 's are') + ' due for replacement in the next 6 months.');
 
   if (!facts.length) return null;
   return facts[Math.floor(Math.random() * facts.length)];
@@ -237,8 +228,8 @@ function renderDashboard(stats) {
 
   document.getElementById('dash-kpis').innerHTML = [
     renderKPI('Total Assets', total, total === 0 ? 'No assets yet' : '—'),
-    renderKPI('Deployed', deployed, total > 0 ? deployedPct + '% of fleet' : '—'),
-    renderKPI('Available', available, total > 0 ? availPct + '% of fleet' : '—'),
+    renderKPI('Deployed', deployed, total > 0 ? deployedPct + '% of pool' : '—'),
+    renderKPI('Available', available, total > 0 ? availPct + '% of pool' : '—'),
     renderKPI('Needs Attention', needsAttention, attnSub, needsAttention > 0 ? 'warn' : null)
   ].join('');
 

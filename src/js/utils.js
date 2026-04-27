@@ -241,7 +241,7 @@ function commandPaletteActions() {
       { label: 'Go to Reports', icon: 'chart', run: function() { navigate('#/reports'); } },
       { label: 'Go to Receipts', icon: 'file', run: function() { navigate('#/issues'); } },
       { label: 'Go to Flags', icon: 'flag', run: function() { navigate('#/flags'); } },
-      { label: 'Enrol a phone', icon: 'phone', run: function() { navigate('#/phone-enrol'); } },
+      { label: 'Register a phone', icon: 'phone', run: function() { navigate('#/phone-enrol'); } },
       { label: 'Settings', icon: 'gear', run: function() { navigate('#/settings'); } },
       { label: 'Sync Entra users', hint: 'from Settings', icon: 'sync', run: function() {
         navigate('#/settings');

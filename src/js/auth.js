@@ -49,12 +49,12 @@ var Auth = {
       var data = await res.json();
 
       if (data.needs_migration) {
-        this.showDenied('Database migration needed. Contact IT administrator.');
+        this.showDenied('Database migration needed. Contact administrator.');
         return;
       }
 
       if (!data.authorized) {
-        this.showDenied(data.error || 'You do not have access to this application. Contact your IT administrator to request access.');
+        this.showDenied(data.error || 'You do not have access to this application. Contact your administrator to request access.');
         return;
       }
 
