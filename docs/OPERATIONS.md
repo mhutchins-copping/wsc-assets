@@ -303,6 +303,29 @@ the master key only solves one failure mode, not all of them.
 | `ASSET_TAG_PREFIX`      | `WSC` — prefix for generated asset tags.      |
 | `CORS_ORIGIN`           | `https://assets.it-wsc.com` — allowed browser origin.|
 | `NOTIFICATIONS_ENABLED` | `true` / `false` — toggle email alerts.       |
+| `CF_ACCESS_TEAM_DOMAIN` | `itwsc` — used to fetch the JWKS for verifying CF Access cookies. |
+
+### Bindings (wrangler.toml)
+
+| Binding    | Type   | Purpose                                          |
+| ---------- | ------ | ------------------------------------------------ |
+| `DB`       | D1     | Main database (`wsc-assets-db`).                 |
+| `IMAGES`   | R2     | Asset photo storage (`wsc-assets-images`).       |
+| `KV_GRAPH` | KV     | Microsoft Graph access-token cache. TTL = `expires_in - 60s` so the Intune wizard's 5-10-call-per-click flows don't burn AAD's `/oauth2/v2.0/token` rate limit. Optional — without it the worker fetches a fresh token every call. Created via `wrangler kv namespace create KV_GRAPH`. |
+
+### Microsoft Graph application permissions
+
+The Entra app referenced by `ENTRA_CLIENT_ID` needs these **application** permissions (admin-consented). Granted automatically by `Connect-MgGraph` + admin in the Azure portal, or programmatically via `POST /servicePrincipals/{id}/appRoleAssignments`.
+
+| Permission                                       | Used by                                                  |
+| ------------------------------------------------ | -------------------------------------------------------- |
+| `User.Read.All`                                  | `syncEntraUsers` — staff people-table sync.              |
+| `Mail.Send`                                      | `notify.js` — admin event emails, signing links.         |
+| `DeviceManagementServiceConfig.ReadWrite.All`    | Intune wizard — ABM / VPP / APNs token health, Apple enrolment profile listing. |
+| `DeviceManagementManagedDevices.ReadWrite.All`   | Intune wizard — managed-device lookup, primary-user assignment. |
+| `DeviceManagementConfiguration.Read.All`         | Intune wizard — enrolment profile listing.               |
+| `Group.ReadWrite.All`                            | Intune wizard — static-group fallback (legacy; can be downgraded to read-only once the dynamic-group conversion is verified). |
+| `Device.Read.All`                                | Intune wizard — Entra device-object resolution by serial. |
 
 ### Rotating a secret
 
