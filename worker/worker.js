@@ -852,31 +852,39 @@ async function route(request, env, url) {
 // lives in one place.
 //
 // Roles:
-//   viewer — read-only across the app
-//   user   — day-to-day operators; can create/edit assets, manage people,
-//            run audits, log maintenance. Cannot manage reference data
-//            (categories/locations), cannot run bulk/destructive ops,
-//            cannot manage users.
-//   admin  — full access. Wildcard '*' short-circuits the check.
-//
-// Docs mirror: see docs/OPERATIONS.md § Roles for the customer-facing view.
+//   viewer  — read-only. Sees only assets assigned to them.
+//   user    — day-to-day operators. Can create/edit/delete their own assets,
+//             check out / check in, log maintenance. View all assets.
+//             Cannot manage reference data (people/categories/locations),
+//             cannot run audits/reports, cannot manage users.
+//   manager — team lead. Can edit all assets, delete their own assets,
+//             manage people/categories/locations, run audits, view reports.
+//             Cannot manage users or run Entra sync.
+//   admin   — full access. Wildcard '*' short-circuits the check.
 
 const VIEWER_PERMS = [
   'assets.read', 'people.read', 'categories.read', 'locations.read',
-  'audits.read', 'reports.view', 'settings.read', 'users.read_self'
+  'settings.read', 'users.read_self'
 ];
 
-// User role is view-only: functionally identical to viewer today. The
-// distinct role is kept so the role picker still offers three options
-// and so future operational permissions (e.g. "can check out / check
-// in only") can be granted to user without touching viewer. Admin is
-// the only role that can mutate anything.
-const USER_PERMS = VIEWER_PERMS.slice();
+const USER_PERMS = [
+  ...VIEWER_PERMS,
+  'assets.write', 'assets.checkout', 'assets.maintenance'
+];
+
+const MANAGER_PERMS = [
+  ...USER_PERMS,
+  'assets.delete', 'assets.issue', 'people.write', 'categories.write', 'locations.write',
+  'audits.read', 'audits.write', 'reports.view',
+  'issues.read', 'issues.write', 'flags.read', 'flags.write',
+  'loans.read', 'loans.write', 'import.export'
+];
 
 const ROLE_PERMISSIONS = {
-  viewer: new Set(VIEWER_PERMS),
-  user:   new Set(USER_PERMS),
-  admin:  new Set(['*'])
+  viewer:  new Set(VIEWER_PERMS),
+  user:    new Set(USER_PERMS),
+  manager: new Set(MANAGER_PERMS),
+  admin:   new Set(['*'])
 };
 
 function hasPermission(user, perm) {
@@ -886,10 +894,15 @@ function hasPermission(user, perm) {
   return perms.has('*') || perms.has(perm);
 }
 
-// Back-compat shim — a handful of routes still use isAdmin() and it's a
-// reasonable shortcut for the admin-only tier.
+// Back-compat shims
 function isAdmin(request) {
   return !!(request._user && request._user.role === 'admin');
+}
+function isManager(request) {
+  return !!(request._user && (request._user.role === 'admin' || request._user.role === 'manager'));
+}
+function isOperator(request) {
+  return !!(request._user && (request._user.role === 'admin' || request._user.role === 'manager' || request._user.role === 'user'));
 }
 
 // Permission guard used at the top of each mutating handler. Returns a 403
@@ -1047,11 +1060,11 @@ async function getAsset(env, assetId, request) {
 
   if (!asset) return json({ error: 'Asset not found' }, 404);
 
-  // Non-admins can only see assets assigned to themselves. Match by the
+  // Viewers can only see assets assigned to themselves. Match by the
   // SSO email → people.email. 404 (not 403) keeps us from leaking that
   // a given asset ID exists at all.
   const currentUser = request && request._user;
-  if (currentUser && currentUser.role !== 'admin') {
+  if (currentUser && currentUser.role === 'viewer') {
     if (!asset.assigned_to || !asset.assigned_to_email ||
         asset.assigned_to_email.toLowerCase() !== (currentUser.email || '').toLowerCase()) {
       return json({ error: 'Asset not found' }, 404);
@@ -1118,6 +1131,8 @@ async function createAsset(request, env) {
   }
 
   const ts = now();
+  const user = request._user;
+  const createdBy = user ? user.id : null;
 
   await env.DB.prepare(`
     INSERT INTO assets (id, asset_tag, name, serial_number, category_id, manufacturer, model, status,
@@ -1126,8 +1141,8 @@ async function createAsset(request, env) {
       notes, image_url, hostname, os, cpu, ram_gb, disk_gb, mac_address, ip_address, enrolled_user,
       phone_number, carrier,
       is_loaner,
-      location_id, assigned_to, assigned_date, metadata, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      location_id, assigned_to, assigned_date, metadata, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     assetId, tag, data.name, data.serial_number || null, data.category_id || null,
     data.manufacturer || null, data.model || null, data.status || 'available',
@@ -1143,6 +1158,7 @@ async function createAsset(request, env) {
     data.location_id || null,
     data.assigned_to || null, data.assigned_to ? ts : null,
     safeJsonStringify(data.metadata, '{}'),
+    createdBy,
     ts, ts
   ).run();
 
@@ -1151,7 +1167,6 @@ async function createAsset(request, env) {
     await env.DB.prepare('UPDATE assets SET status = ? WHERE id = ?').bind('deployed', assetId).run();
   }
 
-  const user = request._user;
   const performed_by = user ? (user.display_name || user.email) : null;
   await logActivity(env, { asset_id: assetId, action: 'create', details: `Created asset ${tag}: ${data.name}`, performed_by });
 
@@ -1637,7 +1652,8 @@ async function createAssetFlag(request, env, assetId) {
   `).bind(assetId).first();
   if (!asset) return json({ error: 'Asset not found' }, 404);
 
-  if (user.role !== 'admin') {
+  // Managers and admins can flag any asset; users/viewers can only flag their own.
+  if (user.role !== 'admin' && user.role !== 'manager') {
     const mine = asset.assigned_to_email && asset.assigned_to_email.toLowerCase() === (user.email || '').toLowerCase();
     if (!mine) return json({ error: 'Asset not found' }, 404);
   }
@@ -1690,9 +1706,8 @@ async function listAssetFlags(request, env, url) {
   const binds = [];
   if (status) { where.push('f.status = ?'); binds.push(status); }
 
-  // Non-admins only see the flags they themselves filed. Matches the
-  // non-admin scoping applied to the asset list.
-  if (user && user.role !== 'admin') {
+  // Viewers/users only see the flags they themselves filed. Managers and admins see all.
+  if (user && user.role !== 'admin' && user.role !== 'manager') {
     where.push('LOWER(f.reported_by_email) = LOWER(?)');
     binds.push(user.email || '');
   }
@@ -1717,7 +1732,7 @@ async function listAssetFlags(request, env, url) {
 
 async function resolveAssetFlag(request, env, flagId, action) {
   const user = request._user;
-  if (!user || user.role !== 'admin') return json({ error: 'Admin access required' }, 403);
+  if (!user || (user.role !== 'admin' && user.role !== 'manager')) return json({ error: 'Admin or manager access required' }, 403);
 
   const flag = await env.DB.prepare('SELECT * FROM asset_flags WHERE id = ?').bind(flagId).first();
   if (!flag) return json({ error: 'Flag not found' }, 404);
@@ -2272,6 +2287,12 @@ async function handleEnrolUnlock(request, env) {
 async function updateAsset(request, env, assetId) {
   const existing = await env.DB.prepare('SELECT * FROM assets WHERE id = ?').bind(assetId).first();
   if (!existing) return json({ error: 'Asset not found' }, 404);
+
+  const user = request._user;
+  // Users can only edit assets they created. Managers and admins can edit any.
+  if (user && user.role === 'user' && existing.created_by && existing.created_by !== user.id) {
+    return json({ error: 'You can only edit assets you created' }, 403);
+  }
 
   const data = await body(request);
 
