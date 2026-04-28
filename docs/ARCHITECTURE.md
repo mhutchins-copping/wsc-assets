@@ -190,6 +190,8 @@ only usable by someone who knows the out-of-band secret. See
 | `asset_issues`    | Signing-receipt workflow. One row per emailed acknowledgement link. |
 | `asset_flags`     | User-filed fault reports (damaged / slow / lost / other).      |
 | `loans`           | Short-term loaner-pool lends with a due date and return event. |
+| `consumables`     | Quantity-tracked stock for commodity items (keyboards, mice, cables, toner). One row = N items. |
+| `consumable_movements` | Audit log for every stock change. Movement types: added/issued/returned/adjusted/written_off. Optional person + asset linkage. |
 
 All tables use opaque IDs (16 hex chars) as primary keys, not
 incrementing integers. That means IDs don't leak how many rows exist,
@@ -273,6 +275,7 @@ wsc-assets/
 │       ├── issues.js          # Receipts admin view (resend / cancel / view signature)
 │       ├── flags.js           # Flags inbox — user-filed fault reports
 │       ├── loans.js           # Loaner-pool admin view + loan / return flow
+│       ├── consumables.js     # Quantity-tracked stock + movement history + issue flow
 │       ├── phoneEnrol.js      # Mobile-first phone enrolment — IMEI + barcode scan
 │       ├── runbook.js         # In-app render of docs/INTUNE-RUNBOOK.md (admin-only)
 │       ├── people.js

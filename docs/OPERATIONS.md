@@ -17,6 +17,7 @@ deploying a change) — this is the page.
 - [Backups](#backups)
 - [Restore from backup](#restore-from-backup)
 - [Database migrations](#database-migrations)
+- [What's an asset vs what's a consumable?](#whats-an-asset-vs-whats-a-consumable)
 - [Recurring tasks](#recurring-tasks) (weekly / monthly / quarterly / annual)
 - [Escalation contacts](#escalation-contacts)
 - [Incident response](#incident-response) — see also [INCIDENT-PLAYBOOK.md](INCIDENT-PLAYBOOK.md)
@@ -241,6 +242,49 @@ After that, only genuinely new migrations will run on future deploys.
 The previous version of this document hard-coded the list of
 migrations up to a point in time. It rotted within three months. Read
 the directory instead.
+
+## What's an asset vs what's a consumable?
+
+Two distinct tracking models live side-by-side. Pick the right one
+when adding new gear:
+
+**Track as an asset** (`#/assets/new`) — anything with a meaningful
+serial that you'd want to point at and say "where's *that* one":
+
+- Laptops, desktops
+- Phones (council-owned mobile)
+- Monitors (track at a desk via `location_id`, may or may not assign
+  to a person)
+- Tablets, printers, network gear
+- Anything > $200 that you'd insure individually
+
+**Track as a consumable** (`#/consumables/new`) — commodity items
+where the count matters but the individual unit doesn't:
+
+- Keyboards, mice (commodity, swap freely)
+- Chargers, cables, adapters
+- Headsets, webcams (unless you really need per-unit history)
+- Docks (debatable — if they're $300+ and stay at desks, asset;
+  if cheap pool stock, consumable)
+- Cases, sleeves, screen protectors
+- Toner, batteries, USB drives
+- Mousepads, stands
+
+**Don't bother tracking** — anything < $30 commodity that you'd just
+restock without thinking about it. Pens, USB-C-to-USB adapters in
+bulk, screen-cleaning wipes.
+
+The split matters because:
+- Assets have full history (activity log, maintenance, receipts,
+  audits). That's overhead for a $30 keyboard.
+- Consumables can be issued without per-staff accountability — for
+  cheap items, just decrement the count and move on.
+- Asset count per person is a leaver-handoff signal. If you assign
+  every keyboard, that signal gets noisy.
+
+When unsure, ask: "if this thing breaks, do I want to know which
+specific one it was, or just that we have one less?" — answer
+points at the model.
 
 ## Recurring tasks
 

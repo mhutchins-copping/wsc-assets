@@ -119,6 +119,16 @@ quick-reference.
 - **Loaner pool** — mark an asset as "in loaner pool" and it switches to
   a short-term lending flow with a due date. Overdue loans show in red
   on the Loaners page and the sidebar count badge.
+- **Consumables / Inventory** — quantity-tracked stock for commodity
+  items (keyboards, mice, chargers, cables, toner, cases, etc.).
+  Distinct from assets: no per-unit identity, just on-hand counts.
+  Movements logged per change (added / issued / returned / adjusted /
+  written off), optional staff and asset linkage. Low-stock badge in
+  the sidebar + filter on the list. Toner-specific fields when the
+  category is set to toner.
+- **People asset-count filter** — sort the People list by who's
+  holding the most gear, or filter to "people with at least N
+  assets". Useful for chasing handovers when someone leaves.
 - **Command palette** — `Ctrl/Cmd+K` opens a keyboard-driven palette
   with quick actions (new asset, jump to any view, sync Entra, sign out)
   and live asset search. Arrow keys + Enter to navigate.
