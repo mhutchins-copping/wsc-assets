@@ -30,6 +30,10 @@ The rest of the docs:
   enrolment recipes (iPhone via ABM, Android Fully Managed, BYOD
   Work Profile, etc). Intune lives outside this app; this is the
   cheat sheet for using it.
+- **[docs/INCIDENT-PLAYBOOK.md](docs/INCIDENT-PLAYBOOK.md)** —
+  symptom-driven incident response. Site down, deploy red, sign-ins
+  failing, restore needed, secrets leaked. Each with first-thing-
+  to-check + escalation path.
 
 Those four cover the full picture. The rest of this README is a
 quick-reference.

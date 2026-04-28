@@ -59,15 +59,24 @@ SIZE_KB=$(( $(wc -c < "$BACKUP") / 1024 ))
 STAMP="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 SAFETY_FILE="$SAFETY_DIR/pre-restore-${STAMP}.sql"
 
-# Tables to wipe before applying the backup. Order is parent-last to keep
-# referential state tidy even though D1 does not enforce foreign keys by
-# default. d1_migrations is included so the restored state owns its own
-# migration history.
+# Tables to wipe before applying the backup. Order is parent-last
+# (children first) to keep referential state tidy even though D1 does
+# not enforce foreign keys by default. d1_migrations is included so the
+# restored state owns its own migration history.
+#
+# IMPORTANT: this list must include every application table that exists
+# in prod. Missing a table = its rows survive the restore as orphans.
+# Verify against worker/schema.sql and the migrations folder when
+# adding a new table.
 TABLES=(
   activity_log
   maintenance_log
   audit_items
   audits
+  asset_flags
+  asset_issues
+  loans
+  sessions
   assets
   people
   users

@@ -17,7 +17,9 @@ deploying a change) — this is the page.
 - [Backups](#backups)
 - [Restore from backup](#restore-from-backup)
 - [Database migrations](#database-migrations)
-- [Incident response](#incident-response)
+- [Recurring tasks](#recurring-tasks) (weekly / monthly / quarterly / annual)
+- [Escalation contacts](#escalation-contacts)
+- [Incident response](#incident-response) — see also [INCIDENT-PLAYBOOK.md](INCIDENT-PLAYBOOK.md)
 - [Secrets and configuration](#secrets-and-configuration)
 
 ## Routine tasks
@@ -240,7 +242,91 @@ The previous version of this document hard-coded the list of
 migrations up to a point in time. It rotted within three months. Read
 the directory instead.
 
+## Recurring tasks
+
+A maintenance calendar for the trainee. Paste these into Outlook
+recurring events.
+
+### Weekly (~10 min)
+
+- **Glance at the lifecycle digest email** that arrived Monday morning.
+  If it lists assets you don't recognise as needing attention,
+  either action them (extend retirement, replace, follow up on
+  warranty) or update their `retirement_date` so they fall off the
+  list.
+- **Check the GH Actions tab.** Any red runs? Backup workflow ran on
+  Sunday? Health-check workflow stable? Two minutes' triage.
+- **Skim the Flags inbox** in the app for anything stale.
+
+### Monthly (~30 min)
+
+- **Run the Entra user sync** (Settings → Entra ID Integration →
+  Sync Users). Catches new starters, leavers, name changes.
+- **Review the admin user list** (Settings → User Management). Anyone
+  there who shouldn't be? Anyone who left the council?
+- **Review CA report-only logs** if the *Require compliant device*
+  policy is still in report-only mode. See
+  [INCIDENT-PLAYBOOK § Reviewing CA report-only](INCIDENT-PLAYBOOK.md#reviewing-ca-report-only-logs-when-to-flip-to-enforce).
+- **Check ABM / VPP / APNs token expiry** in Intune portal. APNs
+  cert in particular is annual and will silently break enrolment if
+  it lapses.
+
+### Quarterly (~1-2 hr)
+
+- **Rotate `API_KEY`.** New value in password manager, swap on the
+  worker (`wrangler secret put API_KEY`), update any consumers
+  (PowerShell enrolment script, GPO logon scripts).
+- **Review the Entra app's Graph permissions.** Anything granted
+  that's no longer used? Revoke it (least-privilege).
+- **Update dependencies.** `npm outdated` in repo root and `worker/`.
+  Apply non-breaking updates; defer major-version bumps unless
+  there's a security advisory.
+- **Review the `users` table.** Anyone with `last_login` more than
+  3 months ago? Set `active = 0`.
+
+### Annual
+
+- **Disaster-recovery drill.** Pull a recent backup, run
+  `scripts/restore-db.sh` against a *non-prod* D1 (or a dry-run
+  against prod), verify the smoke test passes. Document the date in
+  this file.
+- **Rotate `MASTER_KEY` and the Entra `ENTRA_CLIENT_SECRET`.** Both
+  are escape-hatch credentials; keeping them fresh limits blast
+  radius if the password manager is ever compromised.
+- **Review `docs/GOVERNANCE.md` controls table** with exec.
+  Anything stale? Risk register changed?
+- **Review CF Access policies.** Email allow-list still correct?
+  Any old test members?
+
+Last DR-drill date: 2026-04-28 (dry-run only — restore script
+verified working, no actual destructive run executed).
+
+## Escalation contacts
+
+In order of "who do I call":
+
+1. **Matthew Hutchins-Copping** — current IT Officer (this hand-over
+   is from him). Best for: anything specific to this codebase or
+   council context. Available the first 3 months after handover for
+   anything load-bearing; after that, contact still possible but
+   pre-arrange.
+2. **Council MSP** — the contracted external IT provider. Best for:
+   network, server, infrastructure issues outside the asset register.
+   Council password manager has the support number + portal login.
+3. **Cloudflare support** — via the dashboard (Help → Contact
+   Support). Best for: platform-level weirdness with Workers, D1,
+   Pages, R2, or Access. Slow but correct.
+4. **Microsoft 365 admin support** — Microsoft 365 admin centre →
+   Support → New service request. Best for: Entra ID, Conditional
+   Access, Intune, Graph API auth issues.
+5. **GitHub support** — for repo / Actions / artifact issues.
+   Slowest of the lot; most things are self-serve in the dashboard.
+
 ## Incident response
+
+> See [docs/INCIDENT-PLAYBOOK.md](INCIDENT-PLAYBOOK.md) for the full
+> symptom-driven playbook. Quick recipes below for the most common
+> three.
 
 ### "The site is down"
 
