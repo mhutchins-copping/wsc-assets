@@ -1,8 +1,26 @@
 # WSC Assets
 
-Internal IT asset register for Walgett Shire Council. Tracks council
-hardware — laptops, desktops, phones, peripherals — with assignment,
-maintenance, audit, and reporting features.
+Internal IT operations app for Walgett Shire Council. Tracks every
+piece of council IT — laptops, phones, monitors, the consumables
+shelf — plus the people who use them, the receipts they sign, and
+the day-to-day runbook for keeping the lot in working order.
+
+What's inside, end-to-end:
+
+- **Asset register** — laptops, desktops, phones, peripherals; full
+  lifecycle from provisioning to disposal, with QR labels, signed
+  handover receipts, audits, and loaner pool.
+- **Consumables / inventory** — quantity-tracked stock for commodity
+  items (keyboards, mice, chargers, cables, toner, cases) with
+  movement history and issue-to-staff workflow.
+- **People directory** — Entra-synced staff list with per-person
+  asset count, used during onboarding and leaver handovers.
+- **Self-service** — staff see their own gear and can flag faults
+  directly from the asset detail page; receipts get signed via a
+  public token-gated page.
+- **Operational tooling** — health checks + error alerts, weekly
+  lifecycle digest (warranty / retirement), scheduled cleanups,
+  in-app IT Runbook for the trainee, full incident playbook.
 
 Live at **[assets.it-wsc.com](https://assets.it-wsc.com)** (access
 restricted to council staff via Cloudflare Access SSO).
