@@ -713,11 +713,26 @@ async function renderAssetDetail(id, preloaded) {
         + '<div class="card-body"><div style="font-size:12px;white-space:pre-wrap;color:var(--text2)">' + esc(asset.notes) + '</div></div></div>';
     }
 
-    // Tabs: History + Maintenance + Receipts
+    // Receipts card — promoted out of the History/Maintenance tabs so an
+    // admin landing on an asset can see at a glance whether a receipt
+    // has been signed without clicking around. The dedicated #/issues
+    // page still exists for the council-wide view.
+    html += '<div class="card" style="margin-bottom:12px">'
+      + '<div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px">'
+      + '<span class="card-title">Receipts</span>';
+    if (Auth.isManager() && asset.assigned_to) {
+      html += '<button class="btn primary sm" onclick="sendAssetIssue(\'' + esc(asset.id) + '\',\'' + esc(asset.assigned_to) + '\')">Email signing link to ' + esc((asset.assigned_to_name || 'recipient').split(' ')[0]) + '</button>';
+    } else if (Auth.isManager()) {
+      html += '<span style="font-size:11px;color:var(--text3)">Assign the asset to email a signing link.</span>';
+    }
+    html += '</div>'
+      + '<div class="card-body"><div id="asset-issues-list">' + skeleton(3) + '</div></div>'
+      + '</div>';
+
+    // Tabs: History + Maintenance
     html += '<div class="tabs">'
       + '<button class="tab active" onclick="switchAssetTab(this,\'asset-tab-history\')">History</button>'
       + '<button class="tab" onclick="switchAssetTab(this,\'asset-tab-maintenance\')">Maintenance</button>'
-      + '<button class="tab" onclick="switchAssetTab(this,\'asset-tab-receipts\')">Receipts</button>'
       + '</div>';
 
     // History tab
@@ -760,21 +775,6 @@ async function renderAssetDetail(id, preloaded) {
       html += '<div class="table-empty">No maintenance records</div>';
     }
     html += '</div>';
-
-    // Receipts tab — populated async after initial render to avoid holding
-    // up the detail view on a secondary fetch. Send-link button is always
-    // visible so an admin can re-issue a receipt later (e.g. lost email).
-    html += '<div id="asset-tab-receipts" class="asset-tab-content" style="display:none">';
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
-      + '<div style="font-size:12px;color:var(--text3)">Signed receipts for this asset</div>';
-    if (Auth.isManager() && asset.assigned_to) {
-      html += '<button class="btn primary sm" onclick="sendAssetIssue(\'' + esc(asset.id) + '\',\'' + esc(asset.assigned_to) + '\')">Email signing link to ' + esc(asset.assigned_to_name || 'recipient') + '</button>';
-    } else if (Auth.isManager()) {
-      html += '<span style="font-size:11px;color:var(--text3)">Assign the asset to someone to email them a receipt link.</span>';
-    } else {
-      html += '<span></span>';
-    }
-    html += '</div><div id="asset-issues-list">' + skeleton(3) + '</div></div>';
 
     el.innerHTML = html;
 
@@ -977,8 +977,11 @@ async function loadAssetIssues(assetId) {
   var el = document.getElementById('asset-issues-list');
   if (!el) return;
   try {
-    var res = await API.getIssues({});
-    var rows = (res.data || []).filter(function(r) { return r.asset_id === assetId; });
+    // Server-side asset_id filter — was previously a client-side
+    // filter against the first 100 receipts, which silently lost rows
+    // once the council passed that threshold.
+    var res = await API.getIssues({ asset_id: assetId });
+    var rows = res.data || [];
     if (!rows.length) {
       el.innerHTML = '<div class="table-empty">No receipts sent for this asset yet.</div>';
       return;

@@ -1453,11 +1453,14 @@ async function sendIssueEmail(env, { asset, person, token, termsText, issuedBy }
 async function listIssues(request, env, url) {
   const params = url.searchParams;
   const status = params.get('status') || '';
+  const assetId = params.get('asset_id') || '';
   const limit = Math.min(200, Math.max(1, parseInt(params.get('limit')) || 100));
 
-  let whereClause = '';
+  const where = [];
   const binds = [];
-  if (status) { whereClause = 'WHERE i.status = ?'; binds.push(status); }
+  if (status)  { where.push('i.status = ?');   binds.push(status); }
+  if (assetId) { where.push('i.asset_id = ?'); binds.push(assetId); }
+  const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
   const result = await env.DB.prepare(`
     SELECT i.id, i.asset_id, i.person_id, i.token, i.issued_by_email,
