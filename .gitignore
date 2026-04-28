@@ -14,3 +14,4 @@ backups/
 # Regenerated on `wrangler deploy` / `wrangler dev`.
 .wrangler/
 worker/.wrangler/
+intune-audit/
