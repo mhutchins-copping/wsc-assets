@@ -107,12 +107,22 @@ async function renderAssetFilters() {
     { value: 'lost', label: 'Lost' }
   ];
 
-  var html = '<div style="display:flex;flex-direction:column;gap:6px">'
+  // Active labels for the collapsed summaries — so the operator knows
+  // what's filtered without expanding the panels.
+  var activeStatus = (statusFilters.find(function(f) { return f.value === assetState.status; }) || statusFilters[0]).label;
+
+  var html = '<div style="display:flex;flex-direction:column;gap:6px">';
+
+  // Status filter — defaults closed, expands if a non-default value is set
+  html += '<details class="filter-collapse"' + (assetState.status ? ' open' : '') + '>'
+    + '<summary><span class="filter-collapse-label">Status:</span> <strong>' + esc(activeStatus) + '</strong> <span class="filter-collapse-chev">▾</span></summary>'
+    + '<div class="filter-collapse-body">'
     + renderFilters({
         filters: statusFilters,
         active: assetState.status,
         onClick: 'filterAssetStatus'
-      });
+      })
+    + '</div></details>';
 
   // Category chips — one per leaf (child) category so users pick a
   // concrete type (Laptop, Phone, Switch) rather than the parent
@@ -133,11 +143,17 @@ async function renderAssetFilters() {
   });
   if (leaves.length) {
     var catFilters = [{ value: '', label: 'All types' }].concat(leaves);
-    html += renderFilters({
-      filters: catFilters,
-      active: assetState.category,
-      onClick: 'filterAssetCategory'
-    });
+    var activeType = (catFilters.find(function(f) { return f.value === assetState.category; }) || catFilters[0]).label;
+
+    html += '<details class="filter-collapse"' + (assetState.category ? ' open' : '') + '>'
+      + '<summary><span class="filter-collapse-label">Type:</span> <strong>' + esc(activeType) + '</strong> <span class="filter-collapse-chev">▾</span></summary>'
+      + '<div class="filter-collapse-body">'
+      + renderFilters({
+          filters: catFilters,
+          active: assetState.category,
+          onClick: 'filterAssetCategory'
+        })
+      + '</div></details>';
   }
   html += '</div>';
 

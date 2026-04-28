@@ -2530,3 +2530,43 @@ details.collapsible-card > summary::marker { content: ''; }
 }
 details.collapsible-card[open] .collapsible-indicator { transform: rotate(180deg); }
 details.collapsible-card > .card-body { cursor: default; }
+
+/* ─── Collapsed filter row ─────────────────────────────
+   Used on the asset list to collapse the long type/status filter
+   strips into a single summary line. Click to expand to the chip
+   row. Auto-opens when an active non-default filter is set. */
+details.filter-collapse {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0;
+  font-size: 13px;
+}
+details.filter-collapse > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+  color: var(--text2);
+}
+details.filter-collapse > summary::-webkit-details-marker { display: none; }
+details.filter-collapse > summary::marker { content: ''; }
+details.filter-collapse > summary:hover { background: var(--surface2); }
+details.filter-collapse[open] > summary {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+.filter-collapse-label { color: var(--text3); }
+.filter-collapse-label + strong { color: var(--text); }
+.filter-collapse-chev {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text3);
+  transition: transform 0.15s ease;
+}
+details.filter-collapse[open] .filter-collapse-chev { transform: rotate(180deg); }
+.filter-collapse-body { padding: 8px 12px; }
+.filter-collapse-body .filter-bar { margin: 0; }
