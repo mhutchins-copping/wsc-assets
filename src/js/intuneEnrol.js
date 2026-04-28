@@ -120,7 +120,7 @@ function intuneFormHtml() {
   // ── Person ──────────────────────────────────────
   html += intuneSectionLabel('Who is this device for?', hasPerson);
   if (hasPerson) {
-    html += '<div style="margin:0 0 18px;padding:12px 14px;background:#2e584210;border-left:3px solid #2e5842;border-radius:4px;display:flex;align-items:center;justify-content:space-between;gap:12px">'
+    html += '<div style="margin:0 0 18px;padding:12px 14px;background:var(--accent-l);border-left:3px solid #2e5842;border-radius:4px;display:flex;align-items:center;justify-content:space-between;gap:12px">'
       + '<div>'
       + '<strong>' + esc(_intuneState.person.name) + '</strong>'
       + '<div style="font-size:12px;color:var(--text2)">' + esc(_intuneState.person.email)
@@ -456,7 +456,7 @@ function intuneDoneHtml() {
   }
 
   // Handover URL — the operator's primary action
-  html += '<div style="background:var(--surface-alt,#f9fafb);padding:14px;border-radius:8px;margin-bottom:14px">'
+  html += '<div style="background:var(--surface2);padding:14px;border-radius:8px;margin-bottom:14px">'
     + '<div style="font-size:13px;font-weight:600;margin-bottom:6px">Send this to ' + esc(_intuneState.person.name.split(' ')[0]) + '</div>'
     + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
     + '<input id="intune-handover-url" type="text" readonly value="' + esc(r.handover_url || '') + '" class="form-input" style="font-family:ui-monospace,SF Mono,Menlo,Monaco,monospace;font-size:12px;min-width:240px;flex:1">'
@@ -467,7 +467,7 @@ function intuneDoneHtml() {
     + '</div>';
 
   // Status pane (live polling for serials)
-  html += '<div style="background:var(--surface-alt,#f9fafb);padding:14px;border-radius:8px">'
+  html += '<div style="background:var(--surface2);padding:14px;border-radius:8px">'
     + '<div style="font-size:13px;font-weight:600;margin-bottom:6px">Live status</div>'
     + '<div id="intune-status-pane" style="font-size:13px;color:var(--text2)">';
   if (_intuneState.serial) {
