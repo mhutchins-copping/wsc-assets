@@ -6,18 +6,83 @@ import { ENROL_SCRIPT } from './lib/enrol-script.js';
 import { LOGO_BYTES } from './lib/logo.js';
 import { getGraphTokenCached } from './lib/graph.js';
 
+// In-isolate dedup so a flapping endpoint doesn't email-bomb admins.
+// Workers' isolates live ~5 min between requests, so this is roughly a
+// rolling 5-min window of "we already alerted on this error message".
+// Set the same key in KV would be more correct across isolates, but
+// uncaught errors are rare enough that some duplicates are tolerable.
+const _recentErrors = new Set();
+
 export default {
-  async fetch(request, env) {
-    const response = await dispatch(request, env);
-    return applyCors(response, request, env);
+  async fetch(request, env, ctx) {
+    try {
+      const response = await dispatch(request, env);
+      return applyCors(response, request, env);
+    } catch (err) {
+      const url = new URL(request.url);
+      const errorKey = `${url.pathname}|${err.message}`;
+      console.error('uncaught dispatch error:', err.stack || err.message, '→', url.pathname);
+
+      if (!_recentErrors.has(errorKey)) {
+        _recentErrors.add(errorKey);
+        if (ctx && ctx.waitUntil) {
+          ctx.waitUntil(
+            notify(env, 'worker_error', {
+              path: url.pathname,
+              method: request.method,
+              message: err.message,
+              stack: (err.stack || '').split('\n').slice(0, 8).join('\n')
+            }).catch(() => {})
+          );
+        }
+      }
+
+      return applyCors(json({ error: 'Internal server error' }, 500), request, env);
+    }
+  },
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runScheduledJobs(event, env).catch(err => console.error('scheduled job failed:', err)));
   }
 };
+
+// Cron entry point. The cron schedule is in wrangler.toml [triggers];
+// we branch by event.cron to dispatch to specific jobs. Daily +
+// weekly are the only two cadences right now.
+async function runScheduledJobs(event, env) {
+  const cron = event && event.cron;
+  console.log('scheduled fired:', cron);
+  // Daily housekeeping
+  if (cron === '0 17 * * *' || !cron) {
+    await pruneActivityLog(env).catch(err => console.error('pruneActivityLog failed:', err));
+  }
+  // Weekly digest (Sundays 17:00 UTC = Mondays 03:00/04:00 AEST/AEDT)
+  if (cron === '0 17 * * 0' || !cron) {
+    await sendLifecycleDigest(env).catch(err => console.error('sendLifecycleDigest failed:', err));
+  }
+}
 
 async function dispatch(request, env) {
   const url = new URL(request.url);
 
   // CORS preflight
   if (request.method === 'OPTIONS') return corsResponse();
+
+  // Health check — unauthenticated, cheap. GitHub Actions cron pings
+  // this every 5 min; failure raises a workflow alert. Also handy for
+  // a load balancer / uptime probe if one's added later.
+  if (url.pathname === '/api/health' && request.method === 'GET') {
+    const checks = {};
+    let ok = true;
+    try {
+      const r = await env.DB.prepare('SELECT 1 AS ok').first();
+      checks.d1 = r && r.ok === 1 ? 'ok' : 'fail';
+      if (checks.d1 !== 'ok') ok = false;
+    } catch (e) {
+      checks.d1 = 'fail: ' + e.message;
+      ok = false;
+    }
+    return json({ status: ok ? 'ok' : 'degraded', checks, time: now() }, ok ? 200 : 503);
+  }
 
   // enrol.it-wsc.com used to host token-gated Intune handover pages.
   // The wizard was removed; the hostname now redirects everything to
@@ -3751,3 +3816,69 @@ async function syncEntraUsers(request, env) {
 }
 
 
+
+// ─── Scheduled jobs ─────────────────────────────────────
+// Run from runScheduledJobs() based on event.cron at the top of this
+// file. Each job is independent, idempotent, and tolerates partial
+// failure - a bad row in one shouldn't block the next.
+
+const ACTIVITY_LOG_RETENTION_DAYS = 540;  // ~18 months
+
+async function pruneActivityLog(env) {
+  const cutoff = new Date(Date.now() - ACTIVITY_LOG_RETENTION_DAYS * 86400_000)
+    .toISOString().replace('T', ' ').slice(0, 19);
+  const r = await env.DB.prepare(
+    `DELETE FROM activity_log WHERE created_at < ?`
+  ).bind(cutoff).run();
+  console.log(`pruneActivityLog: deleted ${r.meta?.changes || 0} rows older than ${cutoff}`);
+  return r.meta?.changes || 0;
+}
+
+async function sendLifecycleDigest(env) {
+  const today = new Date().toISOString().slice(0, 10);
+  const in30Days = new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10);
+
+  // Warranties expiring within 30 days
+  const warranties = await env.DB.prepare(`
+    SELECT a.id, a.asset_tag, a.name, a.warranty_expiry,
+           p.name AS assigned_to_name
+      FROM assets a
+      LEFT JOIN people p ON a.assigned_to = p.id
+     WHERE a.status != 'disposed'
+       AND a.warranty_expiry IS NOT NULL
+       AND a.warranty_expiry >= ? AND a.warranty_expiry <= ?
+     ORDER BY a.warranty_expiry ASC
+     LIMIT 100
+  `).bind(today, in30Days).all();
+
+  // Assets approaching retirement within 30 days (or already past)
+  const retirements = await env.DB.prepare(`
+    SELECT a.id, a.asset_tag, a.name, a.retirement_date,
+           p.name AS assigned_to_name
+      FROM assets a
+      LEFT JOIN people p ON a.assigned_to = p.id
+     WHERE a.status != 'disposed'
+       AND a.retirement_date IS NOT NULL
+       AND a.retirement_date <= ?
+     ORDER BY a.retirement_date ASC
+     LIMIT 100
+  `).bind(in30Days).all();
+
+  const wRows = warranties.results || [];
+  const rRows = retirements.results || [];
+
+  if (wRows.length === 0 && rRows.length === 0) {
+    console.log('sendLifecycleDigest: no expiring warranties or retirements');
+    return;
+  }
+
+  try {
+    await notify(env, 'asset_lifecycle_digest', {
+      warranties: wRows,
+      retirements: rRows
+    });
+    console.log(`sendLifecycleDigest: emailed (${wRows.length} warranties, ${rRows.length} retirements)`);
+  } catch (e) {
+    console.error('sendLifecycleDigest: notify failed:', e.message);
+  }
+}

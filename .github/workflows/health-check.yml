@@ -1,0 +1,35 @@
+# Pings the worker /api/health endpoint every 5 minutes and fails
+# the workflow run if the response isn't 200. GitHub surfaces failed
+# scheduled runs in the Actions tab; configure email notifications
+# on workflow failure in your GitHub account settings to get pinged.
+#
+# Why GH Actions and not a third-party uptime monitor: free, no extra
+# vendor, results visible alongside the deploy + backup workflows in
+# the same Actions tab.
+
+name: Health Check
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping /api/health
+        run: |
+          set -e
+          response=$(curl --silent --show-error --max-time 15 \
+            --write-out "HTTPSTATUS:%{http_code}" \
+            https://api.it-wsc.com/api/health)
+          body=$(echo "$response" | sed -E 's/HTTPSTATUS:[0-9]+$//')
+          status=$(echo "$response" | grep -oE 'HTTPSTATUS:[0-9]+$' | cut -d: -f2)
+          echo "Status: $status"
+          echo "Body: $body"
+          if [ "$status" != "200" ]; then
+            echo "::error::Health check failed with status $status"
+            exit 1
+          fi

@@ -103,6 +103,36 @@ function buildEmail(event, data) {
       assetUrl = baseUrl + data.asset.id;
       break;
 
+    case 'worker_error':
+      subject = `[WSC Assets] Worker error on ${data.path}`;
+      actionColor = '#dc2626';
+      actionLabel = 'Worker error';
+      details.push({ label: 'Path', value: `${data.method} ${data.path}` });
+      details.push({ label: 'Error', value: data.message || '(no message)' });
+      if (data.stack) details.push({ label: 'Stack', value: data.stack });
+      details.push({ label: 'Time', value: timestampStr });
+      break;
+
+    case 'asset_lifecycle_digest': {
+      const wCount = (data.warranties || []).length;
+      const rCount = (data.retirements || []).length;
+      subject = `[WSC Assets] Weekly digest — ${wCount} warranties, ${rCount} retirements`;
+      actionColor = '#0ea5e9';
+      actionLabel = 'Weekly digest';
+      details.push({ label: 'Warranty expiring (30d)', value: wCount });
+      details.push({ label: 'Retirement due (30d)', value: rCount });
+      const warrantyList = (data.warranties || []).map(a =>
+        `${a.asset_tag} — ${a.name} — ${a.warranty_expiry}${a.assigned_to_name ? ' (' + a.assigned_to_name + ')' : ''}`
+      ).join('<br>');
+      const retirementList = (data.retirements || []).map(a =>
+        `${a.asset_tag} — ${a.name} — ${a.retirement_date}${a.assigned_to_name ? ' (' + a.assigned_to_name + ')' : ''}`
+      ).join('<br>');
+      if (warrantyList) details.push({ label: 'Warranties', value: warrantyList });
+      if (retirementList) details.push({ label: 'Retirements', value: retirementList });
+      details.push({ label: 'Generated', value: timestampStr });
+      break;
+    }
+
     case 'asset_issue_signed':
       subject = `[WSC Assets] Receipt Signed — ${data.asset.asset_tag}`;
       actionColor = '#10b981';

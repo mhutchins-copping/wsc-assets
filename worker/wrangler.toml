@@ -26,6 +26,14 @@ bucket_name = "wsc-assets-images"
 binding = "KV_GRAPH"
 id = "a45f445d79ce4bd9ae19edcfd357bf8f"
 
+# Scheduled jobs:
+#   17:00 UTC daily          → activity-log retention prune
+#   17:00 UTC every Sunday   → weekly lifecycle digest (warranty +
+#                              retirement-due assets), arrives Mon
+#                              morning AEST/AEDT
+[triggers]
+crons = ["0 17 * * *", "0 17 * * 0"]
+
 # Environment variables (set API_KEY via: wrangler secret put API_KEY)
 [vars]
 ASSET_TAG_PREFIX = "WSC"
