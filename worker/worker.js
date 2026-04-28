@@ -46,17 +46,21 @@ export default {
 };
 
 // Cron entry point. The cron schedule is in wrangler.toml [triggers];
-// we branch by event.cron to dispatch to specific jobs. Daily +
-// weekly are the only two cadences right now.
+// we branch by event.cron so each invocation runs exactly one job.
+// On Sundays both crons fire (separate invocations) - daily prune
+// AND weekly digest both happen.
 async function runScheduledJobs(event, env) {
   const cron = event && event.cron;
   console.log('scheduled fired:', cron);
-  // Daily housekeeping
-  if (cron === '0 17 * * *' || !cron) {
+  if (cron === '0 17 * * *') {
     await pruneActivityLog(env).catch(err => console.error('pruneActivityLog failed:', err));
-  }
-  // Weekly digest (Sundays 17:00 UTC = Mondays 03:00/04:00 AEST/AEDT)
-  if (cron === '0 17 * * 0' || !cron) {
+  } else if (cron === '0 17 * * SUN') {
+    await sendLifecycleDigest(env).catch(err => console.error('sendLifecycleDigest failed:', err));
+  } else {
+    // Unknown / manual trigger - run both as a fallback so a
+    // re-scheduled cron doesn't silently skip work.
+    console.warn('unknown cron, running both jobs as fallback:', cron);
+    await pruneActivityLog(env).catch(err => console.error('pruneActivityLog failed:', err));
     await sendLifecycleDigest(env).catch(err => console.error('sendLifecycleDigest failed:', err));
   }
 }

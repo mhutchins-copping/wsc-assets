@@ -32,7 +32,11 @@ id = "a45f445d79ce4bd9ae19edcfd357bf8f"
 #                              retirement-due assets), arrives Mon
 #                              morning AEST/AEDT
 [triggers]
-crons = ["0 17 * * *", "0 17 * * 0"]
+# Cloudflare's cron parser doesn't accept "0" for Sunday in the
+# day-of-week slot - use "SUN" (or "7"). The daily and weekly crons
+# are intentionally on the same minute; on Sundays both fire and the
+# scheduled() handler dispatches each by event.cron.
+crons = ["0 17 * * *", "0 17 * * SUN"]
 
 # Environment variables (set API_KEY via: wrangler secret put API_KEY)
 [vars]
