@@ -2815,11 +2815,13 @@ async function listPeople(request, env, url) {
   const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
   // Sort: 'name' (default), 'asset_count' (most-assets first - useful for
-  // leaver handoff to find who's holding the most gear).
+  // leaver handoff to find who's holding the most gear). Note we ORDER
+  // BY in the OUTER select where the `p.` alias has been stripped, so
+  // refer to columns by bare name.
   const sort = params.get('sort') || 'name';
   const orderBy = sort === 'asset_count'
-    ? 'asset_count DESC, p.name ASC'
-    : 'p.name ASC';
+    ? 'asset_count DESC, name ASC'
+    : 'name ASC';
 
   // Optional min_assets filter: only return rows with at least N assets.
   // Applied after the COUNT in a HAVING-equivalent (subquery wraps).
