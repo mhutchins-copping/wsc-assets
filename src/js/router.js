@@ -67,7 +67,6 @@ var Router = {
       '/loans': 'loans',
       '/phone-enrol': 'phone-enrol',
       '/phone-enrol-batch': 'phone-enrol',
-      '/intune-enrol': 'intune-enrol',
       '/settings': 'settings',
       '/account': 'account'
     };
