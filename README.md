@@ -26,6 +26,10 @@ The rest of the docs:
 - **[docs/GOVERNANCE.md](docs/GOVERNANCE.md)** — one-page executive
   summary. Data location, ownership, BCP, cost, risk, and security
   controls.
+- **[docs/INTUNE-RUNBOOK.md](docs/INTUNE-RUNBOOK.md)** — practical
+  enrolment recipes (iPhone via ABM, Android Fully Managed, BYOD
+  Work Profile, etc). Intune lives outside this app; this is the
+  cheat sheet for using it.
 
 Those four cover the full picture. The rest of this README is a
 quick-reference.
@@ -78,26 +82,6 @@ quick-reference.
   make from the user agent where it can. **Batch mode** at
   `#/phone-enrol-batch` for registering a box of new devices in one
   go: set make / model / OS / carrier once, then one row per device.
-- **Intune enrolment wizard** at `#/intune-enrol` (admin-only, sidebar
-  → Tools → Enrol device (Intune)) — pick a user, pick iPhone /
-  Android, pick council-owned / staff-owned, optional serial, click
-  Provision. The wizard auto-detects whether the iPhone is in **Apple
-  Business Manager** and branches accordingly:
-  - **In ABM** → pre-binds the user via Graph DEP. Setup Assistant
-    on the iPhone pre-fills the council username, staff just types
-    their password. Zero-touch; ~3 min staff time. Supervised device.
-  - **Not in ABM** → Company Portal install path. Staff downloads
-    Company Portal from the App Store, signs in, follows prompts.
-    ~15 min staff time. Not supervised but fully managed.
-  Inline guidance for adding consumer-bought iPhones to ABM via the
-  **iOS Apple Configurator app** (free, ~90 sec/device, no Mac needed)
-  when the wizard detects the device isn't in ABM yet. Android always
-  uses Company Portal + Work Profile. Backend mints a 14-day token-
-  gated handover URL on `enrol.it-wsc.com/h/{token}` with the
-  appropriate OS-specific walkthrough — public, no SSO, opens directly
-  on the device. Supports `?dry_run=1` to preview the planned writes.
-  Backed by Microsoft Graph for token-health monitoring (APNs / VPP /
-  ABM expiry shows on the dashboard).
 - **PowerShell enrolment** for hardware specs. Two entry points:
   - **Password-gated web launcher** at `https://api.it-wsc.com/enrol` —
     visit the URL on the new PC, type the shared `ENROL_PASSWORD`, and

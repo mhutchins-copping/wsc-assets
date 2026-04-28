@@ -25,6 +25,5 @@ import './js/issues.js';
 import './js/flags.js';
 import './js/loans.js';
 import './js/phoneEnrol.js';
-import './js/intuneEnrol.js';
 import './js/settings.js';
 import './js/account.js';

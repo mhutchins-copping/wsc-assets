@@ -311,21 +311,23 @@ the master key only solves one failure mode, not all of them.
 | ---------- | ------ | ------------------------------------------------ |
 | `DB`       | D1     | Main database (`wsc-assets-db`).                 |
 | `IMAGES`   | R2     | Asset photo storage (`wsc-assets-images`).       |
-| `KV_GRAPH` | KV     | Microsoft Graph access-token cache. TTL = `expires_in - 60s` so the Intune wizard's 5-10-call-per-click flows don't burn AAD's `/oauth2/v2.0/token` rate limit. Optional — without it the worker fetches a fresh token every call. Created via `wrangler kv namespace create KV_GRAPH`. |
+| `KV_GRAPH` | KV     | Microsoft Graph access-token cache. Optional — without it `notify.js` fetches a fresh token per send. Created via `wrangler kv namespace create KV_GRAPH`. |
 
 ### Microsoft Graph application permissions
 
-The Entra app referenced by `ENTRA_CLIENT_ID` needs these **application** permissions (admin-consented). Granted automatically by `Connect-MgGraph` + admin in the Azure portal, or programmatically via `POST /servicePrincipals/{id}/appRoleAssignments`.
+The Entra app referenced by `ENTRA_CLIENT_ID` needs these **application** permissions (admin-consented):
 
-| Permission                                       | Used by                                                  |
-| ------------------------------------------------ | -------------------------------------------------------- |
-| `User.Read.All`                                  | `syncEntraUsers` — staff people-table sync.              |
-| `Mail.Send`                                      | `notify.js` — admin event emails, signing links.         |
-| `DeviceManagementServiceConfig.ReadWrite.All`    | Intune wizard — ABM / VPP / APNs token health, Apple enrolment profile listing. |
-| `DeviceManagementManagedDevices.ReadWrite.All`   | Intune wizard — managed-device lookup, primary-user assignment. |
-| `DeviceManagementConfiguration.Read.All`         | Intune wizard — enrolment profile listing.               |
-| `Group.ReadWrite.All`                            | Intune wizard — static-group fallback (legacy; can be downgraded to read-only once the dynamic-group conversion is verified). |
-| `Device.Read.All`                                | Intune wizard — Entra device-object resolution by serial. |
+| Permission        | Used by                                              |
+| ----------------- | ---------------------------------------------------- |
+| `User.Read.All`   | `syncEntraUsers` — staff people-table sync.          |
+| `Mail.Send`       | `notify.js` — admin event emails, signing links.     |
+
+**Historical note:** the app previously held a number of
+`DeviceManagement.*` and `Group.ReadWrite.All` scopes for the Intune
+enrolment wizard. The wizard was removed (see
+[INTUNE-RUNBOOK.md](INTUNE-RUNBOOK.md) for the manual flow that
+replaced it). Those scopes can be revoked from the Entra app
+registration when convenient.
 
 ### Rotating a secret
 

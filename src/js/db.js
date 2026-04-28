@@ -202,23 +202,6 @@ var API = {
     }
   },
 
-  // ─── Intune enrolment helper (admin only)
-  intuneProfiles: function() { return this.fetch('/api/intune/profiles'); },
-  intuneHealth: function() { return this.fetch('/api/intune/health'); },
-  intunePreflight: function(os, serial) {
-    var qs = '?os=' + encodeURIComponent(os) + (serial ? '&serial=' + encodeURIComponent(serial) : '');
-    return this.fetch('/api/intune/preflight' + qs);
-  },
-  intunePeopleSearch: function(q) {
-    return this.fetch('/api/intune/people/search?q=' + encodeURIComponent(q));
-  },
-  intuneProvision: function(payload, dryRun) {
-    var path = '/api/intune/provision' + (dryRun ? '?dry_run=1' : '');
-    return this.fetch(path, { method: 'POST', body: payload });
-  },
-  intuneDeviceStatus: function(serial) {
-    return this.fetch('/api/intune/device/' + encodeURIComponent(serial) + '/status');
-  }
 };
 
 API.init();
