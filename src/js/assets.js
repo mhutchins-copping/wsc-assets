@@ -817,6 +817,10 @@ function detailField(label, value, isHtml) {
   return '<div><div class="detail-field-label">' + esc(label) + '</div>'
     + '<div class="detail-field-value' + cls + '">' + val + '</div></div>';
 }
+// Expose so other modules (consumables.js etc.) can re-use the same
+// label/value pattern. Was previously module-scoped, which broke the
+// consumables detail render after creation (load order race).
+window.detailField = detailField;
 
 function switchAssetTab(btn, tabId) {
   document.querySelectorAll('.asset-tab-content').forEach(function(t) { t.style.display = 'none'; });
