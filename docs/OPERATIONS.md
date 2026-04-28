@@ -335,9 +335,10 @@ In order of "who do I call":
 2. **Check the most recent deploy:** Actions tab on GitHub. If the
    last workflow failed, the problem is probably there. The logs will
    say which step broke.
-3. **Check the worker:** `curl https://api.it-wsc.com/` — should
-   return `{"error":"Not found"}`. If it returns nothing or times
-   out, the worker is down. Re-run the deploy workflow to redeploy.
+3. **Check the worker:** `curl https://api.it-wsc.com/api/health` —
+   should return 200 with `{"status":"ok","checks":{"d1":"ok"},...}`.
+   If it returns nothing, times out, or 503, the worker or D1 is the
+   issue. Re-run the deploy workflow to redeploy.
 4. **Check CF Access:** open `https://assets.it-wsc.com` in a private
    window. If it doesn't redirect to Microsoft login, Access is
    misconfigured. Check Zero Trust dashboard → Access → Applications →

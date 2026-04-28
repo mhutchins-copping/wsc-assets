@@ -274,8 +274,11 @@ Small features fit in one commit that edits all four files.
   by accident, tell Matthew *immediately* — the remediation is
   rotating the secret, not removing the commit (Git history is
   forever).
-- **Don't push straight to `main`.** Every change goes via a branch +
-  PR. Even tiny ones. The branch protection rule enforces this.
+- **Push to `main` directly.** This is a solo-dev project; pull
+  requests with no second reviewer add friction without value. CI's
+  smoke test is the gate, not human review. Build locally before
+  pushing (`npm run build`) — catches syntax breaks in 2s instead
+  of waiting 3 min for Actions.
 - **If you add a column, add a migration AND update `schema.sql`.**
   Migrations are for upgrading existing databases. `schema.sql` is for
   bootstrapping fresh ones. Both have to agree.
@@ -330,7 +333,11 @@ about 15–30 minutes.
 3. **`worker/schema.sql`** — the database shape. Short. Read it twice.
 4. **`OPERATIONS.md`** — the runbook. Scan once now; re-read each
    section when you need to actually do the thing.
-5. **`GOVERNANCE.md`** — the executive one-pager. Useful before any
+5. **`INCIDENT-PLAYBOOK.md`** — symptom-driven recipes. Skim once
+   so the first time something breaks you recognise the shape.
+6. **`INTUNE-RUNBOOK.md`** — Intune device enrolment recipes (also
+   rendered in-app for admins under Tools → IT Runbook).
+7. **`GOVERNANCE.md`** — the executive one-pager. Useful before any
    conversation with the GM or council audit.
 
 After that, the features listed in the root `README.md` give you a

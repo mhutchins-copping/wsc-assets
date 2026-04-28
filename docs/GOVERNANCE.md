@@ -146,7 +146,7 @@ A realistic paid-tier scenario would cost less than AUD $30/month.
 | -------------------------------- | -------------------------------------------------- |
 | Multi-factor authentication      | Enforced via Entra ID policy on council accounts.  |
 | Single sign-on                   | Enforced at edge via Cloudflare Access.            |
-| Role-based access control        | `admin` / `user` / `viewer` roles, server-enforced.|
+| Role-based access control        | `viewer` / `user` / `manager` / `admin` roles, server-enforced.|
 | Default-deny authorisation       | Internal `users` allow-list; SSO alone insufficient. JIT provisioning grants view-only `user` role to @walgett.nsw.gov.au SSO identities on first sign-in; admin still explicit. |
 | Transport encryption             | HTTPS only; HSTS enforced at edge.                 |
 | Secret management                | Wrangler secret store; never in Git.               |
@@ -156,7 +156,11 @@ A realistic paid-tier scenario would cost less than AUD $30/month.
 | Least privilege                  | API endpoints check role; destructive ops admin-only.|
 | Data minimisation per user       | Non-admin users see only assets assigned to their own person record — list, detail, and sidebar nav are all scoped. |
 | Dependency hygiene               | Vanilla JS frontend; minimal server dependencies.  |
-| Backup integrity                 | Off-provider backups; retention 90 days.           |
+| Backup integrity                 | Off-provider backups; retention 90 days. Restore script verified working (last drill 2026-04-28).         |
+| Conditional Access               | "Require compliant device or approved app" CA policy targeting M365; report-only as of 2026-04-28, pending review. |
+| Mobile data protection           | App Protection (MAM) policies for iOS + Android targeting Outlook/Teams/OneDrive/etc — block backup, block print, restrict copy-paste to managed apps, app PIN. Protects council data on BYOD without requiring full MDM. |
+| Health monitoring                | `/api/health` endpoint pinged every 5 min by GitHub Actions; uncaught worker errors emailed to admins. |
+| Data retention                   | Activity log auto-pruned at 18 months by daily cron. Signed receipts retained indefinitely (audit need). |
 
 ## Appendix B — Questions this document is intended to answer
 

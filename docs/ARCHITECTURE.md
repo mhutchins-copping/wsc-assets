@@ -196,6 +196,44 @@ incrementing integers. That means IDs don't leak how many rows exist,
 and they can be embedded in URLs without risk of someone walking
 through them.
 
+## Observability
+
+Three layers, all part of the same observability story so something
+breaking can't sit silently:
+
+- **Worker `GET /api/health`** — unauthenticated, cheap. Checks D1
+  reachability and returns 200 / 503. Reachable from anywhere.
+- **GitHub Actions `health-check.yml`** — pings `/api/health` every
+  5 min and fails the workflow run if non-200. GitHub surfaces
+  failed runs in the Actions tab and (for repo admins) sends an
+  email by default.
+- **Uncaught error alerts** — the top-level dispatch wrapper catches
+  any thrown error, logs to console, and fires-and-forgets an email
+  to active admins via `notify`. Per-isolate dedup (~5-min window)
+  stops a flapping endpoint from spamming.
+
+Console logs from the worker are visible in Cloudflare's dashboard
+under Workers → wsc-assets-api → Logs (real-time only; not retained
+by default — wire up Logpush if a longer trail is ever needed).
+
+## Scheduled jobs
+
+Defined in `worker/wrangler.toml` `[triggers]`:
+
+| Cron               | What                                         |
+| ------------------ | -------------------------------------------- |
+| `0 17 * * *`       | Daily — prune `activity_log` rows older than 18 months |
+| `0 17 * * SUN`     | Weekly — lifecycle digest email to admins (warranty expiring + retirement_date approaching, both 30-day windows) |
+
+Both fire at 17:00 UTC, which is around 03:00–04:00 AEST/AEDT —
+deliberately chosen so emails arrive at the start of the council's
+business day. The `scheduled()` handler at the top of `worker.js`
+dispatches by `event.cron`.
+
+A separate weekly cron in `.github/workflows/backup.yml` exports
+the full D1 database to a workflow artifact. See OPERATIONS.md
+for restoration.
+
 ## Request flow (example: loading the dashboard)
 
 1. User opens `https://assets.it-wsc.com/`.
@@ -236,6 +274,7 @@ wsc-assets/
 │       ├── flags.js           # Flags inbox — user-filed fault reports
 │       ├── loans.js           # Loaner-pool admin view + loan / return flow
 │       ├── phoneEnrol.js      # Mobile-first phone enrolment — IMEI + barcode scan
+│       ├── runbook.js         # In-app render of docs/INTUNE-RUNBOOK.md (admin-only)
 │       ├── people.js
 │       ├── categories.js
 │       ├── audits.js
@@ -244,11 +283,13 @@ wsc-assets/
 │       └── account.js         # 'Your account' page (signed-in user)
 ├── worker/
 │   ├── worker.js              # The whole API, one file
-│   ├── wrangler.toml          # Worker config (bindings, vars)
+│   ├── wrangler.toml          # Worker config (bindings, vars, cron triggers)
 │   ├── schema.sql             # Fresh-install baseline
 │   ├── seed.sql               # Default categories
 │   ├── lib/
+│   │   ├── graph.js           # KV-cached Microsoft Graph token + fetchGraph wrapper
 │   │   ├── notify.js          # Graph-backed admin notifications + sendMail helper
+│   │   ├── logo.js            # Council logo bytes for /logo.png (used in emails)
 │   │   └── enrol-script.js    # PS enrolment script served at GET /enrol-script
 │   └── migrations/            # Incremental schema changes (list every
 │                              # file in this folder with `ls` — the
@@ -260,10 +301,14 @@ wsc-assets/
 │   └── audit-bugs.cjs         # Ad-hoc scan for common bug classes
 ├── .github/workflows/
 │   ├── deploy.yml             # On push to main: build, migrate, deploy, smoke
+│   ├── health-check.yml       # Pings /api/health every 5 min, alerts on fail
 │   └── backup.yml             # Weekly D1 export to GHA artifact
 └── docs/
     ├── ARCHITECTURE.md        # This document
-    ├── OPERATIONS.md          # Runbook
+    ├── ONBOARDING.md          # Day-one read for a new maintainer
+    ├── OPERATIONS.md          # Runbook + recurring tasks + escalation
+    ├── INTUNE-RUNBOOK.md      # Per-OS Intune enrolment recipes
+    ├── INCIDENT-PLAYBOOK.md   # Symptom-driven incident response
     └── GOVERNANCE.md          # One-pager for exec review
 ```
 

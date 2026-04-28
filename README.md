@@ -5,9 +5,7 @@ hardware — laptops, desktops, phones, peripherals — with assignment,
 maintenance, audit, and reporting features.
 
 Live at **[assets.it-wsc.com](https://assets.it-wsc.com)** (access
-restricted to council staff). Public staff-facing handover pages for
-device enrolment live at **[enrol.it-wsc.com](https://enrol.it-wsc.com)**
-(token-gated, no SSO).
+restricted to council staff via Cloudflare Access SSO).
 
 ---
 
@@ -35,7 +33,7 @@ The rest of the docs:
   failing, restore needed, secrets leaked. Each with first-thing-
   to-check + escalation path.
 
-Those four cover the full picture. The rest of this README is a
+Those six cover the full picture. The rest of this README is a
 quick-reference.
 
 ## What's inside
@@ -105,10 +103,10 @@ quick-reference.
   Graph.
 - **Account page** — each signed-in user can view their identity, role,
   last sign-in, and sign out, reached from the sidebar user card.
-- **Per-role UI** — admins see the full app (dashboard, audits, receipts,
-  people, categories, reports, settings); non-admins see only the assets
-  assigned to their own person record, with the sidebar and API both
-  scoped to match.
+- **Per-role UI** — four-tier role model (`viewer` / `user` / `manager` /
+  `admin`). Sidebar items, route handlers, and API endpoints all gate on
+  role. Non-admins see only the assets assigned to their own person
+  record.
 - **JIT user provisioning** — anyone with an `@walgett.nsw.gov.au` SSO
   identity who hits the site is auto-created as a `user`-role account on
   first sign-in. No manual add required for view-only access. Admin
@@ -124,6 +122,17 @@ quick-reference.
 - **Command palette** — `Ctrl/Cmd+K` opens a keyboard-driven palette
   with quick actions (new asset, jump to any view, sync Entra, sign out)
   and live asset search. Arrow keys + Enter to navigate.
+- **In-app IT runbook** — admin-only sidebar entry under Tools that
+  renders `docs/INTUNE-RUNBOOK.md` directly inside the app. Doc edits
+  ship via normal commits, no duplicate copy.
+- **Health endpoint + uncaught error alerts** — `GET /api/health`
+  pinged every 5 min by GitHub Actions; if it fails, the workflow run
+  goes red and admins get a notification email. Top-level dispatch
+  wrapper emails admins on uncaught exceptions (deduped per isolate).
+- **Scheduled jobs** — daily activity-log retention prune (18-month
+  window) + weekly Monday-morning lifecycle digest (assets with
+  warranty expiring or retirement_date approaching in the next 30
+  days).
 - **Break-glass login** — rate-limited master-key path with IP-scoped
   audit logging, for SSO outages.
 
@@ -145,7 +154,8 @@ cd worker && npx wrangler deploy
 
 ## Deployment
 
-Every push to `main` triggers `.github/workflows/deploy.yml`, which:
+Push direct to `main` (no PR ritual; solo dev project). Every push
+triggers `.github/workflows/deploy.yml`:
 
 1. Builds the frontend and pushes it to Cloudflare Pages.
 2. Applies any pending D1 migrations with
@@ -154,9 +164,18 @@ Every push to `main` triggers `.github/workflows/deploy.yml`, which:
 4. Runs `scripts/smoke-test.sh` against the live API. If any endpoint
    returns 5xx or the worker becomes unreachable, the build fails.
 
-Weekly database backups run from `.github/workflows/backup.yml` — full
-D1 export uploaded as a 90-day workflow artifact. Download and restore
-instructions live in [docs/OPERATIONS.md](docs/OPERATIONS.md).
+Other workflows:
+
+- `health-check.yml` — pings `/api/health` every 5 min; failures
+  surface as red runs in the Actions tab.
+- `backup.yml` — weekly D1 export uploaded as a 90-day workflow
+  artifact. Download and restore instructions live in
+  [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+Worker scheduled crons (defined in `worker/wrangler.toml [triggers]`):
+
+- Daily 17:00 UTC — prune `activity_log` rows > 18 months old.
+- Sunday 17:00 UTC — weekly lifecycle digest email to admins.
 
 ## Repository layout
 
@@ -165,8 +184,9 @@ index.html              Single-page app shell
 src/                    Frontend source (vanilla JS + CSS)
 worker/                 Cloudflare Worker API, schema, migrations
 scripts/                Ops scripts: smoke-test, restore-db, audit-bugs
-.github/workflows/      CI — deploy, backup
-docs/                   Architecture, operations, governance
+.github/workflows/      CI — deploy, health-check, backup
+docs/                   Architecture, onboarding, operations, runbook,
+                        playbook, governance
 ```
 
 Full tree with per-file purpose: [docs/ARCHITECTURE.md § Where the code
