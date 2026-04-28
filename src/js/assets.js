@@ -618,7 +618,11 @@ async function renderAssetDetail(id, preloaded) {
     html += '<div class="asset-detail-grid">'
       // Left column
       + '<div class="asset-detail-col">'
-      + '<div class="card"><div class="card-header"><span class="card-title">Details</span></div>'
+      // Details panel is collapsed by default so assignment + receipts +
+      // history (the more frequently scanned info) sit closer to the
+      // top. Click the header to expand.
+      + '<details class="card collapsible-card">'
+      + '<summary class="card-header"><span class="card-title">Details</span><span class="collapsible-indicator" aria-hidden="true">▾</span></summary>'
       + '<div class="card-body"><div class="detail-grid" style="grid-template-columns:1fr 1fr">'
       + detailField('Category', asset.category_name)
       + detailField('Manufacturer', asset.manufacturer)
@@ -626,7 +630,7 @@ async function renderAssetDetail(id, preloaded) {
       + detailField('Purchase Date', asset.purchase_date ? fmtDate(asset.purchase_date) : null)
       + detailField('Retirement Date', retirementValueHtml, true)
       + detailField('Created', fmtDate(asset.created_at))
-      + '</div></div></div>';
+      + '</div></div></details>';
 
     // Photo card goes in the left column so it fills the space next to Assignment + QR
     if (asset.image_url) {

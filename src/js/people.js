@@ -2,6 +2,8 @@
 
 var _peopleSearch = '';
 var _peopleDept = '';
+var _peopleSort = 'name';            // 'name' | 'asset_count'
+var _peopleMinAssets = 0;            // 0 = all; 1+ = filter to people holding stuff
 
 Router.register('/people', function(param) {
   if (param) {
@@ -18,7 +20,14 @@ function renderPeopleList() {
     + '<div class="toolbar-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
     + '<input type="text" placeholder="Search people..." value="' + esc(_peopleSearch) + '" oninput="peopleSearchDebounced(this.value)"></div>'
     + '</div>'
-    + '<div class="toolbar-right">'
+    + '<div class="toolbar-right" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
+    + '<label style="font-size:12px;color:var(--text2)">Sort:</label>'
+    + '<select class="form-select sm" onchange="setPeopleSort(this.value)" style="padding:4px 8px;font-size:12px;width:auto">'
+    + '<option value="name"' + (_peopleSort === 'name' ? ' selected' : '') + '>Name (A→Z)</option>'
+    + '<option value="asset_count"' + (_peopleSort === 'asset_count' ? ' selected' : '') + '>Asset count (most first)</option>'
+    + '</select>'
+    + '<label style="font-size:12px;color:var(--text2);margin-left:8px">Min assets:</label>'
+    + '<input type="number" min="0" value="' + _peopleMinAssets + '" onchange="setPeopleMinAssets(this.value)" style="width:60px;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text)">'
     + (Auth.isManager() ? '<button class="btn primary sm" onclick="openPersonForm()">+ New Person</button>' : '')
     + '</div></div>'
     + '<div id="people-filters"></div>'
@@ -27,6 +36,18 @@ function renderPeopleList() {
   renderPeopleFilters();
   loadPeople();
 }
+
+function setPeopleSort(s) {
+  _peopleSort = s;
+  loadPeople();
+}
+window.setPeopleSort = setPeopleSort;
+
+function setPeopleMinAssets(n) {
+  _peopleMinAssets = parseInt(n) || 0;
+  loadPeople();
+}
+window.setPeopleMinAssets = setPeopleMinAssets;
 
 function renderPeopleFilters() {
   var depts = [
@@ -72,6 +93,8 @@ async function loadPeople() {
     var params = {};
     if (_peopleSearch) params.search = _peopleSearch;
     if (_peopleDept) params.department = _peopleDept;
+    if (_peopleSort) params.sort = _peopleSort;
+    if (_peopleMinAssets > 0) params.min_assets = _peopleMinAssets;
     var result = await API.getPeople(params);
 
     var columns = [

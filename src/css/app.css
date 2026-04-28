@@ -2508,3 +2508,25 @@ tbody tr { transition: background 150ms var(--ease-out); }
   cursor: pointer;
   font-weight: 600;
 }
+
+/* ─── Collapsible card (e.g. asset-detail Details panel) ─────
+   Use <details class="card collapsible-card"><summary class="card-header">...
+   for a card whose body can be folded away. Removes the default browser
+   marker and adds a chevron that flips on open. */
+details.collapsible-card { cursor: pointer; }
+details.collapsible-card > summary {
+  cursor: pointer;
+  list-style: none;
+  position: relative;
+  user-select: none;
+}
+details.collapsible-card > summary::-webkit-details-marker { display: none; }
+details.collapsible-card > summary::marker { content: ''; }
+.collapsible-indicator {
+  font-size: 12px;
+  color: var(--text3);
+  transition: transform 0.18s ease;
+  display: inline-block;
+}
+details.collapsible-card[open] .collapsible-indicator { transform: rotate(180deg); }
+details.collapsible-card > .card-body { cursor: default; }

@@ -2814,14 +2814,32 @@ async function listPeople(request, env, url) {
 
   const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
+  // Sort: 'name' (default), 'asset_count' (most-assets first - useful for
+  // leaver handoff to find who's holding the most gear).
+  const sort = params.get('sort') || 'name';
+  const orderBy = sort === 'asset_count'
+    ? 'asset_count DESC, p.name ASC'
+    : 'p.name ASC';
+
+  // Optional min_assets filter: only return rows with at least N assets.
+  // Applied after the COUNT in a HAVING-equivalent (subquery wraps).
+  const minAssets = parseInt(params.get('min_assets')) || 0;
+
+  // Asset count includes anything currently assigned to the person that
+  // hasn't been disposed - so available + deployed + maintenance, but
+  // not disposed. Captures "what they still have" rather than "what's
+  // actively in use" which matters for handover/leaver scenarios.
   const result = await env.DB.prepare(`
-    SELECT p.*, l.name as location_name,
-           (SELECT COUNT(*) FROM assets a WHERE a.assigned_to = p.id AND a.status = 'deployed') as asset_count
-    FROM people p
-    LEFT JOIN locations l ON p.location_id = l.id
-    ${whereClause}
-    ORDER BY p.name ASC
-  `).bind(...binds).all();
+    SELECT * FROM (
+      SELECT p.*, l.name as location_name,
+             (SELECT COUNT(*) FROM assets a
+                WHERE a.assigned_to = p.id AND a.status != 'disposed') as asset_count
+      FROM people p
+      LEFT JOIN locations l ON p.location_id = l.id
+      ${whereClause}
+    ) WHERE asset_count >= ?
+    ORDER BY ${orderBy}
+  `).bind(...binds, minAssets).all();
 
   return json({ data: result.results });
 }
