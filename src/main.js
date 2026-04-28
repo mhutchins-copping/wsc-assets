@@ -24,6 +24,7 @@ import './js/reports.js';
 import './js/issues.js';
 import './js/flags.js';
 import './js/loans.js';
+import './js/consumables.js';
 import './js/phoneEnrol.js';
 import './js/runbook.js';
 import './js/settings.js';

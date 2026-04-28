@@ -182,6 +182,30 @@ var API = {
     return this.fetch('/api/loans/' + loanId + '/return', { method: 'POST', body: {} });
   },
 
+  // ─── Consumables / Inventory
+  getConsumables: function(params) {
+    return this.fetch('/api/consumables?' + new URLSearchParams(params || {}));
+  },
+  getConsumable: function(id) { return this.fetch('/api/consumables/' + id); },
+  createConsumable: function(data) {
+    return this.fetch('/api/consumables', { method: 'POST', body: data });
+  },
+  updateConsumable: function(id, data) {
+    return this.fetch('/api/consumables/' + id, { method: 'PUT', body: data });
+  },
+  deleteConsumable: function(id) {
+    return this.fetch('/api/consumables/' + id, { method: 'DELETE' });
+  },
+  issueConsumable: function(id, data) {
+    return this.fetch('/api/consumables/' + id + '/issue', { method: 'POST', body: data });
+  },
+  adjustConsumable: function(id, data) {
+    return this.fetch('/api/consumables/' + id + '/adjust', { method: 'POST', body: data });
+  },
+  getConsumableMovements: function(params) {
+    return this.fetch('/api/consumable-movements?' + new URLSearchParams(params || {}));
+  },
+
   // ─── Images (R2)
   uploadImage: async function(assetId, file) {
     // Sanitise both halves of the key so it passes the worker's strict regex

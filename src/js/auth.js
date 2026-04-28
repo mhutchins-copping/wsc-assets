@@ -303,6 +303,7 @@ function showApp() {
   // too — the helper short-circuits.
   if (typeof updateFlagsBadge === 'function') updateFlagsBadge();
   if (typeof updateLoansBadge === 'function') updateLoansBadge();
+  if (typeof updateLowStockBadge === 'function') updateLowStockBadge();
 }
 window.showApp = showApp;
 

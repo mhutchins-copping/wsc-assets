@@ -223,3 +223,46 @@ CREATE TABLE IF NOT EXISTS loans (
 CREATE INDEX IF NOT EXISTS idx_loans_asset ON loans(asset_id);
 CREATE INDEX IF NOT EXISTS idx_loans_person ON loans(person_id);
 CREATE INDEX IF NOT EXISTS idx_loans_active ON loans(returned_at);
+
+-- Consumables / Inventory module. Quantity-tracked stock for commodity
+-- items (keyboards, mice, cables, chargers, toner). Distinct from
+-- assets - no per-unit identity. See migration 0022 for the full
+-- design rationale.
+CREATE TABLE IF NOT EXISTS consumables (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  description TEXT,
+  supplier TEXT,
+  unit_cost REAL,
+  quantity INTEGER NOT NULL DEFAULT 0,
+  min_stock INTEGER NOT NULL DEFAULT 0,
+  location_id TEXT REFERENCES locations(id),
+  notes TEXT,
+  toner_printer_models TEXT,
+  toner_colour TEXT,
+  toner_yield INTEGER,
+  toner_cartridge_code TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS consumable_movements (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+  consumable_id TEXT NOT NULL REFERENCES consumables(id),
+  quantity_change INTEGER NOT NULL,
+  movement_type TEXT NOT NULL,
+  person_id TEXT REFERENCES people(id),
+  asset_id TEXT REFERENCES assets(id),
+  notes TEXT,
+  performed_by_email TEXT,
+  performed_by_name TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_consumables_category ON consumables(category);
+CREATE INDEX IF NOT EXISTS idx_consumables_active ON consumables(active);
+CREATE INDEX IF NOT EXISTS idx_consumables_lowstock ON consumables(quantity, min_stock);
+CREATE INDEX IF NOT EXISTS idx_consumable_movements_consumable ON consumable_movements(consumable_id);
+CREATE INDEX IF NOT EXISTS idx_consumable_movements_person ON consumable_movements(person_id);
+CREATE INDEX IF NOT EXISTS idx_consumable_movements_asset ON consumable_movements(asset_id);
+CREATE INDEX IF NOT EXISTS idx_consumable_movements_created ON consumable_movements(created_at);

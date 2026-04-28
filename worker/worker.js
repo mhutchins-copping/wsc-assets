@@ -819,6 +819,32 @@ async function route(request, env, url) {
     return resolveAssetFlag(request, env, path.match(/^\/api\/flags\/([^/]+)\/dismiss$/)[1], 'dismiss');
   }
 
+  // ── Consumables / Inventory ──
+  if (path === '/api/consumables' && method === 'GET') {
+    return deny('consumables.read') || listConsumables(env, url);
+  }
+  if (path === '/api/consumables' && method === 'POST') {
+    return deny('consumables.write') || createConsumable(request, env);
+  }
+  if (path.match(/^\/api\/consumables\/([^/]+)$/) && method === 'GET') {
+    return deny('consumables.read') || getConsumable(env, path.match(/^\/api\/consumables\/([^/]+)$/)[1]);
+  }
+  if (path.match(/^\/api\/consumables\/([^/]+)$/) && method === 'PUT') {
+    return deny('consumables.write') || updateConsumable(request, env, path.match(/^\/api\/consumables\/([^/]+)$/)[1]);
+  }
+  if (path.match(/^\/api\/consumables\/([^/]+)$/) && method === 'DELETE') {
+    return deny('consumables.write') || deleteConsumable(env, path.match(/^\/api\/consumables\/([^/]+)$/)[1]);
+  }
+  if (path.match(/^\/api\/consumables\/([^/]+)\/issue$/) && method === 'POST') {
+    return deny('consumables.write') || issueConsumable(request, env, path.match(/^\/api\/consumables\/([^/]+)\/issue$/)[1]);
+  }
+  if (path.match(/^\/api\/consumables\/([^/]+)\/adjust$/) && method === 'POST') {
+    return deny('consumables.write') || adjustConsumable(request, env, path.match(/^\/api\/consumables\/([^/]+)\/adjust$/)[1]);
+  }
+  if (path === '/api/consumable-movements' && method === 'GET') {
+    return deny('consumables.read') || listConsumableMovements(env, url);
+  }
+
   // ── Asset Issues (signing receipts) ──
   if (path === '/api/issues' && method === 'GET') return deny('assets.read') || listIssues(request, env, url);
   if (path.match(/^\/api\/issues\/([^/]+)$/) && method === 'GET') {
@@ -942,6 +968,7 @@ async function route(request, env, url) {
 
 const VIEWER_PERMS = [
   'assets.read', 'people.read', 'categories.read', 'locations.read',
+  'consumables.read',
   'settings.read', 'users.read_self'
 ];
 
@@ -953,6 +980,7 @@ const USER_PERMS = [
 const MANAGER_PERMS = [
   ...USER_PERMS,
   'assets.delete', 'assets.issue', 'people.write', 'categories.write', 'locations.write',
+  'consumables.write',
   'audits.read', 'audits.write', 'reports.view',
   'issues.read', 'issues.write', 'flags.read', 'flags.write',
   'loans.read', 'loans.write', 'import.export'
@@ -3885,4 +3913,275 @@ async function sendLifecycleDigest(env) {
   } catch (e) {
     console.error('sendLifecycleDigest: notify failed:', e.message);
   }
+}
+
+// ─── Consumables / Inventory ─────────────────────────────
+// Quantity-tracked stock for commodity items. Distinct from assets:
+// no per-unit identity, no tag generation, history is a movement log
+// rather than activity_log entries. See migration 0022 + the Consumables
+// section in OPERATIONS.md for the design rationale.
+
+// Consumable categories are NOT enforced server-side - free text so the
+// operator can track anything (cases, batteries, screen protectors,
+// USB drives). The frontend dropdown shows common starter values via
+// <datalist> for consistency, but any non-empty string works.
+const MOVEMENT_TYPES = ['added', 'issued', 'returned', 'adjusted', 'written_off'];
+
+async function listConsumables(env, url) {
+  const params = url.searchParams;
+  const where = ['1=1'];
+  const binds = [];
+
+  if (params.get('category')) { where.push('c.category = ?'); binds.push(params.get('category')); }
+  if (params.get('low_stock') === '1') { where.push('c.quantity <= c.min_stock'); }
+  if (params.get('active') === '1') { where.push('c.active = 1'); }
+  if (params.get('active') === '0') { where.push('c.active = 0'); }
+  if (params.get('search')) {
+    const s = '%' + params.get('search') + '%';
+    where.push('(c.name LIKE ? OR c.description LIKE ? OR c.supplier LIKE ?)');
+    binds.push(s, s, s);
+  }
+
+  const r = await env.DB.prepare(`
+    SELECT c.*, l.name AS location_name,
+           CASE WHEN c.quantity <= c.min_stock THEN 1 ELSE 0 END AS is_low_stock
+      FROM consumables c
+      LEFT JOIN locations l ON c.location_id = l.id
+     WHERE ${where.join(' AND ')}
+     ORDER BY is_low_stock DESC, c.category ASC, c.name ASC
+     LIMIT 500
+  `).bind(...binds).all();
+
+  const lowStock = (r.results || []).filter(c => c.is_low_stock).length;
+  return json({ data: r.results || [], low_stock_count: lowStock });
+}
+
+async function getConsumable(env, consumableId) {
+  const c = await env.DB.prepare(`
+    SELECT c.*, l.name AS location_name
+      FROM consumables c
+      LEFT JOIN locations l ON c.location_id = l.id
+     WHERE c.id = ?
+  `).bind(consumableId).first();
+  if (!c) return json({ error: 'Consumable not found' }, 404);
+
+  const movements = await env.DB.prepare(`
+    SELECT m.*, p.name AS person_name, a.asset_tag, a.name AS asset_name
+      FROM consumable_movements m
+      LEFT JOIN people p ON m.person_id = p.id
+      LEFT JOIN assets a ON m.asset_id = a.id
+     WHERE m.consumable_id = ?
+     ORDER BY m.created_at DESC
+     LIMIT 100
+  `).bind(consumableId).all();
+
+  return json({ ...c, movements: movements.results || [] });
+}
+
+async function createConsumable(request, env) {
+  const data = await body(request);
+  if (!data.name || !data.category) {
+    return json({ error: 'name and category are required' }, 400);
+  }
+  const consumableId = id();
+  const ts = now();
+  const initialQty = parseInt(data.quantity) || 0;
+
+  await env.DB.prepare(`
+    INSERT INTO consumables
+      (id, name, category, description, supplier, unit_cost, quantity,
+       min_stock, location_id, notes,
+       toner_printer_models, toner_colour, toner_yield, toner_cartridge_code,
+       active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+  `).bind(
+    consumableId,
+    data.name,
+    data.category,
+    data.description || null,
+    data.supplier || null,
+    data.unit_cost == null ? null : parseFloat(data.unit_cost),
+    initialQty,
+    parseInt(data.min_stock) || 0,
+    data.location_id || null,
+    data.notes || null,
+    data.toner_printer_models || null,
+    data.toner_colour || null,
+    data.toner_yield == null ? null : parseInt(data.toner_yield),
+    data.toner_cartridge_code || null,
+    ts, ts
+  ).run();
+
+  // Log the initial stock as an "added" movement so the history is
+  // honest about where the count came from.
+  if (initialQty > 0) {
+    const user = request._user;
+    await env.DB.prepare(`
+      INSERT INTO consumable_movements
+        (id, consumable_id, quantity_change, movement_type, notes,
+         performed_by_email, performed_by_name)
+      VALUES (?, ?, ?, 'added', ?, ?, ?)
+    `).bind(
+      id(), consumableId, initialQty,
+      'Initial stock on creation',
+      user ? user.email : null,
+      user ? (user.display_name || user.email) : null
+    ).run();
+  }
+
+  return json({ id: consumableId }, 201);
+}
+
+async function updateConsumable(request, env, consumableId) {
+  const existing = await env.DB.prepare('SELECT * FROM consumables WHERE id = ?').bind(consumableId).first();
+  if (!existing) return json({ error: 'Consumable not found' }, 404);
+  const data = await body(request);
+  // Quantity is intentionally NOT updatable via PUT - use /adjust so a
+  // movement record is always created for stock changes.
+  await env.DB.prepare(`
+    UPDATE consumables SET
+      name = ?, category = ?, description = ?, supplier = ?, unit_cost = ?,
+      min_stock = ?, location_id = ?, notes = ?,
+      toner_printer_models = ?, toner_colour = ?, toner_yield = ?, toner_cartridge_code = ?,
+      active = ?, updated_at = ?
+    WHERE id = ?
+  `).bind(
+    data.name !== undefined ? data.name : existing.name,
+    data.category !== undefined ? data.category : existing.category,
+    data.description !== undefined ? data.description : existing.description,
+    data.supplier !== undefined ? data.supplier : existing.supplier,
+    data.unit_cost !== undefined ? (data.unit_cost == null ? null : parseFloat(data.unit_cost)) : existing.unit_cost,
+    data.min_stock !== undefined ? parseInt(data.min_stock) : existing.min_stock,
+    data.location_id !== undefined ? data.location_id : existing.location_id,
+    data.notes !== undefined ? data.notes : existing.notes,
+    data.toner_printer_models !== undefined ? data.toner_printer_models : existing.toner_printer_models,
+    data.toner_colour !== undefined ? data.toner_colour : existing.toner_colour,
+    data.toner_yield !== undefined ? (data.toner_yield == null ? null : parseInt(data.toner_yield)) : existing.toner_yield,
+    data.toner_cartridge_code !== undefined ? data.toner_cartridge_code : existing.toner_cartridge_code,
+    data.active !== undefined ? (data.active ? 1 : 0) : existing.active,
+    now(),
+    consumableId
+  ).run();
+
+  return json({ ok: true });
+}
+
+async function deleteConsumable(env, consumableId) {
+  // Soft-delete: set active = 0. Hard delete blocked when there's
+  // movement history, since dropping the record orphans the audit trail.
+  const movements = await env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM consumable_movements WHERE consumable_id = ?'
+  ).bind(consumableId).first();
+  if (movements && movements.n > 0) {
+    await env.DB.prepare(
+      "UPDATE consumables SET active = 0, updated_at = ? WHERE id = ?"
+    ).bind(now(), consumableId).run();
+    return json({ ok: true, soft_deleted: true, reason: 'has movement history' });
+  }
+  await env.DB.prepare('DELETE FROM consumables WHERE id = ?').bind(consumableId).run();
+  return json({ ok: true, soft_deleted: false });
+}
+
+async function issueConsumable(request, env, consumableId) {
+  const data = await body(request);
+  const qty = parseInt(data.quantity) || 1;
+  if (qty <= 0) return json({ error: 'quantity must be > 0' }, 400);
+
+  const c = await env.DB.prepare('SELECT * FROM consumables WHERE id = ?').bind(consumableId).first();
+  if (!c) return json({ error: 'Consumable not found' }, 404);
+  if (c.quantity < qty) {
+    return json({ error: `Not enough stock — have ${c.quantity}, need ${qty}` }, 409);
+  }
+
+  const user = request._user;
+  await env.DB.batch([
+    env.DB.prepare(
+      'UPDATE consumables SET quantity = quantity - ?, updated_at = ? WHERE id = ?'
+    ).bind(qty, now(), consumableId),
+    env.DB.prepare(`
+      INSERT INTO consumable_movements
+        (id, consumable_id, quantity_change, movement_type, person_id, asset_id, notes,
+         performed_by_email, performed_by_name)
+      VALUES (?, ?, ?, 'issued', ?, ?, ?, ?, ?)
+    `).bind(
+      id(), consumableId, -qty,
+      data.person_id || null,
+      data.asset_id || null,
+      data.notes || null,
+      user ? user.email : null,
+      user ? (user.display_name || user.email) : null
+    )
+  ]);
+
+  return json({ ok: true, new_quantity: c.quantity - qty });
+}
+
+async function adjustConsumable(request, env, consumableId) {
+  const data = await body(request);
+  const change = parseInt(data.quantity_change);
+  if (isNaN(change) || change === 0) {
+    return json({ error: 'quantity_change required (positive or negative integer)' }, 400);
+  }
+  // Default movement type by sign; allow override (e.g. positive change
+  // could be 'added' OR 'returned').
+  let mType = data.movement_type || (change > 0 ? 'added' : 'adjusted');
+  if (!MOVEMENT_TYPES.includes(mType)) {
+    return json({ error: `movement_type must be one of: ${MOVEMENT_TYPES.join(', ')}` }, 400);
+  }
+
+  const c = await env.DB.prepare('SELECT * FROM consumables WHERE id = ?').bind(consumableId).first();
+  if (!c) return json({ error: 'Consumable not found' }, 404);
+  if (c.quantity + change < 0) {
+    return json({ error: `Resulting quantity would be negative (${c.quantity + change})` }, 409);
+  }
+
+  const user = request._user;
+  await env.DB.batch([
+    env.DB.prepare(
+      'UPDATE consumables SET quantity = quantity + ?, updated_at = ? WHERE id = ?'
+    ).bind(change, now(), consumableId),
+    env.DB.prepare(`
+      INSERT INTO consumable_movements
+        (id, consumable_id, quantity_change, movement_type, person_id, asset_id, notes,
+         performed_by_email, performed_by_name)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id(), consumableId, change, mType,
+      data.person_id || null,
+      data.asset_id || null,
+      data.notes || null,
+      user ? user.email : null,
+      user ? (user.display_name || user.email) : null
+    )
+  ]);
+
+  return json({ ok: true, new_quantity: c.quantity + change });
+}
+
+async function listConsumableMovements(env, url) {
+  const params = url.searchParams;
+  const where = [];
+  const binds = [];
+  if (params.get('consumable_id')) { where.push('m.consumable_id = ?'); binds.push(params.get('consumable_id')); }
+  if (params.get('person_id'))     { where.push('m.person_id = ?');     binds.push(params.get('person_id')); }
+  if (params.get('asset_id'))      { where.push('m.asset_id = ?');      binds.push(params.get('asset_id')); }
+  if (params.get('movement_type')) { where.push('m.movement_type = ?'); binds.push(params.get('movement_type')); }
+  if (params.get('from')) { where.push("m.created_at >= ?"); binds.push(params.get('from')); }
+  if (params.get('to'))   { where.push("m.created_at <= ?"); binds.push(params.get('to')); }
+  const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  const limit = Math.min(500, Math.max(1, parseInt(params.get('limit')) || 200));
+
+  const r = await env.DB.prepare(`
+    SELECT m.*, c.name AS consumable_name, c.category AS consumable_category,
+           p.name AS person_name, a.asset_tag, a.name AS asset_name
+      FROM consumable_movements m
+      LEFT JOIN consumables c ON m.consumable_id = c.id
+      LEFT JOIN people p ON m.person_id = p.id
+      LEFT JOIN assets a ON m.asset_id = a.id
+    ${whereClause}
+     ORDER BY m.created_at DESC
+     LIMIT ?
+  `).bind(...binds, limit).all();
+
+  return json({ data: r.results || [] });
 }

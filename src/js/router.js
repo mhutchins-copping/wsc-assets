@@ -57,7 +57,10 @@ var Router = {
   routeToView: function(route, param) {
     var map = {
       '/': 'dashboard',
-      '/assets': param === 'new' ? 'asset-form' : (param && param.indexOf('edit/') === 0 ? 'asset-form' : (param ? 'asset-detail' : 'assets')),
+      '/assets': param === 'new' ? 'asset-form'
+        : param === 'bulk-new' ? 'asset-bulk-new'
+        : (param && param.indexOf('edit/') === 0 ? 'asset-form'
+        : (param ? 'asset-detail' : 'assets')),
       '/people': param ? 'person-detail' : 'people',
       '/categories': 'categories',
       '/audits': param ? 'audit-detail' : 'audits',
@@ -65,6 +68,7 @@ var Router = {
       '/issues': 'issues',
       '/flags': 'flags',
       '/loans': 'loans',
+      '/consumables': 'consumables',
       '/phone-enrol': 'phone-enrol',
       '/phone-enrol-batch': 'phone-enrol',
       '/runbook': 'runbook',
