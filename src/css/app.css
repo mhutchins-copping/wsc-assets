@@ -1967,13 +1967,23 @@ tbody td.mono {
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   gap: 14px;
   margin-bottom: 14px;
-  /* Each column hugs its content rather than stretching to match the
-     tallest sibling. Was leaving the Status Breakdown card with a sea
-     of empty space below the donut when Recent Activity had lots of
-     rows. */
-  align-items: start;
+  /* Cards stretch to match the tallest sibling - the alternative
+     (align-items:start) leaves empty space below the shorter card on
+     the left while the right column extends down, and the next row
+     can't fill that gap. Centering the donut/legend inside the tall
+     card (handled in #dash-status below) makes the symmetry feel
+     deliberate. */
 }
-.dash-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; min-width: 0; }
+/* Centre the Status Breakdown content inside its card so when the
+   card is forced taller by Recent Activity, the donut sits in the
+   middle rather than jammed at the top with empty space below. */
+.dash-section #dash-status {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1;
+}
+.dash-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; min-width: 0; display: flex; flex-direction: column; }
 .dash-section-title { font-size: 13px; font-weight: 600; color: var(--text); margin: 0 0 12px 0; letter-spacing: -0.01em; }
 
 .dash-bar-track { display: flex; height: 10px; border-radius: 4px; overflow: hidden; background: var(--surface3); }
