@@ -163,6 +163,20 @@ quick-reference.
   days).
 - **Break-glass login** — rate-limited master-key path with IP-scoped
   audit logging, for SSO outages.
+- **Idempotent asset creation** — `POST /api/assets` upserts on
+  `serial_number` and a partial UNIQUE index enforces it. Same serial
+  twice = the second call updates the existing row and returns
+  `{ id, asset_tag, created: false }` instead of minting a duplicate.
+  Same behaviour as `/api/assets/enrol`; both paths converge.
+- **Server-side CSV exports** — `GET /api/reports/export?type=assets|activity|assignments`
+  for finance/GM "give me this in Excel" requests. Manager+ only.
+- **Filterable activity API** — `GET /api/activity` with
+  `?asset_id`/`?person_id`/`?action`/`?since`/`?limit` for the
+  "who had this laptop six months ago" question. Per-asset history
+  view is unchanged.
+- **Integrity check** — `GET /api/admin/integrity` reports duplicate
+  serials and orphaned FK references (D1 doesn't always enforce them
+  at runtime). Run after restores and bulk imports.
 
 ## Development
 

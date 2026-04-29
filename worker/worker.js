@@ -926,6 +926,14 @@ async function route(request, env, url) {
   // ── Stats & Reports ──
   if (path === '/api/stats' && method === 'GET') return deny('reports.view') || getStats(env);
   if (path === '/api/reports' && method === 'GET') return deny('reports.view') || getReports(env);
+  // Server-rendered CSV exports. ?type=assets|activity|assignments
+  if (path === '/api/reports/export' && method === 'GET') return deny('reports.view') || exportReportCSV(env, url);
+
+  // ── Admin: integrity check ──
+  if (path === '/api/admin/integrity' && method === 'GET') {
+    if (!isAdmin(request)) return json({ error: 'Admin access required' }, 403);
+    return integrityCheck(env);
+  }
 
   // ── Import / Export / Sync — admin only ──
   if (path === '/api/import/csv' && method === 'POST') {
@@ -1045,6 +1053,33 @@ function safeJsonParse(value, fallback) {
 
 async function body(request) {
   return request.json();
+}
+
+// Validate FK references before insert/update. D1 declares REFERENCES in
+// the schema but does not always enforce them at runtime, and even when
+// it does the error surface is opaque ("D1_ERROR: FOREIGN KEY constraint
+// failed"). Checking up-front lets us return a clear 400 with the bad id.
+// Returns an array of error strings; empty = OK. Each ref is checked only
+// when truthy, so callers can pass partial payloads safely.
+async function validateAssetRefs(env, { assigned_to, category_id, location_id, created_by } = {}) {
+  const errors = [];
+  if (assigned_to) {
+    const r = await env.DB.prepare('SELECT id FROM people WHERE id = ?').bind(assigned_to).first();
+    if (!r) errors.push(`assigned_to: person ${assigned_to} does not exist`);
+  }
+  if (category_id) {
+    const r = await env.DB.prepare('SELECT id FROM categories WHERE id = ?').bind(category_id).first();
+    if (!r) errors.push(`category_id: category ${category_id} does not exist`);
+  }
+  if (location_id) {
+    const r = await env.DB.prepare('SELECT id FROM locations WHERE id = ?').bind(location_id).first();
+    if (!r) errors.push(`location_id: location ${location_id} does not exist`);
+  }
+  if (created_by) {
+    const r = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(created_by).first();
+    if (!r) errors.push(`created_by: user ${created_by} does not exist`);
+  }
+  return errors;
 }
 
 async function logActivity(env, { asset_id, action, details, performed_by, person_id, location_id, ip_address }) {
@@ -1214,6 +1249,115 @@ async function createAsset(request, env) {
   const data = await body(request);
   if (!data.name) return json({ error: 'Name is required' }, 400);
 
+  // Validate FK refs up-front so the caller gets a clear 400 instead of an
+  // opaque D1 constraint error or a silently-orphaned reference.
+  const refErrors = await validateAssetRefs(env, {
+    assigned_to: data.assigned_to,
+    category_id: data.category_id,
+    location_id: data.location_id
+  });
+  if (refErrors.length) return json({ error: refErrors.join('; ') }, 400);
+
+  const ts = now();
+  const user = request._user;
+  const createdBy = user ? user.id : null;
+  const performed_by = user ? (user.display_name || user.email) : null;
+
+  // Idempotency: if the caller supplied a serial that already exists,
+  // update that record instead of inserting a duplicate. Mirrors
+  // enrolDeviceImpl's behaviour so every asset-creation path converges.
+  // The partial UNIQUE index on serial_number (migration 0023) would
+  // reject the INSERT anyway, but checking first lets us return the
+  // existing tag and a clean { created: false } response.
+  const serial = (data.serial_number || '').trim();
+  if (serial) {
+    const existing = await env.DB.prepare('SELECT * FROM assets WHERE serial_number = ?').bind(serial).first();
+    if (existing) {
+      // User-role ownership check: a 'user' role caller can only update
+      // an existing asset they originally created. Mirror of updateAsset.
+      if (user && user.role === 'user' && existing.created_by && existing.created_by !== user.id) {
+        return json({ error: 'An asset with this serial already exists and was created by another user' }, 403);
+      }
+
+      // COALESCE on optional fields: explicit non-empty values from the
+      // payload win; otherwise keep the stored value. Status is left
+      // alone unless the caller is also (re-)assigning the asset.
+      let warrantyExpiry = data.warranty_expiry !== undefined ? data.warranty_expiry : existing.warranty_expiry;
+      const purchaseDate = data.purchase_date !== undefined ? data.purchase_date : existing.purchase_date;
+      const warrantyMonths = data.warranty_months !== undefined ? data.warranty_months : existing.warranty_months;
+      if (purchaseDate && warrantyMonths) {
+        const d = new Date(purchaseDate);
+        d.setMonth(d.getMonth() + parseInt(warrantyMonths));
+        warrantyExpiry = d.toISOString().slice(0, 10);
+      }
+
+      const newAssignedTo = data.assigned_to !== undefined ? data.assigned_to : existing.assigned_to;
+      const assignedChanged = data.assigned_to !== undefined && data.assigned_to !== existing.assigned_to;
+
+      await env.DB.prepare(`
+        UPDATE assets SET
+          name = COALESCE(?, name),
+          category_id = COALESCE(?, category_id),
+          manufacturer = COALESCE(?, manufacturer),
+          model = COALESCE(?, model),
+          purchase_date = COALESCE(?, purchase_date),
+          purchase_cost = COALESCE(?, purchase_cost),
+          purchase_order = COALESCE(?, purchase_order),
+          supplier = COALESCE(?, supplier),
+          warranty_months = COALESCE(?, warranty_months),
+          warranty_expiry = COALESCE(?, warranty_expiry),
+          retirement_date = COALESCE(?, retirement_date),
+          notes = COALESCE(?, notes),
+          image_url = COALESCE(?, image_url),
+          hostname = COALESCE(?, hostname),
+          os = COALESCE(?, os),
+          cpu = COALESCE(?, cpu),
+          ram_gb = COALESCE(?, ram_gb),
+          disk_gb = COALESCE(?, disk_gb),
+          mac_address = COALESCE(?, mac_address),
+          ip_address = COALESCE(?, ip_address),
+          enrolled_user = COALESCE(?, enrolled_user),
+          phone_number = COALESCE(?, phone_number),
+          carrier = COALESCE(?, carrier),
+          location_id = COALESCE(?, location_id),
+          assigned_to = ?,
+          assigned_date = ?,
+          status = ?,
+          updated_at = ?
+        WHERE id = ?
+      `).bind(
+        data.name || null,
+        data.category_id || null,
+        data.manufacturer || null, data.model || null,
+        data.purchase_date || null, data.purchase_cost || null,
+        data.purchase_order || null, data.supplier || null,
+        data.warranty_months || null, warrantyExpiry,
+        data.retirement_date || null,
+        data.notes || null, data.image_url || null,
+        data.hostname || null, data.os || null, data.cpu || null,
+        data.ram_gb || null, data.disk_gb || null,
+        data.mac_address || null, data.ip_address || null, data.enrolled_user || null,
+        data.phone_number || null, data.carrier || null,
+        data.location_id || null,
+        newAssignedTo,
+        assignedChanged ? ts : existing.assigned_date,
+        // If we just (re-)assigned mark deployed. Otherwise keep existing status.
+        assignedChanged && newAssignedTo ? 'deployed' : existing.status,
+        ts, existing.id
+      ).run();
+
+      await logActivity(env, {
+        asset_id: existing.id,
+        action: 'update',
+        details: `Idempotent upsert via /api/assets (serial ${serial})`,
+        performed_by
+      });
+
+      return json({ id: existing.id, asset_tag: existing.asset_tag, created: false }, 200);
+    }
+  }
+
+  // No existing serial → fresh INSERT path.
   const assetId = id();
   const tag = data.asset_tag || await generateTag(env, data.category_id);
 
@@ -1236,10 +1380,6 @@ async function createAsset(request, env) {
     retirementDate = d.toISOString().slice(0, 10);
   }
 
-  const ts = now();
-  const user = request._user;
-  const createdBy = user ? user.id : null;
-
   await env.DB.prepare(`
     INSERT INTO assets (id, asset_tag, name, serial_number, category_id, manufacturer, model, status,
       purchase_date, purchase_cost, purchase_order, supplier, warranty_months, warranty_expiry,
@@ -1250,7 +1390,7 @@ async function createAsset(request, env) {
       location_id, assigned_to, assigned_date, metadata, created_by, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
-    assetId, tag, data.name, data.serial_number || null, data.category_id || null,
+    assetId, tag, data.name, serial || null, data.category_id || null,
     data.manufacturer || null, data.model || null, data.status || 'available',
     data.purchase_date || null, data.purchase_cost || null, data.purchase_order || null,
     data.supplier || null, data.warranty_months || null, warrantyExpiry,
@@ -1273,7 +1413,6 @@ async function createAsset(request, env) {
     await env.DB.prepare('UPDATE assets SET status = ? WHERE id = ?').bind('deployed', assetId).run();
   }
 
-  const performed_by = user ? (user.display_name || user.email) : null;
   await logActivity(env, { asset_id: assetId, action: 'create', details: `Created asset ${tag}: ${data.name}`, performed_by });
 
   // Send notification
@@ -1285,7 +1424,7 @@ async function createAsset(request, env) {
     });
   } catch (e) { console.error('notify error:', e); }
 
-  return json({ id: assetId, asset_tag: tag }, 201);
+  return json({ id: assetId, asset_tag: tag, created: true }, 201);
 }
 
 // Idempotent device enrolment. Serial number is the natural dedup key — BIOS
@@ -1321,6 +1460,19 @@ async function enrolDeviceImpl(env, data, { actor = 'Enrolment Script', actorEma
 
   const ramGb = data.ram_gb != null ? parseInt(data.ram_gb) : null;
   const diskGb = data.disk_gb != null ? parseInt(data.disk_gb) : null;
+
+  // Validate refs before we touch the DB. Throws like the serial check above
+  // so the HTTP wrapper translates to a clean 400.
+  const refErrors = await validateAssetRefs(env, {
+    assigned_to: data.assigned_to,
+    category_id: data.category_id,
+    location_id: data.location_id
+  });
+  if (refErrors.length) {
+    const err = new Error(refErrors.join('; '));
+    err.status = 400;
+    throw err;
+  }
 
   const existing = await env.DB.prepare('SELECT * FROM assets WHERE serial_number = ?').bind(serial).first();
 
@@ -2429,6 +2581,13 @@ async function updateAsset(request, env, assetId) {
 
   const data = await body(request);
 
+  const refErrors = await validateAssetRefs(env, {
+    assigned_to: data.assigned_to,
+    category_id: data.category_id,
+    location_id: data.location_id
+  });
+  if (refErrors.length) return json({ error: refErrors.join('; ') }, 400);
+
   // Recalculate warranty expiry if relevant fields changed
   let warrantyExpiry = data.warranty_expiry !== undefined ? data.warranty_expiry : existing.warranty_expiry;
   const purchaseDate = data.purchase_date !== undefined ? data.purchase_date : existing.purchase_date;
@@ -3126,16 +3285,32 @@ async function deleteCategory(request, env, categoryId) {
 
 async function listActivity(env, url) {
   const params = url.searchParams;
-  let where = [];
-  let binds = [];
+  const where = [];
+  const binds = [];
 
   if (params.get('asset_id')) {
     where.push('al.asset_id = ?');
     binds.push(params.get('asset_id'));
   }
+  if (params.get('person_id')) {
+    where.push('al.person_id = ?');
+    binds.push(params.get('person_id'));
+  }
+  if (params.get('action')) {
+    where.push('al.action = ?');
+    binds.push(params.get('action'));
+  }
+  if (params.get('since')) {
+    // ISO date or datetime; SQLite TEXT comparison works for the
+    // datetime('now') format we store ('YYYY-MM-DD HH:MM:SS').
+    where.push('al.created_at >= ?');
+    binds.push(params.get('since'));
+  }
 
   const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
-  const limit = Math.min(200, parseInt(params.get('limit')) || 50);
+  // Default 50, max 500. Higher than the original 200 so CSV-style
+  // exports of a quarter's activity work in one call without paging.
+  const limit = Math.min(500, parseInt(params.get('limit')) || 50);
 
   const result = await env.DB.prepare(`
     SELECT al.*, a.asset_tag, a.name as asset_name, p.name as person_name, l.name as location_name
@@ -3148,7 +3323,7 @@ async function listActivity(env, url) {
     LIMIT ?
   `).bind(...binds, limit).all();
 
-  return json({ data: result.results });
+  return json({ data: result.results, limit });
 }
 
 // ─── Audits ────────────────────────────────────────────
@@ -3645,6 +3820,177 @@ async function exportCSV(env, url) {
       'Content-Type': 'text/csv',
       'Content-Disposition': 'attachment; filename="wsc-assets-export.csv"',
       ...CORS_HEADERS
+    }
+  });
+}
+
+// ─── Reports CSV exports (server-rendered, role-gated) ─────
+// One endpoint, three report types selected via ?type=. Reuses the same
+// CSV-escape rules as the admin export above. Permission gate is
+// reports.view (manager+) - viewer/user roles get 403 at the route layer.
+
+function csvEscape(val) {
+  if (val == null) return '';
+  const s = String(val);
+  return (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r'))
+    ? '"' + s.replace(/"/g, '""') + '"'
+    : s;
+}
+
+function csvResponse(filename, headers, rows) {
+  let csv = headers.join(',') + '\n';
+  for (const row of rows) {
+    csv += headers.map(h => csvEscape(row[h])).join(',') + '\n';
+  }
+  return new Response(csv, {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      ...CORS_HEADERS
+    }
+  });
+}
+
+async function exportReportCSV(env, url) {
+  const type = (url.searchParams.get('type') || '').toLowerCase();
+  const stamp = new Date().toISOString().slice(0, 10);
+
+  if (type === 'assets') {
+    const result = await env.DB.prepare(`
+      SELECT a.asset_tag, a.name, a.serial_number, c.name as category, a.manufacturer, a.model,
+             a.status, a.purchase_date, a.purchase_cost, a.warranty_expiry, a.retirement_date,
+             l.name as location, p.name as assigned_to, p.email as assigned_email,
+             p.department as assigned_department, a.hostname, a.os, a.created_at, a.updated_at
+      FROM assets a
+      LEFT JOIN categories c ON a.category_id = c.id
+      LEFT JOIN locations l ON a.location_id = l.id
+      LEFT JOIN people p ON a.assigned_to = p.id
+      ORDER BY a.asset_tag ASC
+    `).all();
+    const headers = ['asset_tag','name','serial_number','category','manufacturer','model','status',
+      'purchase_date','purchase_cost','warranty_expiry','retirement_date','location',
+      'assigned_to','assigned_email','assigned_department','hostname','os','created_at','updated_at'];
+    return csvResponse(`wsc-assets-${stamp}.csv`, headers, result.results);
+  }
+
+  if (type === 'activity') {
+    // Bounded by ?since= (default last 90 days) and ?limit= (default 5000,
+    // max 50000) so a curl on a long-lived deployment doesn't OOM the worker.
+    const since = url.searchParams.get('since') ||
+      new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+    const limit = Math.min(50000, parseInt(url.searchParams.get('limit')) || 5000);
+    const result = await env.DB.prepare(`
+      SELECT al.created_at, al.action, al.details, al.performed_by,
+             a.asset_tag, a.name as asset_name, p.name as person_name, l.name as location_name,
+             al.ip_address
+      FROM activity_log al
+      LEFT JOIN assets a ON al.asset_id = a.id
+      LEFT JOIN people p ON al.person_id = p.id
+      LEFT JOIN locations l ON al.location_id = l.id
+      WHERE al.created_at >= ?
+      ORDER BY al.created_at DESC
+      LIMIT ?
+    `).bind(since, limit).all();
+    const headers = ['created_at','action','details','performed_by','asset_tag','asset_name',
+      'person_name','location_name','ip_address'];
+    return csvResponse(`wsc-activity-${stamp}.csv`, headers, result.results);
+  }
+
+  if (type === 'assignments') {
+    const result = await env.DB.prepare(`
+      SELECT a.asset_tag, a.name as asset_name, a.serial_number, c.name as category,
+             p.name as assigned_to, p.email, p.department, p.position,
+             a.assigned_date, a.status, l.name as location
+      FROM assets a
+      INNER JOIN people p ON a.assigned_to = p.id
+      LEFT JOIN categories c ON a.category_id = c.id
+      LEFT JOIN locations l ON a.location_id = l.id
+      WHERE a.status != 'disposed'
+      ORDER BY p.name ASC, a.asset_tag ASC
+    `).all();
+    const headers = ['asset_tag','asset_name','serial_number','category','assigned_to','email',
+      'department','position','assigned_date','status','location'];
+    return csvResponse(`wsc-assignments-${stamp}.csv`, headers, result.results);
+  }
+
+  return json({ error: "Unknown export type. Use ?type=assets|activity|assignments" }, 400);
+}
+
+// ─── Integrity check (admin-only) ──────────────────────
+// Surfaces the data-quality problems that can build up over time:
+//   - duplicate serials (rejected by unique index post-0023, but historical
+//     rows are still possible and the check confirms the index is doing its job)
+//   - orphaned FK refs (assigned_to, category_id, location_id, created_by
+//     pointing at rows that no longer exist - D1 doesn't always enforce these)
+// Returns a JSON report; UI can render or admins can curl it from the runbook.
+
+async function integrityCheck(env) {
+  // Duplicate serials (post-migration this should always be empty)
+  const dupSerials = await env.DB.prepare(`
+    SELECT serial_number, COUNT(*) as count, GROUP_CONCAT(id, ',') as ids,
+           GROUP_CONCAT(asset_tag, ',') as tags
+    FROM assets
+    WHERE serial_number IS NOT NULL AND serial_number != ''
+    GROUP BY serial_number
+    HAVING COUNT(*) > 1
+  `).all();
+
+  const orphanAssigned = await env.DB.prepare(`
+    SELECT a.id, a.asset_tag, a.name, a.assigned_to
+    FROM assets a
+    WHERE a.assigned_to IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM people p WHERE p.id = a.assigned_to)
+  `).all();
+
+  const orphanCategory = await env.DB.prepare(`
+    SELECT a.id, a.asset_tag, a.name, a.category_id
+    FROM assets a
+    WHERE a.category_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM categories c WHERE c.id = a.category_id)
+  `).all();
+
+  const orphanLocation = await env.DB.prepare(`
+    SELECT a.id, a.asset_tag, a.name, a.location_id
+    FROM assets a
+    WHERE a.location_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM locations l WHERE l.id = a.location_id)
+  `).all();
+
+  const orphanCreatedBy = await env.DB.prepare(`
+    SELECT a.id, a.asset_tag, a.name, a.created_by
+    FROM assets a
+    WHERE a.created_by IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = a.created_by)
+  `).all();
+
+  // Activity log rows pointing at deleted assets (purgeAsset cleans these,
+  // but soft-deleted-then-manually-purged paths could leave them behind).
+  const orphanActivityAsset = await env.DB.prepare(`
+    SELECT COUNT(*) as count FROM activity_log al
+    WHERE al.asset_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM assets a WHERE a.id = al.asset_id)
+  `).first();
+
+  const summary = {
+    duplicate_serials: dupSerials.results.length,
+    orphan_assigned_to: orphanAssigned.results.length,
+    orphan_category: orphanCategory.results.length,
+    orphan_location: orphanLocation.results.length,
+    orphan_created_by: orphanCreatedBy.results.length,
+    orphan_activity_asset: orphanActivityAsset?.count || 0
+  };
+  const totalIssues = Object.values(summary).reduce((a, b) => a + b, 0);
+
+  return json({
+    ok: totalIssues === 0,
+    checked_at: now(),
+    summary,
+    details: {
+      duplicate_serials: dupSerials.results,
+      orphan_assigned_to: orphanAssigned.results,
+      orphan_category: orphanCategory.results,
+      orphan_location: orphanLocation.results,
+      orphan_created_by: orphanCreatedBy.results
     }
   });
 }

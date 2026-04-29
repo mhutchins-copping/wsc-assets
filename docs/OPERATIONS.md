@@ -108,22 +108,27 @@ npx wrangler pages deploy dist --project-name=wsc-assets
 ## Backups
 
 The `.github/workflows/backup.yml` workflow runs every Sunday at 02:00
-UTC and exports the full D1 database to SQL. The file is uploaded as a
-workflow artifact and retained for 90 days.
+UTC and exports the full D1 database to SQL. Each export is stored in
+two places:
+
+- **Workflow artifact** — `d1-backup-<date>`, retained 90 days. Survives
+  a force-push to the `backups` branch.
+- **`backups` branch in the repo** — `backups/wsc-assets-db-YYYY-MM-DD.sql`,
+  retained 12 weeks. Survives the artifact expiry, gives a diff-able
+  history, and is restorable via plain `git checkout`.
 
 To download a backup:
 
-1. Open the repo on GitHub → Actions → "Weekly D1 Backup".
-2. Pick the run.
-3. Scroll to Artifacts, download `d1-backup-<number>`.
+1. Most recent: `git fetch origin backups && git show origin/backups:backups/wsc-assets-db-YYYY-MM-DD.sql > local.sql`
+2. Older or via UI: GitHub → Actions → "Weekly D1 Backup" → pick run → Artifacts.
 
 To trigger an immediate backup (before a risky change, for example):
 
 1. Actions → "Weekly D1 Backup" → "Run workflow".
 
-The backup is stored on GitHub, which is a separate provider to
-Cloudflare. This is deliberate: if the Cloudflare account were ever
-compromised or suspended, the backups are unaffected.
+Backups are stored on GitHub, a separate provider to Cloudflare. This
+is deliberate: if the Cloudflare account were ever compromised or
+suspended, the backups are unaffected.
 
 ## Restore from backup
 
@@ -156,8 +161,13 @@ safety export first, then applies the backup, then runs the smoke test.
 
    The script will:
 
+   - Validate the backup's schema version (highest migration referenced)
+     is not ahead of this repo checkout. Refuses if the backup needs
+     migrations the worker code doesn't have.
    - Export the current database to `backups/pre-restore-<timestamp>.sql`.
-   - Drop all application tables.
+   - Discover application tables dynamically from `sqlite_master` (so a
+     newly-added table can't be missed).
+   - Drop all discovered tables.
    - Apply the backup SQL file.
    - Run the post-deploy smoke test.
 
@@ -242,6 +252,66 @@ After that, only genuinely new migrations will run on future deploys.
 The previous version of this document hard-coded the list of
 migrations up to a point in time. It rotted within three months. Read
 the directory instead.
+
+## Data integrity
+
+### Integrity check
+
+`GET /api/admin/integrity` (admin-only) surfaces data-quality issues
+that can build up over time:
+
+- **Duplicate serials** — should always be zero post-migration 0023.
+  The partial UNIQUE index prevents new duplicates; this query
+  confirms the index is doing its job and flags any historical drift.
+- **Orphan `assigned_to`** — assets pointing at people that no longer
+  exist (the FK was nulled or the person row was deleted).
+- **Orphan `category_id` / `location_id` / `created_by`** — same idea,
+  for the other foreign keys.
+- **Orphan activity_log rows** — `purgeAsset` cleans these, but if
+  history was edited by hand the count surfaces it.
+
+Returns JSON with both summary counts and per-asset details for the
+first three orphan categories. Run this:
+
+- After any restore, to confirm the data is consistent.
+- After bulk imports.
+- Quarterly as part of routine ops.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" https://api.it-wsc.com/api/admin/integrity | jq
+```
+
+### CSV exports
+
+Three server-side CSV exports for finance/GM requests. All require
+`reports.view` (manager+):
+
+- `GET /api/reports/export?type=assets` — every asset (active and
+  disposed), with category / location / assignee names joined.
+- `GET /api/reports/export?type=activity&since=YYYY-MM-DD` — activity
+  log filtered by date. Default: last 90 days. Max 50,000 rows.
+- `GET /api/reports/export?type=assignments` — currently-assigned
+  assets only, ordered by person.
+
+These return `text/csv` with a sensible filename in
+`Content-Disposition`. They replace the old client-side CSV builder
+for the asset list and add the activity / assignments cuts that
+weren't possible before.
+
+### Activity query
+
+`GET /api/activity` (manager+) supports filtering and is the
+"who-had-what-when" answer:
+
+- `?asset_id=...` — every event for a single asset
+- `?person_id=...` — every event involving a single person
+- `?action=checkout` — filter by event type
+- `?since=YYYY-MM-DD` — events from this date forwards
+- `?limit=N` — default 50, max 500
+
+Mix and match freely. Returns JSON joined with asset / person /
+location names. The per-asset history embedded in `GET /api/assets/{id}`
+is unchanged and continues to work.
 
 ## What's an asset vs what's a consumable?
 

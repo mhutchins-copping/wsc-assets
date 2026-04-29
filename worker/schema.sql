@@ -176,7 +176,12 @@ CREATE INDEX IF NOT EXISTS idx_assets_category ON assets(category_id);
 CREATE INDEX IF NOT EXISTS idx_assets_location ON assets(location_id);
 CREATE INDEX IF NOT EXISTS idx_assets_assigned ON assets(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_assets_tag ON assets(asset_tag);
-CREATE INDEX IF NOT EXISTS idx_assets_serial ON assets(serial_number);
+-- Partial UNIQUE: prevents duplicate physical-device entries while still
+-- allowing many NULL/empty-serial rows (peripherals, cables, consumables).
+-- Added by migration 0023.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_serial_unique
+  ON assets(serial_number)
+  WHERE serial_number IS NOT NULL AND serial_number != '';
 CREATE INDEX IF NOT EXISTS idx_activity_asset ON activity_log(asset_id);
 CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_activity_rate_limit ON activity_log(action, ip_address, created_at);

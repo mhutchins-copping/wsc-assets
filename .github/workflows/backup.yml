@@ -1,13 +1,17 @@
 name: Weekly D1 Backup
 
-# Runs every Sunday at 02:00 UTC. Manual trigger also available via the
-# Actions tab. Exports the full database to a SQL file and uploads it as
-# a workflow artifact (retained 90 days).
+# Runs every Sunday at 02:00 UTC and on manual trigger. Exports the full
+# database via `wrangler d1 export --remote`, then both:
+#   1. uploads the SQL as a workflow artifact (90-day retention)
+#   2. commits it to the `backups` branch with a 12-week retention sweep
 #
-# To restore:
-#   1. Download the .sql artifact from the Actions run you want to restore
-#   2. Run: wrangler d1 execute wsc-assets-db --remote --file=<downloaded>.sql
-#      (warning: this will fail on existing tables — see docs/OPERATIONS.md)
+# Two destinations because each guards a different failure mode:
+#   - artifact: survives a force-push or branch deletion
+#   - branch:   survives the 90-day artifact expiry, gives a diff-able
+#               history, and is restorable via plain `git checkout`
+#
+# To restore from a backup, see scripts/restore-db.sh and
+# docs/OPERATIONS.md (Backup + Restore section).
 
 on:
   schedule:
@@ -19,7 +23,7 @@ jobs:
     name: Export D1 and archive
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write     # we push to the backups branch
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,7 +31,9 @@ jobs:
           node-version: 20
       - run: npm ci
         working-directory: worker
+
       - name: Export database to SQL
+        id: export
         working-directory: worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -36,11 +42,53 @@ jobs:
           STAMP=$(date -u +%Y-%m-%d)
           mkdir -p ../backups
           npx wrangler d1 export wsc-assets-db --remote --output=../backups/wsc-assets-db-${STAMP}.sql
-          echo "BACKUP_FILE=wsc-assets-db-${STAMP}.sql" >> $GITHUB_ENV
           ls -la ../backups/
-      - name: Upload backup artifact
+          echo "stamp=${STAMP}" >> $GITHUB_OUTPUT
+          echo "file=wsc-assets-db-${STAMP}.sql" >> $GITHUB_OUTPUT
+
+      - name: Upload backup artifact (90-day retention)
         uses: actions/upload-artifact@v4
         with:
-          name: d1-backup-${{ github.run_number }}
-          path: backups/*.sql
+          name: d1-backup-${{ steps.export.outputs.stamp }}
+          path: backups/${{ steps.export.outputs.file }}
           retention-days: 90
+
+      - name: Commit to backups branch (12-week retention)
+        env:
+          STAMP: ${{ steps.export.outputs.stamp }}
+          FILE: ${{ steps.export.outputs.file }}
+        run: |
+          set -euo pipefail
+          git config user.name  "wsc-assets-backup-bot"
+          git config user.email "actions@github.com"
+
+          # Move the new SQL to a temp location so it survives the branch switch
+          TMPDIR=$(mktemp -d)
+          cp "backups/$FILE" "$TMPDIR/"
+
+          # Switch to (or create) the backups branch as an orphan-style tree.
+          # Using a regular branch — not orphan — so the file history shows in
+          # the GitHub UI and `git log` works normally.
+          git fetch origin backups || true
+          if git show-ref --verify --quiet refs/remotes/origin/backups; then
+            git checkout -B backups origin/backups
+          else
+            git checkout --orphan backups
+            git rm -rf . > /dev/null 2>&1 || true
+          fi
+
+          mkdir -p backups
+          cp "$TMPDIR/$FILE" "backups/$FILE"
+
+          # Retention: keep last 12 weekly backups (84 days). Anything older
+          # is pruned by mtime to stop the branch growing unbounded. Restored
+          # backups are still recoverable from artifacts within 90 days.
+          find backups -name 'wsc-assets-db-*.sql' -type f -mtime +84 -print -delete || true
+
+          git add backups
+          if git diff --cached --quiet; then
+            echo "No changes to commit (already backed up today)"
+          else
+            git commit -m "backup: $STAMP"
+            git push origin backups
+          fi
