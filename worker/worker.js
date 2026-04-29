@@ -2537,6 +2537,13 @@ async function deleteAsset(request, env, assetId) {
   if (!existing) return json({ error: 'Asset not found' }, 404);
 
   const user = request._user;
+  // Users can only soft-delete assets they created. Managers + admins can
+  // dispose any. Mirror of the same check in updateAsset() - the route
+  // gates on assets.write (which user has) so we enforce ownership here.
+  if (user && user.role === 'user' && existing.created_by && existing.created_by !== user.id) {
+    return json({ error: 'You can only delete assets you created' }, 403);
+  }
+
   const performed_by = user ? (user.display_name || user.email) : null;
 
   // Soft delete — set status to disposed
@@ -2574,6 +2581,12 @@ async function purgeAsset(request, env, assetId) {
     env.DB.prepare('DELETE FROM asset_issues WHERE asset_id = ?').bind(assetId),
     env.DB.prepare('DELETE FROM asset_flags WHERE asset_id = ?').bind(assetId),
     env.DB.prepare('DELETE FROM loans WHERE asset_id = ?').bind(assetId),
+    // consumable_movements has an FK to assets(id) for "toner X
+    // issued to printer Y" linkage. NULL it out rather than DELETE -
+    // the movement history (consumable + person + qty + date) is
+    // useful audit data that we want to preserve even when the linked
+    // asset is purged. The column is nullable, so SET NULL is safe.
+    env.DB.prepare('UPDATE consumable_movements SET asset_id = NULL WHERE asset_id = ?').bind(assetId),
     env.DB.prepare('DELETE FROM assets WHERE id = ?').bind(assetId)
   ]);
 

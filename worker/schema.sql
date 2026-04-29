@@ -81,6 +81,11 @@ CREATE TABLE IF NOT EXISTS assets (
   -- pool (meeting-room laptops, visitor phones, etc.) rather than the
   -- permanent allocation pool.
   is_loaner INTEGER NOT NULL DEFAULT 0,
+  -- ID of the user who created the record. Powers the user-role
+  -- ownership check (users can edit/dispose only their own assets).
+  -- Added by migration 0018; lives here so fresh installs that run
+  -- schema.sql alone (npm run db:schema) get the same shape.
+  created_by TEXT REFERENCES users(id),
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );

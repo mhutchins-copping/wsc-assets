@@ -16,12 +16,29 @@ var Router = {
     var route = '/' + (parts[0] || '');
     var param = parts.slice(1).join('/');
 
-    // Role-based view gating. Matches the sidebar nav visibility.
+    // Role-based view gating. Matches the sidebar nav data-require
+    // attributes - if you add a new sidebar item with a role gate, add
+    // its route here too. (Defence in depth: even without this the
+    // route handlers re-check role and the API rejects unauthorised
+    // calls; this just keeps URL-typers from landing on a half-rendered
+    // empty view.)
     var role = Auth.user ? Auth.user.role : '';
     if (role !== 'admin') {
       var blocked = [];
       if (role === 'viewer' || role === 'user') {
         blocked = ['/', '/people', '/categories', '/audits', '/reports', '/issues', '/flags', '/loans'];
+      }
+      // /consumables: viewers can read but the sidebar exposes it at
+      // user+ for write actions. Keep the gate at viewer-blocked so the
+      // route is reachable for users (consumables.read is in VIEWER_PERMS
+      // server-side, but the wider read-list here keeps the UI flow
+      // consistent with the sidebar).
+      if (role === 'viewer') {
+        blocked.push('/consumables');
+      }
+      // /runbook is admin-only - matches data-require="admin" in the sidebar.
+      if (role !== 'admin') {
+        blocked.push('/runbook');
       }
       // Settings is allowed for user+ but individual tabs are gated in renderSettings
       if (blocked.indexOf(route) !== -1) {

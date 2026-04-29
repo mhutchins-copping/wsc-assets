@@ -24,11 +24,15 @@ for (const fn of asyncFns) {
     const lookback = src.slice(Math.max(0, match.index - 60), match.index);
     const hasAwait  = /\bawait\s*$/.test(lookback);
     const hasReturn = /\breturn\s*$/.test(lookback);
+    // Short-circuit pattern: `return deny(req, perm) || handler(req)` —
+    // the async call's promise becomes the expression value and is returned.
+    // Treat `||` / `&&` immediately preceding the call as equivalent to return.
+    const isShortCircuit = /(\|\||&&)\s*$/.test(lookback);
     const isDef     = /\basync\s+function\s+$/.test(lookback);
     const isArrow   = /=>\s*$/.test(lookback);
     const inBatch   = /\.batch\s*\(\s*\[/.test(lookback); // Promise.all/batch contexts
     const inPromise = /Promise\.(all|allSettled|race)\s*\(\s*\[/.test(lookback);
-    if (hasAwait || hasReturn || isDef || isArrow || inBatch || inPromise) continue;
+    if (hasAwait || hasReturn || isShortCircuit || isDef || isArrow || inBatch || inPromise) continue;
 
     const snippet = src.slice(match.index - 15, match.index + fn.length + 40).replace(/\s+/g, ' ').trim();
     console.log(`  line ${lineOf(match.index)}  ${fn}  → ${snippet}`);

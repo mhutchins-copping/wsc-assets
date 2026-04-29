@@ -38,6 +38,12 @@ echo
 # Root: anything non-5xx is fine; worker is responding
 check "root"                  "/"                         "200" "404" "401"
 
+# Health: the same endpoint the GH Actions cron pings every 5 min.
+# Should return 200 (D1 reachable) or 503 (D1 down). 503 here would
+# fail the deploy AND the health-check workflow on the next run -
+# better to fail noisily here than discover it 5 min later.
+check "health"                "/api/health"               "200"
+
 # Protected routes: auth rejects us cleanly (not a 500)
 check "assets list"           "/api/assets"               "401"
 check "stats"                 "/api/stats"                "401"
