@@ -1934,9 +1934,24 @@ tbody td.mono {
   color: var(--text2);
   line-height: 1.5;
 }
+.dash-clock {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text3);
+  font-variant-numeric: tabular-nums;
+}
+.dash-clock-time {
+  font-family: var(--mono);
+  font-weight: 500;
+  color: var(--text2);
+}
+.dash-clock-sep { color: var(--text3); margin: 0 4px; }
 @media (max-width: 520px) {
   .dash-welcome { padding: 16px 18px; }
   .dash-welcome-title { font-size: 19px; }
+  .dash-clock { font-size: 12px; }
+  .dash-clock-date { display: block; }
+  .dash-clock-sep { display: none; }
 }
 
 .dash-kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 14px; }

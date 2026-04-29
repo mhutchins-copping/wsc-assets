@@ -5,6 +5,7 @@ Router.register('/', function() {
   el.innerHTML = renderDashboardSkeleton();
   el.setAttribute('aria-busy', 'true');
   loadDashboardData();
+  startDashClockTicker();
 });
 
 function renderDashboardSkeleton() {
@@ -47,8 +48,42 @@ function renderDashWelcome() {
     + '<div class="dash-welcome-eyebrow">Asset Register</div>'
     + '<h1 class="dash-welcome-title">' + title + '</h1>'
     + '<p class="dash-welcome-sub">Here\'s how the council asset pool is tracking right now.</p>'
+    + '<div class="dash-clock" id="dash-clock" aria-live="polite">' + dashClockHtml() + '</div>'
     + '</div>';
 }
+
+// Sydney-time clock for the welcome hero. Ticks once per second via
+// startDashClockTicker() which the dashboard loader fires after render.
+function dashClockHtml() {
+  var d = new Date();
+  var date = d.toLocaleDateString('en-AU', {
+    timeZone: 'Australia/Sydney',
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+  });
+  var time = d.toLocaleTimeString('en-AU', {
+    timeZone: 'Australia/Sydney',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+  });
+  return '<span class="dash-clock-date">' + esc(date) + '</span>'
+    + '<span class="dash-clock-sep"> &middot; </span>'
+    + '<span class="dash-clock-time">' + esc(time) + '</span>';
+}
+
+var _dashClockInterval = null;
+function startDashClockTicker() {
+  if (_dashClockInterval) clearInterval(_dashClockInterval);
+  _dashClockInterval = setInterval(function() {
+    var el = document.getElementById('dash-clock');
+    if (!el) {
+      // User navigated off the dashboard; stop ticking.
+      clearInterval(_dashClockInterval);
+      _dashClockInterval = null;
+      return;
+    }
+    el.innerHTML = dashClockHtml();
+  }, 1000);
+}
+window.startDashClockTicker = startDashClockTicker;
 
 function renderSkeletonBlock(h) {
   return '<div class="dash-skeleton-block" style="height:' + h + 'px" aria-hidden="true"></div>';
