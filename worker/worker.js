@@ -1283,81 +1283,93 @@ async function createAsset(request, env) {
         return json({ error: 'An asset with this serial already exists and was created by another user' }, 403);
       }
 
-      // COALESCE on optional fields: explicit non-empty values from the
-      // payload win; otherwise keep the stored value. Status is left
-      // alone unless the caller is also (re-)assigning the asset.
-      let warrantyExpiry = data.warranty_expiry !== undefined ? data.warranty_expiry : existing.warranty_expiry;
-      const purchaseDate = data.purchase_date !== undefined ? data.purchase_date : existing.purchase_date;
-      const warrantyMonths = data.warranty_months !== undefined ? data.warranty_months : existing.warranty_months;
-      if (purchaseDate && warrantyMonths) {
-        const d = new Date(purchaseDate);
-        d.setMonth(d.getMonth() + parseInt(warrantyMonths));
-        warrantyExpiry = d.toISOString().slice(0, 10);
+      // Dynamic SET clause: only fields the payload explicitly mentions
+      // (key present in `data`) get written. This lets the caller pass
+      // explicit null to clear a field - matching updateAsset semantics
+      // - while still preserving everything they didn't mention.
+      // The COALESCE-everywhere version this replaces couldn't tell
+      // "field absent" from "field set to null", which made it impossible
+      // to clear via re-POST.
+      const setParts = [];
+      const upBinds = [];
+      const setField = (col, val) => { setParts.push(`${col} = ?`); upBinds.push(val); };
+
+      const passThroughFields = [
+        'name', 'category_id', 'manufacturer', 'model',
+        'purchase_date', 'purchase_cost', 'purchase_order', 'supplier',
+        'warranty_months', 'retirement_date',
+        'notes', 'image_url',
+        'hostname', 'os', 'cpu', 'ram_gb', 'disk_gb',
+        'mac_address', 'ip_address', 'enrolled_user',
+        'phone_number', 'carrier', 'location_id'
+      ];
+      for (const f of passThroughFields) {
+        if (Object.prototype.hasOwnProperty.call(data, f)) setField(f, data[f]);
       }
 
+      // Computed: warranty_expiry recalculates if either input changed.
+      const purchaseDate = data.purchase_date !== undefined ? data.purchase_date : existing.purchase_date;
+      const warrantyMonths = data.warranty_months !== undefined ? data.warranty_months : existing.warranty_months;
+      if (data.warranty_expiry !== undefined) {
+        setField('warranty_expiry', data.warranty_expiry);
+      } else if (purchaseDate && warrantyMonths &&
+                 (data.purchase_date !== undefined || data.warranty_months !== undefined)) {
+        const d = new Date(purchaseDate);
+        d.setMonth(d.getMonth() + parseInt(warrantyMonths));
+        setField('warranty_expiry', d.toISOString().slice(0, 10));
+      }
+
+      // Assignment: tracked separately so we can also set assigned_date.
       const newAssignedTo = data.assigned_to !== undefined ? data.assigned_to : existing.assigned_to;
       const assignedChanged = data.assigned_to !== undefined && data.assigned_to !== existing.assigned_to;
+      if (data.assigned_to !== undefined) {
+        setField('assigned_to', data.assigned_to);
+        setField('assigned_date', data.assigned_to ? ts : null);
+      }
 
-      await env.DB.prepare(`
-        UPDATE assets SET
-          name = COALESCE(?, name),
-          category_id = COALESCE(?, category_id),
-          manufacturer = COALESCE(?, manufacturer),
-          model = COALESCE(?, model),
-          purchase_date = COALESCE(?, purchase_date),
-          purchase_cost = COALESCE(?, purchase_cost),
-          purchase_order = COALESCE(?, purchase_order),
-          supplier = COALESCE(?, supplier),
-          warranty_months = COALESCE(?, warranty_months),
-          warranty_expiry = COALESCE(?, warranty_expiry),
-          retirement_date = COALESCE(?, retirement_date),
-          notes = COALESCE(?, notes),
-          image_url = COALESCE(?, image_url),
-          hostname = COALESCE(?, hostname),
-          os = COALESCE(?, os),
-          cpu = COALESCE(?, cpu),
-          ram_gb = COALESCE(?, ram_gb),
-          disk_gb = COALESCE(?, disk_gb),
-          mac_address = COALESCE(?, mac_address),
-          ip_address = COALESCE(?, ip_address),
-          enrolled_user = COALESCE(?, enrolled_user),
-          phone_number = COALESCE(?, phone_number),
-          carrier = COALESCE(?, carrier),
-          location_id = COALESCE(?, location_id),
-          assigned_to = ?,
-          assigned_date = ?,
-          status = ?,
-          updated_at = ?
-        WHERE id = ?
-      `).bind(
-        data.name || null,
-        data.category_id || null,
-        data.manufacturer || null, data.model || null,
-        data.purchase_date || null, data.purchase_cost || null,
-        data.purchase_order || null, data.supplier || null,
-        data.warranty_months || null, warrantyExpiry,
-        data.retirement_date || null,
-        data.notes || null, data.image_url || null,
-        data.hostname || null, data.os || null, data.cpu || null,
-        data.ram_gb || null, data.disk_gb || null,
-        data.mac_address || null, data.ip_address || null, data.enrolled_user || null,
-        data.phone_number || null, data.carrier || null,
-        data.location_id || null,
-        newAssignedTo,
-        assignedChanged ? ts : existing.assigned_date,
-        // If we just (re-)assigned mark deployed. Otherwise keep existing status.
-        assignedChanged && newAssignedTo ? 'deployed' : existing.status,
-        ts, existing.id
-      ).run();
+      // Status: revive disposed assets on re-enrol. A laptop that was
+      // soft-deleted then physically recovered should come back as
+      // "available" (or "deployed" if the upsert is also assigning it).
+      // Without this, re-running the enrolment script on a recovered
+      // device leaves the register showing it as disposed - exactly the
+      // moment IT thought they were fixing the record.
+      let newStatus = existing.status;
+      let revivedFromDisposed = false;
+      if (existing.status === 'disposed') {
+        newStatus = newAssignedTo ? 'deployed' : 'available';
+        revivedFromDisposed = true;
+      } else if (assignedChanged && newAssignedTo) {
+        newStatus = 'deployed';
+      } else if (data.status !== undefined) {
+        newStatus = data.status;
+      }
+      if (newStatus !== existing.status) setField('status', newStatus);
+
+      // Always bump updated_at on an upsert that changes anything.
+      setField('updated_at', ts);
+
+      if (setParts.length > 1) {  // > 1 because updated_at is always set
+        upBinds.push(existing.id);
+        await env.DB.prepare(
+          `UPDATE assets SET ${setParts.join(', ')} WHERE id = ?`
+        ).bind(...upBinds).run();
+      }
 
       await logActivity(env, {
         asset_id: existing.id,
-        action: 'update',
-        details: `Idempotent upsert via /api/assets (serial ${serial})`,
+        action: revivedFromDisposed ? 'revive' : 'update',
+        details: revivedFromDisposed
+          ? `Revived from disposed via re-enrol (serial ${serial}); status → ${newStatus}`
+          : `Idempotent upsert via /api/assets (serial ${serial})`,
         performed_by
       });
 
-      return json({ id: existing.id, asset_tag: existing.asset_tag, created: false }, 200);
+      return json({
+        id: existing.id,
+        asset_tag: existing.asset_tag,
+        created: false,
+        revived: revivedFromDisposed || undefined
+      }, 200);
     }
   }
 
@@ -1482,6 +1494,17 @@ async function enrolDeviceImpl(env, data, { actor = 'Enrolment Script', actorEma
 
   if (existing) {
     const ts = now();
+    // Revive disposed assets when the PowerShell script picks them up
+    // again. Same intent as the createAsset upsert path: a recovered
+    // laptop being re-enrolled should not stay marked disposed.
+    const newAssignedTo = data.assigned_to || existing.assigned_to;
+    let newStatus = existing.status;
+    let revivedFromDisposed = false;
+    if (existing.status === 'disposed') {
+      newStatus = newAssignedTo ? 'deployed' : 'available';
+      revivedFromDisposed = true;
+    }
+
     await env.DB.prepare(`
       UPDATE assets SET
         hostname = ?, os = ?, cpu = ?, ram_gb = ?, disk_gb = ?,
@@ -1491,6 +1514,7 @@ async function enrolDeviceImpl(env, data, { actor = 'Enrolment Script', actorEma
         phone_number = COALESCE(?, phone_number),
         carrier = COALESCE(?, carrier),
         assigned_to = COALESCE(?, assigned_to),
+        status = ?,
         updated_at = ?
       WHERE id = ?
     `).bind(
@@ -1498,20 +1522,24 @@ async function enrolDeviceImpl(env, data, { actor = 'Enrolment Script', actorEma
       data.mac_address || null, data.ip_address || null, data.enrolled_user || null,
       data.manufacturer || null, data.model || null,
       data.phone_number || null, data.carrier || null, data.assigned_to || null,
+      newStatus,
       ts, existing.id
     ).run();
 
     await logActivity(env, {
       asset_id: existing.id,
-      action: 'enrol',
-      details: `Refreshed specs via enrolment script${data.hostname ? ` (${data.hostname})` : ''}`,
+      action: revivedFromDisposed ? 'revive' : 'enrol',
+      details: revivedFromDisposed
+        ? `Revived from disposed via enrolment script${data.hostname ? ` (${data.hostname})` : ''}; status → ${newStatus}`
+        : `Refreshed specs via enrolment script${data.hostname ? ` (${data.hostname})` : ''}`,
       performed_by: actor
     });
 
     return {
       id: existing.id,
       asset_tag: existing.asset_tag,
-      created: false
+      created: false,
+      revived: revivedFromDisposed || undefined
     };
   }
 
@@ -2584,6 +2612,15 @@ async function updateAsset(request, env, assetId) {
   }
 
   const data = await body(request);
+
+  // Trim incoming serial so " ABC123" can't sneak past the partial
+  // unique index that ABC123 already occupies. Empty-after-trim is
+  // converted to null so the index treats it as "no serial" rather
+  // than indexing a zero-length string.
+  if (typeof data.serial_number === 'string') {
+    const trimmed = data.serial_number.trim();
+    data.serial_number = trimmed === '' ? null : trimmed;
+  }
 
   const refErrors = await validateAssetRefs(env, {
     assigned_to: data.assigned_to,
@@ -3809,19 +3846,15 @@ async function exportCSV(env, url) {
     'purchase_date', 'purchase_cost', 'purchase_order', 'supplier', 'warranty_months', 'warranty_expiry',
     'location', 'assigned_to', 'notes', 'metadata'];
 
-  let csv = headers.join(',') + '\n';
+  // BOM + CRLF: see csvResponse() above for why.
+  let csv = '\uFEFF' + headers.join(',') + '\r\n';
   for (const row of result.results) {
-    csv += headers.map(h => {
-      const val = row[h] ?? '';
-      return typeof val === 'string' && (val.includes(',') || val.includes('"') || val.includes('\n'))
-        ? '"' + val.replace(/"/g, '""') + '"'
-        : val;
-    }).join(',') + '\n';
+    csv += headers.map(h => csvEscape(row[h])).join(',') + '\r\n';
   }
 
   return new Response(csv, {
     headers: {
-      'Content-Type': 'text/csv',
+      'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': 'attachment; filename="wsc-assets-export.csv"',
       ...CORS_HEADERS
     }
@@ -3841,10 +3874,18 @@ function csvEscape(val) {
     : s;
 }
 
+// CSV body conventions:
+//   \uFEFF BOM    - tells Excel "this is UTF-8" so apostrophes / accents
+//                   in names like O'Connor render correctly. Without it,
+//                   Excel on AU/EN locales treats the file as ANSI and
+//                   mojibakes anything outside ASCII.
+//   \r\n endings  - some Excel versions (and Outlook attachment previews)
+//                   treat bare LF as a single long row. CRLF is the only
+//                   safe choice for files we hand to finance / GM.
 function csvResponse(filename, headers, rows) {
-  let csv = headers.join(',') + '\n';
+  let csv = '\uFEFF' + headers.join(',') + '\r\n';
   for (const row of rows) {
-    csv += headers.map(h => csvEscape(row[h])).join(',') + '\n';
+    csv += headers.map(h => csvEscape(row[h])).join(',') + '\r\n';
   }
   return new Response(csv, {
     headers: {
@@ -3883,6 +3924,16 @@ async function exportReportCSV(env, url) {
     const since = url.searchParams.get('since') ||
       new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString().slice(0, 19).replace('T', ' ');
     const limit = Math.min(50000, parseInt(url.searchParams.get('limit')) || 5000);
+
+    // Count first so we can tell the consumer if we truncated. A silent
+    // 50k-row cap on a year-long export is exactly the kind of failure
+    // an auditor notices three weeks later when reconciliation doesn't
+    // balance.
+    const totalRow = await env.DB.prepare(
+      'SELECT COUNT(*) as c FROM activity_log WHERE created_at >= ?'
+    ).bind(since).first();
+    const total = totalRow?.c || 0;
+
     const result = await env.DB.prepare(`
       SELECT al.created_at, al.action, al.details, al.performed_by,
              a.asset_tag, a.name as asset_name, p.name as person_name, l.name as location_name,
@@ -3895,9 +3946,33 @@ async function exportReportCSV(env, url) {
       ORDER BY al.created_at DESC
       LIMIT ?
     `).bind(since, limit).all();
+
     const headers = ['created_at','action','details','performed_by','asset_tag','asset_name',
       'person_name','location_name','ip_address'];
-    return csvResponse(`wsc-activity-${stamp}.csv`, headers, result.results);
+    const rows = result.results.slice();
+    let filename = `wsc-activity-${stamp}.csv`;
+
+    if (total > rows.length) {
+      // Visible signals on three surfaces: the filename (shown in download
+      // dialog), a final marker row in the CSV body, and a response
+      // header. Whichever the consumer notices first, they get the truth.
+      filename = `wsc-activity-${stamp}-truncated-${rows.length}-of-${total}.csv`;
+      rows.push({
+        created_at: '-- TRUNCATED --',
+        action: '',
+        details: `Returned ${rows.length} of ${total} matching rows. Narrow with ?since=YYYY-MM-DD or raise ?limit= (max 50000).`,
+        performed_by: '', asset_tag: '', asset_name: '',
+        person_name: '', location_name: '', ip_address: ''
+      });
+    }
+
+    const resp = csvResponse(filename, headers, rows);
+    if (total > result.results.length) {
+      resp.headers.set('X-Truncated', 'true');
+      resp.headers.set('X-Total-Rows', String(total));
+      resp.headers.set('X-Returned-Rows', String(result.results.length));
+    }
+    return resp;
   }
 
   if (type === 'assignments') {
@@ -4042,7 +4117,17 @@ async function scheduledIntegrityCheck(env) {
   if (!report.ok) {
     try {
       await notify(env, 'integrity_warning', { report });
-    } catch (e) { console.error('notify error:', e); }
+    } catch (e) {
+      console.error('integrity notify failed:', e);
+      // Persist the notify failure so a Sunday-afternoon Graph-token
+      // hiccup doesn't silently eat the warning. Filter
+      // ?action=integrity_notify_failed in /api/activity to surface.
+      await logActivity(env, {
+        action: 'integrity_notify_failed',
+        details: 'Integrity issues found but admin email failed: ' + (e?.message || 'unknown error'),
+        performed_by: 'scheduled'
+      }).catch(() => {});
+    }
   }
 }
 

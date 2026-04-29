@@ -117,10 +117,22 @@ jobs:
           mkdir -p backups
           cp "$TMPDIR/$FILE" "backups/$FILE"
 
-          # Retention: keep last 12 weekly backups (84 days). Anything older
-          # is pruned by mtime to stop the branch growing unbounded. Restored
-          # backups are still recoverable from artifacts within 90 days.
-          find backups -name 'wsc-assets-db-*.sql' -type f -mtime +84 -print -delete || true
+          # Retention: keep last 12 weekly backups (84 days). Prune by the
+          # YYYY-MM-DD date in the filename, NOT by mtime - git checkout
+          # resets every file's mtime to the checkout time, so an mtime
+          # filter would never match. Anything older than the cutoff is
+          # deleted; restored backups are still recoverable from artifacts
+          # within 90 days.
+          CUTOFF=$(date -u -d '84 days ago' +%Y-%m-%d)
+          echo "Pruning backups older than $CUTOFF"
+          for f in backups/wsc-assets-db-*.sql; do
+            [ -f "$f" ] || continue
+            fdate=$(basename "$f" | sed -E 's|^wsc-assets-db-([0-9]{4}-[0-9]{2}-[0-9]{2})\.sql$|\1|')
+            if [[ "$fdate" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "$fdate" < "$CUTOFF" ]]; then
+              echo "  prune: $f (dated $fdate)"
+              rm "$f"
+            fi
+          done
 
           git add backups
           if git diff --cached --quiet; then
