@@ -257,8 +257,17 @@ the directory instead.
 
 ### Integrity check
 
-`GET /api/admin/integrity` (admin-only) surfaces data-quality issues
-that can build up over time:
+The check runs automatically every Sunday (alongside the lifecycle
+digest) and writes one row to `activity_log` either way:
+- `integrity_ok` — clean run, no issues found
+- `integrity_warning` — issues found; admins also get an email
+
+So you can confirm the check actually ran without remembering to
+trigger it: filter the activity API on `?action=integrity_ok` or
+`?action=integrity_warning`.
+
+For an on-demand run, `GET /api/admin/integrity` (admin-only)
+surfaces the same data-quality issues:
 
 - **Duplicate serials** — should always be zero post-migration 0023.
   The partial UNIQUE index prevents new duplicates; this query

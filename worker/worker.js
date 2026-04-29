@@ -56,12 +56,16 @@ async function runScheduledJobs(event, env) {
     await pruneActivityLog(env).catch(err => console.error('pruneActivityLog failed:', err));
   } else if (cron === '0 17 * * SUN') {
     await sendLifecycleDigest(env).catch(err => console.error('sendLifecycleDigest failed:', err));
+    // Weekly data-integrity sweep. Logs to activity_log either way so we
+    // can prove the check ran; notifies admins only on issues found.
+    await scheduledIntegrityCheck(env).catch(err => console.error('scheduledIntegrityCheck failed:', err));
   } else {
-    // Unknown / manual trigger - run both as a fallback so a
+    // Unknown / manual trigger - run all jobs as a fallback so a
     // re-scheduled cron doesn't silently skip work.
-    console.warn('unknown cron, running both jobs as fallback:', cron);
+    console.warn('unknown cron, running all jobs as fallback:', cron);
     await pruneActivityLog(env).catch(err => console.error('pruneActivityLog failed:', err));
     await sendLifecycleDigest(env).catch(err => console.error('sendLifecycleDigest failed:', err));
+    await scheduledIntegrityCheck(env).catch(err => console.error('scheduledIntegrityCheck failed:', err));
   }
 }
 
@@ -3924,8 +3928,10 @@ async function exportReportCSV(env, url) {
 //     pointing at rows that no longer exist - D1 doesn't always enforce these)
 // Returns a JSON report; UI can render or admins can curl it from the runbook.
 
-async function integrityCheck(env) {
-  // Duplicate serials (post-migration this should always be empty)
+// Pure data-gathering. Returns the same shape the HTTP handler responds
+// with, but as a plain object so the scheduled job can inspect it
+// (e.g. notify on totalIssues > 0) without parsing a Response body.
+async function gatherIntegrityReport(env) {
   const dupSerials = await env.DB.prepare(`
     SELECT serial_number, COUNT(*) as count, GROUP_CONCAT(id, ',') as ids,
            GROUP_CONCAT(asset_tag, ',') as tags
@@ -3981,8 +3987,9 @@ async function integrityCheck(env) {
   };
   const totalIssues = Object.values(summary).reduce((a, b) => a + b, 0);
 
-  return json({
+  return {
     ok: totalIssues === 0,
+    totalIssues,
     checked_at: now(),
     summary,
     details: {
@@ -3992,7 +3999,51 @@ async function integrityCheck(env) {
       orphan_location: orphanLocation.results,
       orphan_created_by: orphanCreatedBy.results
     }
+  };
+}
+
+async function integrityCheck(env) {
+  const report = await gatherIntegrityReport(env);
+  // Strip the internal totalIssues helper before serialising; ok already
+  // conveys the headline status.
+  const { totalIssues, ...response } = report;
+  return json(response);
+}
+
+// Run from runScheduledJobs() on the Sunday cron (right after backup
+// completes). Logs the result to activity_log so the deploy/runbook
+// trail has a record, and notifies admins if any issues were found.
+// We always log; we only notify on issues - "everything's fine"
+// emails get tuned out and stop being trusted.
+async function scheduledIntegrityCheck(env) {
+  let report;
+  try {
+    report = await gatherIntegrityReport(env);
+  } catch (err) {
+    console.error('integrity check failed:', err);
+    await logActivity(env, {
+      action: 'integrity_failed',
+      details: 'Scheduled integrity check failed: ' + (err && err.message),
+      performed_by: 'scheduled'
+    });
+    return;
+  }
+
+  const summaryStr = Object.entries(report.summary)
+    .map(([k, v]) => `${k}=${v}`).join(' ');
+  console.log(`integrity check: ${report.ok ? 'OK' : 'ISSUES'} | ${summaryStr}`);
+
+  await logActivity(env, {
+    action: report.ok ? 'integrity_ok' : 'integrity_warning',
+    details: summaryStr,
+    performed_by: 'scheduled'
   });
+
+  if (!report.ok) {
+    try {
+      await notify(env, 'integrity_warning', { report });
+    } catch (e) { console.error('notify error:', e); }
+  }
 }
 
 // ─── R2 Image Handling ─────────────────────────────────

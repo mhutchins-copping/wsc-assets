@@ -10,8 +10,17 @@ name: Weekly D1 Backup
 #   - branch:   survives the 90-day artifact expiry, gives a diff-able
 #               history, and is restorable via plain `git checkout`
 #
+# To check when the last backup ran, look at the run name in the Actions
+# tab — it includes the export date. The job summary surfaces the file
+# size and row count so a glance at a green tick confirms it actually
+# captured something rather than producing an empty file.
+#
 # To restore from a backup, see scripts/restore-db.sh and
 # docs/OPERATIONS.md (Backup + Restore section).
+
+# Dynamic run name so the date shows in the Actions list without
+# having to drill into a run.
+run-name: "Backup ${{ github.event.schedule || 'manual' }} — ${{ github.run_started_at }}"
 
 on:
   schedule:
@@ -39,12 +48,40 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          set -euo pipefail
           STAMP=$(date -u +%Y-%m-%d)
           mkdir -p ../backups
-          npx wrangler d1 export wsc-assets-db --remote --output=../backups/wsc-assets-db-${STAMP}.sql
+          OUT="../backups/wsc-assets-db-${STAMP}.sql"
+          npx wrangler d1 export wsc-assets-db --remote --output="$OUT"
+
+          # Sanity stats for the job summary. A backup that produces an
+          # empty file or one with no INSERTs has captured nothing useful;
+          # surface that here rather than letting it sit silently.
+          BYTES=$(wc -c < "$OUT")
+          ROWS=$(grep -c '^INSERT' "$OUT" || echo 0)
+          if [[ "$BYTES" -lt 1024 ]]; then
+            echo "::error::Backup file is suspiciously small (${BYTES} bytes)"
+            exit 1
+          fi
+
+          # Write a job summary so the Actions UI shows what we captured.
+          {
+            echo "## Backup ${STAMP}"
+            echo ""
+            echo "| Metric | Value |"
+            echo "| --- | --- |"
+            echo "| Date | ${STAMP} |"
+            echo "| File | wsc-assets-db-${STAMP}.sql |"
+            echo "| Size | $(numfmt --to=iec-i --suffix=B ${BYTES} 2>/dev/null || echo "${BYTES} B") |"
+            echo "| INSERT rows | ${ROWS} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
           ls -la ../backups/
           echo "stamp=${STAMP}" >> $GITHUB_OUTPUT
           echo "file=wsc-assets-db-${STAMP}.sql" >> $GITHUB_OUTPUT
+          echo "bytes=${BYTES}" >> $GITHUB_OUTPUT
+          echo "rows=${ROWS}" >> $GITHUB_OUTPUT
+          echo "BACKUP COMPLETE: ${STAMP} (${BYTES} bytes, ${ROWS} rows)"
 
       - name: Upload backup artifact (90-day retention)
         uses: actions/upload-artifact@v4

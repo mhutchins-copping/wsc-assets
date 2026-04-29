@@ -113,6 +113,31 @@ function buildEmail(event, data) {
       details.push({ label: 'Time', value: timestampStr });
       break;
 
+    case 'integrity_warning': {
+      const r = data.report || {};
+      const summary = r.summary || {};
+      subject = `[WSC Assets] Integrity check found ${r.totalIssues || 0} issue(s)`;
+      actionColor = '#f59e0b';
+      actionLabel = 'Integrity warning';
+      const fmt = (label, n) => details.push({ label, value: String(n) });
+      if (summary.duplicate_serials) fmt('Duplicate serials', summary.duplicate_serials);
+      if (summary.orphan_assigned_to) fmt('Orphan assigned_to', summary.orphan_assigned_to);
+      if (summary.orphan_category) fmt('Orphan category', summary.orphan_category);
+      if (summary.orphan_location) fmt('Orphan location', summary.orphan_location);
+      if (summary.orphan_created_by) fmt('Orphan created_by', summary.orphan_created_by);
+      if (summary.orphan_activity_asset) fmt('Orphan activity rows', summary.orphan_activity_asset);
+      // First few offending asset tags so you can act without curl-ing
+      const sampleTags = (r.details?.orphan_assigned_to || [])
+        .concat(r.details?.orphan_category || [])
+        .concat(r.details?.orphan_location || [])
+        .slice(0, 10)
+        .map(a => a.asset_tag).filter(Boolean);
+      if (sampleTags.length) details.push({ label: 'Sample assets', value: sampleTags.join(', ') });
+      details.push({ label: 'Run', value: 'GET /api/admin/integrity for full detail' });
+      details.push({ label: 'Time', value: timestampStr });
+      break;
+    }
+
     case 'asset_lifecycle_digest': {
       const wCount = (data.warranties || []).length;
       const rCount = (data.retirements || []).length;
