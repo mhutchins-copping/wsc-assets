@@ -275,23 +275,58 @@ function renderDashboard(stats) {
   } else {
     var displayStatuses = byStatus.filter(function(s) { return s.status !== 'disposed'; });
     var shownTotal = displayStatuses.reduce(function(t, s) { return t + s.count; }, 0);
-    var statusColor = { deployed: 'var(--green)', available: 'var(--accent)', maintenance: 'var(--amber)', retired: 'var(--gray)', lost: 'var(--red)' };
+    var statusColor = { deployed: '#10b981', available: '#3b82f6', maintenance: '#f59e0b', retired: '#9ca3af', lost: '#ef4444' };
     var statusLabel = { deployed: 'Deployed', available: 'Available', maintenance: 'Maintenance', retired: 'Retired', lost: 'Lost' };
 
-    // Sort: biggest first for visual stacking
+    // Biggest first
     displayStatuses.sort(function(a, b) { return b.count - a.count; });
 
-    var bar = displayStatuses.map(function(s) {
-      var pct = shownTotal > 0 ? (s.count / shownTotal) * 100 : 0;
-      // Ensure visible sliver for non-zero counts
-      var displayPct = s.count > 0 && pct < 1.5 ? 1.5 : pct;
-      var color = statusColor[s.status] || 'var(--gray)';
-      return '<div class="dash-bar-fill" style="width:' + displayPct.toFixed(2) + '%;background:' + color + '" title="' + esc(statusLabel[s.status] || s.status) + ': ' + s.count + '"></div>';
-    }).join('');
+    // SVG donut. Each segment is a circle with stroke-dasharray pinned
+    // to its share of the circumference, rotated to start where the
+    // previous segment ended. Math: circumference = 2πr; one full
+    // segment = (count/total) * circumference. We use a single shared
+    // circle with progressive stroke-dashoffset rather than a path
+    // because it composes simpler.
+    var radius = 70;
+    var stroke = 22;
+    var size = (radius + stroke) * 2;  // viewBox + cx/cy padding
+    var cx = size / 2, cy = size / 2;
+    var circumference = 2 * Math.PI * radius;
+    var rotation = -90;  // start at 12 o'clock
+
+    var arcs = '';
+    var startPct = 0;
+    displayStatuses.forEach(function(s) {
+      if (s.count === 0) return;
+      var sharePct = (s.count / shownTotal) * 100;
+      var dashLen = (sharePct / 100) * circumference;
+      var gap = Math.max(0, circumference - dashLen);
+      var rotateDeg = rotation + (startPct / 100) * 360;
+      arcs += '<circle cx="' + cx + '" cy="' + cy + '" r="' + radius + '"'
+        + ' fill="transparent"'
+        + ' stroke="' + (statusColor[s.status] || '#9ca3af') + '"'
+        + ' stroke-width="' + stroke + '"'
+        + ' stroke-dasharray="' + dashLen.toFixed(2) + ' ' + gap.toFixed(2) + '"'
+        + ' transform="rotate(' + rotateDeg.toFixed(2) + ' ' + cx + ' ' + cy + ')"'
+        + '><title>' + esc(statusLabel[s.status] || s.status) + ': ' + s.count + ' (' + sharePct.toFixed(0) + '%)</title>'
+        + '</circle>';
+      startPct += sharePct;
+    });
+
+    var donut = '<div class="dash-donut-wrap">'
+      + '<svg class="dash-donut" viewBox="0 0 ' + size + ' ' + size + '" aria-label="Status breakdown">'
+      +   '<circle cx="' + cx + '" cy="' + cy + '" r="' + radius + '" fill="transparent" stroke="var(--surface3)" stroke-width="' + stroke + '"></circle>'
+      +   arcs
+      + '</svg>'
+      + '<div class="dash-donut-center">'
+      +   '<div class="dash-donut-num">' + shownTotal + '</div>'
+      +   '<div class="dash-donut-sub">in service</div>'
+      + '</div>'
+      + '</div>';
 
     var legend = displayStatuses.map(function(s) {
       var pct = shownTotal > 0 ? Math.round((s.count / shownTotal) * 100) : 0;
-      var color = statusColor[s.status] || 'var(--gray)';
+      var color = statusColor[s.status] || '#9ca3af';
       var label = statusLabel[s.status] || s.status;
       return '<div class="dash-legend-row">'
         + '<span class="dash-legend-dot" style="background:' + color + '"></span>'
@@ -300,7 +335,7 @@ function renderDashboard(stats) {
         + '</div>';
     }).join('');
 
-    setSection('dash-status', '<div class="dash-bar-track">' + bar + '</div><div class="dash-legend">' + legend + '</div>');
+    setSection('dash-status', '<div class="dash-status-grid">' + donut + '<div class="dash-legend">' + legend + '</div></div>');
   }
 
   // ── Recent Activity ──

@@ -1968,12 +1968,68 @@ tbody td.mono {
 
 .dash-bar-track { display: flex; height: 10px; border-radius: 4px; overflow: hidden; background: var(--surface3); }
 .dash-bar-fill { height: 100%; min-width: 2px; transition: width 0.3s ease; }
-.dash-legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 16px; margin-top: 14px; }
-.dash-legend-row { display: flex; align-items: center; gap: 8px; font-size: 12px; min-width: 0; }
-.dash-legend-dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 2px; }
+
+/* Donut chart for the Status Breakdown panel. SVG-based — each segment
+   is a circle with stroke-dasharray sized to its share, rotated to its
+   start angle. Animates in on mount. */
+.dash-status-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 24px;
+  align-items: center;
+}
+.dash-donut-wrap {
+  position: relative;
+  width: 184px;
+  height: 184px;
+  flex-shrink: 0;
+}
+.dash-donut {
+  width: 100%;
+  height: 100%;
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.06));
+}
+.dash-donut circle {
+  transition: stroke-dasharray 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.dash-donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.dash-donut-num {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.dash-donut-sub {
+  font-size: 11px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 6px;
+}
+@media (max-width: 640px) {
+  .dash-status-grid { grid-template-columns: 1fr; gap: 14px; justify-items: center; }
+  .dash-donut-wrap { width: 160px; height: 160px; }
+  .dash-donut-num { font-size: 28px; }
+}
+
+.dash-legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 16px; margin-top: 0; }
+.dash-status-grid .dash-legend { grid-template-columns: 1fr; gap: 10px; min-width: 0; }
+.dash-legend-row { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; }
+.dash-legend-dot { flex-shrink: 0; width: 10px; height: 10px; border-radius: 50%; }
 .dash-legend-label { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dash-legend-value { font-family: var(--mono); color: var(--text2); font-size: 11px; white-space: nowrap; }
-.dash-legend-pct { color: var(--text3); margin-left: 6px; }
+.dash-legend-value { font-family: var(--mono); color: var(--text2); font-size: 12px; white-space: nowrap; font-weight: 600; }
+.dash-legend-pct { color: var(--text3); margin-left: 6px; font-weight: 400; }
 
 .dash-activity-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); min-width: 0; }
 .dash-activity-row:last-child { border-bottom: none; }
